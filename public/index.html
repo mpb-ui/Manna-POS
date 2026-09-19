@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1769ea" />
+  <title>Manna Print POS</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <section id="login-view" class="login-view hidden">
+    <form id="login-form" class="login-card">
+      <img src="/manna-print-logo.jpg" alt="Manna Print" />
+      <h1>Masuk ke Manna POS</h1>
+      <p>Masukkan PIN operasional untuk melanjutkan.</p>
+      <label>PIN<input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" required /></label>
+      <button class="primary full" type="submit">Masuk</button>
+    </form>
+  </section>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="brand"><img src="/manna-print-logo.jpg" alt="Manna Print" /></div>
+      <nav>
+        <button class="nav-item active" data-view="pos"><span>▦</span><b>POS</b></button>
+        <button class="nav-item" data-view="projects"><span>▤</span><b>Project Management</b><em id="active-count">0</em></button>
+        <button class="nav-item" data-view="stock"><span>◫</span><b>Stok Bahan</b></button>
+      </nav>
+      <div class="sidebar-foot"><span class="online-dot"></span> Sistem aktif</div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar">
+        <div><p class="eyebrow">Manna Print · Labuan Bajo</p><h1 id="page-title">Point of Sale</h1></div>
+        <div class="top-actions"><span id="today"></span><button id="refresh-btn" class="icon-btn" title="Muat ulang">↻</button></div>
+      </header>
+      <div id="view-root"></div>
+    </main>
+  </div>
+
+  <dialog id="order-dialog" class="order-dialog"><div id="order-detail"></div></dialog>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
