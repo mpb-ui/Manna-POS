@@ -5,9 +5,17 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 ## Fitur
 
 - POS berbasis produk dengan opsi lebar dan finishing yang relevan.
+- Data pelanggan dapat diisi sebelum item ditambahkan.
+- Quantity finishing manual dengan saran awal berdasarkan ukuran.
+- Catatan produksi tersimpan per item/file.
 - Pembulatan panjang tagihan per 50 cm, minimum 1 meter.
 - Alur kerja: Menunggu Pembayaran → Design → Cetak → Finishing → Selesai → Diambil.
-- PIC Operator Design dan audit trail setiap pesanan.
+- Draft dapat diedit selama masih Menunggu Pembayaran.
+- Form pembayaran terpisah dengan riwayat DP/pelunasan.
+- PIC Operator Design baru diisi setelah pembayaran dikonfirmasi.
+- Tampilan operator menyembunyikan harga dan fokus ke spesifikasi kerja.
+- SPK thermal 80 mm dan tanda terima.
+- Audit trail setiap pesanan.
 - Stok per material dan lebar roll dalam meter lari.
 - Stok baru berkurang satu kali ketika order masuk status **Selesai**.
 - Penyesuaian stok dan riwayat mutasi.

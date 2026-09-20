@@ -24,3 +24,15 @@ test("status hanya bergerak satu langkah", () => {
   assert.equal(allowedNextStatus(STATUS.FINISHING), STATUS.DONE);
   assert.equal(allowedNextStatus(STATUS.PICKED_UP), null);
 });
+
+test("quantity finishing mengikuti input kasir dan tidak dikali qty produk", () => {
+  const product = PRODUCTS.find((item) => item.id === "fl-280-glossy");
+  const line = calculateLine(product, {
+    width: 1, length: 1, quantity: 3,
+    finishing: [{ id: "seaming", units: 4 }],
+    productionNote: "Tiga file berbeda"
+  });
+  assert.equal(line.baseTotal, 90000);
+  assert.equal(line.finishingTotal, 10000);
+  assert.equal(line.productionNote, "Tiga file berbeda");
+});

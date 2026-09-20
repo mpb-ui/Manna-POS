@@ -50,9 +50,26 @@ function activity(state, order, message, actor = "Kasir") {
   state.activities.unshift(entry);
 }
 
+function normalizeOrder(order) {
+  order.designPic ||= "";
+  order.paidAmount = Number(order.paidAmount || 0);
+  order.payments ||= [];
+  order.paymentConfirmed = Boolean(order.paymentConfirmed);
+  order.paymentStatus = order.paidAmount >= Number(order.total || 0) && order.total > 0
+    ? "LUNAS"
+    : order.paymentConfirmed ? "BELUM_LUNAS" : "BELUM_BAYAR";
+  order.items ||= [];
+  order.items.forEach((item, index) => {
+    if (item.productionNote == null) item.productionNote = index === 0 ? String(order.notes || "") : "";
+  });
+  order.timeline ||= [];
+  return order;
+}
+
 app.get("/api/bootstrap", async (_req, res, next) => {
   try {
     const state = await store.read();
+    state.orders.forEach(normalizeOrder);
     res.json({ products: state.products, orders: state.orders, inventory: state.inventory, stockMovements: state.stockMovements.slice(0, 50), statusLabels: STATUS_LABEL });
   } catch (error) { next(error); }
 });
@@ -63,7 +80,6 @@ app.post("/api/orders", async (req, res, next) => {
       const priced = calculateOrder(state.products, req.body.items || []);
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
-      const paidAmount = Math.max(0, Number(req.body.paidAmount || 0));
       const order = {
         id: crypto.randomUUID(),
         code: orderCode(state.nextOrderNumber++),
@@ -71,13 +87,11 @@ app.post("/api/orders", async (req, res, next) => {
         phone: String(req.body.phone || "").trim(),
         deadline: req.body.deadline || null,
         fileStatus: req.body.fileStatus || "SIAP_CETAK",
-        designPic: String(req.body.designPic || "").trim(),
-        notes: String(req.body.notes || "").trim(),
-        paymentMethod: req.body.paymentMethod || "TUNAI",
-        poNumber: String(req.body.poNumber || "").trim(),
-        paidAmount,
+        designPic: "",
+        paidAmount: 0,
+        payments: [],
         paymentConfirmed: false,
-        paymentStatus: paidAmount >= priced.total ? "LUNAS_BELUM_DIKONFIRMASI" : paidAmount > 0 ? "DP" : "BELUM_BAYAR",
+        paymentStatus: "BELUM_BAYAR",
         status: STATUS.WAITING_PAYMENT,
         stockCommitted: false,
         items: priced.items,
@@ -94,21 +108,70 @@ app.post("/api/orders", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.patch("/api/orders/:id/payment", async (req, res, next) => {
+app.put("/api/orders/:id", async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order) throw new Error("Pesanan tidak ditemukan");
-      if (order.status !== STATUS.WAITING_PAYMENT) throw new Error("Pembayaran sudah dikonfirmasi");
-      const designPic = String(req.body.designPic || order.designPic || "").trim();
-      if (!designPic) throw new Error("PIC Operator Design wajib diisi");
-      order.designPic = designPic;
-      order.paidAmount = Math.max(order.paidAmount, Number(req.body.paidAmount || order.paidAmount));
-      order.paymentConfirmed = true;
-      order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "DP_DIKONFIRMASI";
-      order.status = STATUS.DESIGN;
+      normalizeOrder(order);
+      if (order.status !== STATUS.WAITING_PAYMENT || order.paymentConfirmed) throw new Error("Hanya draft yang belum dibayar yang dapat diedit");
+      const priced = calculateOrder(state.products, req.body.items || []);
+      if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
+      if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
+      order.customerName = String(req.body.customerName).trim();
+      order.phone = String(req.body.phone || "").trim();
+      order.deadline = req.body.deadline || null;
+      order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
+      order.items = priced.items;
+      order.total = priced.total;
       order.updatedAt = now();
-      activity(state, order, `Pembayaran dikonfirmasi; diteruskan ke ${designPic}`, "Kasir");
+      activity(state, order, "Draft pesanan diperbarui", "Kasir");
+      return order;
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+app.post("/api/orders/:id/payments", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const order = state.orders.find((item) => item.id === req.params.id);
+      if (!order) throw new Error("Pesanan tidak ditemukan");
+      normalizeOrder(order);
+      const method = String(req.body.method || "").trim();
+      const type = req.body.type === "LUNAS" ? "LUNAS" : "DP";
+      const amount = Math.max(0, Number(req.body.amount || 0));
+      const outstanding = Math.max(0, order.total - order.paidAmount);
+      const poNumber = String(req.body.poNumber || "").trim();
+      if (!method) throw new Error("Metode pembayaran wajib dipilih");
+      if (type === "LUNAS" && amount < outstanding) throw new Error("Nominal pelunasan kurang dari sisa tagihan");
+      if (type === "DP" && amount <= 0 && !poNumber) throw new Error("Masukkan nominal DP atau nomor PO");
+      const payment = { id: crypto.randomUUID(), method, type, amount, poNumber, createdAt: now() };
+      order.payments.push(payment);
+      order.paidAmount += amount;
+      order.paymentConfirmed = true;
+      order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
+      if (order.status === STATUS.WAITING_PAYMENT) order.status = STATUS.DESIGN;
+      order.updatedAt = now();
+      activity(state, order, `${type === "LUNAS" ? "Pelunasan" : "Pembayaran sebagian"} ${method} dicatat`, "Kasir");
+      return order;
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+app.patch("/api/orders/:id/design-pic", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const order = state.orders.find((item) => item.id === req.params.id);
+      if (!order) throw new Error("Pesanan tidak ditemukan");
+      normalizeOrder(order);
+      if (order.status !== STATUS.DESIGN) throw new Error("PIC hanya dapat ditetapkan pada tahap Operator Design");
+      const designPic = String(req.body.designPic || "").trim();
+      if (!designPic) throw new Error("Nama operator wajib diisi");
+      order.designPic = designPic;
+      order.updatedAt = now();
+      activity(state, order, `Pekerjaan diambil oleh ${designPic}`, designPic);
       return order;
     });
     res.json(result);
@@ -120,8 +183,10 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order) throw new Error("Pesanan tidak ditemukan");
+      normalizeOrder(order);
       const target = req.body.status;
       if (target !== allowedNextStatus(order.status)) throw new Error("Perpindahan status tidak valid");
+      if (order.status === STATUS.DESIGN && !order.designPic) throw new Error("Nama PIC Operator Design wajib diisi");
       order.status = target;
       order.updatedAt = now();
       if (target === STATUS.DONE && !order.stockCommitted) {
