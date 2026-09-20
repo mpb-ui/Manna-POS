@@ -22,18 +22,21 @@
   <div id="app-shell" class="app-shell hidden">
     <aside class="sidebar">
       <div class="brand"><img src="/manna-print-logo.jpg" alt="Manna Print" /></div>
+      <div class="sidebar-context">
+        <span>Manna Print · Labuan Bajo</span>
+        <strong id="page-title">Point of Sale</strong>
+      </div>
       <nav>
         <button class="nav-item active" data-view="pos"><span>▦</span><b>POS</b></button>
         <button class="nav-item" data-view="projects"><span>▤</span><b>Project Management</b><em id="active-count">0</em></button>
         <button class="nav-item" data-view="stock"><span>◫</span><b>Stok Bahan</b></button>
       </nav>
-      <div class="sidebar-foot"><span class="online-dot"></span> Sistem aktif</div>
+      <div class="sidebar-foot">
+        <span id="today"></span>
+        <div><span class="online-dot"></span> Sistem aktif <button id="refresh-btn" class="sidebar-refresh" title="Muat ulang">↻</button></div>
+      </div>
     </aside>
     <main class="main-content">
-      <header class="topbar">
-        <div><p class="eyebrow">Manna Print · Labuan Bajo</p><h1 id="page-title">Point of Sale</h1></div>
-        <div class="top-actions"><span id="today"></span><button id="refresh-btn" class="icon-btn" title="Muat ulang">↻</button></div>
-      </header>
       <div id="view-root"></div>
     </main>
   </div>

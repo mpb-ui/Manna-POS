@@ -96,11 +96,13 @@ function renderPos() {
       <hr class="divider"><p class="section-label">2 · Ukuran & jumlah</p>
       <div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((w, i) => `<div class="chip"><input type="radio" name="width" id="w-${i}" value="${w}" ${i === 0 ? "checked" : ""}><label for="w-${i}">${w} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual (m)</span><input id="length" type="number" min="0.1" step="0.1" value="1"></label><label class="field"><span>Jumlah produk</span><input id="quantity" type="number" min="1" step="1" value="1"></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" value="1 m" disabled></div></div>
-      <div class="note" id="product-note">${product.note}</div>
+      <p class="product-note" id="product-note">${product.note}</p>
       <hr class="divider"><p class="section-label">3 · Finishing</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
       <hr class="divider"><label class="field"><span class="section-label">4 · Catatan produksi item</span><textarea id="production-note" placeholder="Contoh: file banner utama, warna mengikuti logo, ring setiap 50 cm…"></textarea></label>
-      <div class="price-preview"><div><span>Estimasi item</span><p style="margin:4px 0 0" id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div>
-      <button id="add-item" class="primary full" style="margin-top:12px">+ Tambah ke Pesanan</button>
+      <div class="item-action-bar">
+        <div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div>
+        <button id="add-item" class="primary">+ Tambah ke Pesanan</button>
+      </div>
     </div></section>
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
@@ -119,7 +121,6 @@ function checkoutHtml() {
     <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
     <label class="field"><span>No. WhatsApp</span><input name="phone" value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
-    <label class="field full"><span>Status file</span><select name="fileStatus"><option value="SIAP_CETAK" ${state.draft.fileStatus === "SIAP_CETAK" ? "selected" : ""}>Siap cetak / preflight</option><option value="EDIT_RINGAN" ${state.draft.fileStatus === "EDIT_RINGAN" ? "selected" : ""}>Edit ringan</option><option value="EDIT_SEDANG" ${state.draft.fileStatus === "EDIT_SEDANG" ? "selected" : ""}>Edit sedang</option><option value="DESAIN_BARU" ${state.draft.fileStatus === "DESAIN_BARU" ? "selected" : ""}>Desain baru</option></select></label>
   </div><button class="primary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft Pesanan"}</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button" style="margin-top:8px">Batal Edit</button>' : ""}</form>`;
 }
 
@@ -265,7 +266,7 @@ function openOrder(id) {
     <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${isDesign ? "" : `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>`}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
     <div class="order-items-detail">${order.items.map((item, index) => `<div class="detail-item"><span class="item-number">${index + 1}</span><div>${itemDetail(item)}</div>${isDesign ? "" : `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>`}</div>`).join("")}</div>
     ${isDesign ? "" : `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>`}
-    <p class="note" style="margin-top:12px"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}<br><strong>Status file:</strong> ${escapeHtml((order.fileStatus || "SIAP_CETAK").replaceAll("_", " "))}</p>
+    <p class="note" style="margin-top:12px"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</p>
     ${isDesign ? `<div class="operator-box"><label class="field"><span>Nama Operator Design</span><input id="design-pic-input" value="${escapeHtml(order.designPic || "")}" placeholder="Ketik nama operator yang menangani"></label><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
     <div id="payment-form-wrap" class="payment-form-wrap hidden">${paymentFormHtml(order, outstanding)}</div>
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
