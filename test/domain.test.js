@@ -36,3 +36,17 @@ test("quantity finishing mengikuti input kasir dan tidak dikali qty produk", () 
   assert.equal(line.finishingTotal, 10000);
   assert.equal(line.productionNote, "Tiga file berbeda");
 });
+
+test("produk satuan menghitung quantity dan finishing masing-masing", () => {
+  const product = {
+    id: "card", name: "Kartu Nama", price: 75000, priceBasis: "unit", unitName: "box",
+    finishing: [{ id: "lam", name: "Laminasi", price: 20000, rule: "free" }]
+  };
+  const line = calculateLine(product, { quantity: 2, finishing: [{ id: "lam", units: 2 }] });
+  assert.equal(line.baseTotal, 150000);
+  assert.equal(line.finishingTotal, 40000);
+  assert.equal(line.subtotal, 190000);
+  assert.equal(line.stockSku, "card-unit");
+  assert.equal(line.stockConsumption, 2);
+  assert.equal(line.displaySize, "2 box");
+});

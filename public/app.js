@@ -1,13 +1,13 @@
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
 const productCategories = [
-  ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
+  ["all", "Semua"], ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
   ["lf-sticker", "LF Sticker"], ["display-banner", "Display & Banner"],
   ["merchandise", "Merchandise"], ["atk", "ATK"]
 ];
 const state = {
   products: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
-  cart: [], view: "pos", selectedProduct: null, selectedCategory: "outdoor", editingOrderId: null,
+  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", editingOrderId: null,
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" }
 };
 const root = document.querySelector("#view-root");
@@ -93,35 +93,63 @@ function finishingHtml(product) {
     </div>`).join("");
 }
 
+function categoryKey(product) {
+  return productCategories.find(([, label]) => label === product.category)?.[0] || "all";
+}
+
+function productsForCategory(category) {
+  return category === "all"
+    ? state.products.filter((product) => product.featured)
+    : state.products.filter((product) => categoryKey(product) === category);
+}
+
+function productCardsHtml(products) {
+  const recommended = state.selectedCategory === "all";
+  return products.map((product) => `<div class="choice-card ${recommended ? "recommended-card" : ""}">
+    <input type="radio" id="p-${product.id}" name="product" value="${product.id}" ${product.id === state.selectedProduct ? "checked" : ""}>
+    <label for="p-${product.id}">
+      ${recommended ? `<span class="product-category">${escapeHtml(product.category)}</span>` : ""}
+      <strong>${escapeHtml(product.name)}</strong><small>${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}</small>
+      ${recommended ? `<em>★ ${escapeHtml(product.recommendation || "Produk pilihan")}</em>` : ""}
+    </label>
+  </div>`).join("");
+}
+
+function productConfigurationHtml(product) {
+  const isUnit = product.priceBasis === "unit";
+  const measurement = isUnit
+    ? `<div class="form-grid"><label class="field"><span>Jumlah ${escapeHtml(product.unitName || "unit")}</span><input id="quantity" type="number" min="1" step="1" value="1"></label></div>`
+    : `<div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div>
+      <label class="field"><span>Panjang aktual (m)</span><input id="length" type="number" min="0.1" step="0.1" value="1"></label><label class="field"><span>Jumlah produk</span><input id="quantity" type="number" min="1" step="1" value="1"></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" value="1 m" disabled></div></div>`;
+  return `<hr class="divider"><p class="section-label">2 · Ukuran & jumlah</p>${measurement}
+    <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
+    <hr class="divider"><p class="section-label">3 · Finishing</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
+    <hr class="divider"><label class="field"><span class="section-label">4 · Catatan</span><textarea id="production-note" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label>
+    <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary">+ Tambah ke Pesanan</button></div>`;
+}
+
 function renderPos() {
+  let visibleProducts = productsForCategory(state.selectedCategory);
+  if (!visibleProducts.some((product) => product.id === state.selectedProduct)) state.selectedProduct = visibleProducts[0]?.id || null;
   const product = selectedProduct();
   const categoryTabs = productCategories.map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${label}</button>`).join("");
-  const productContent = state.selectedCategory === "outdoor" ? `
-      <p class="section-label">1 · Pilih bahan</p><div class="product-grid">${state.products.map((p) => `<div class="choice-card"><input type="radio" id="p-${p.id}" name="product" value="${p.id}" ${p.id === state.selectedProduct ? "checked" : ""}><label for="p-${p.id}"><strong>${p.name}</strong><small>${rupiah.format(p.price)} ${p.unitLabel}</small></label></div>`).join("")}</div>
-      <hr class="divider"><p class="section-label">2 · Ukuran & jumlah</p>
-      <div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((w, i) => `<div class="chip"><input type="radio" name="width" id="w-${i}" value="${w}" ${i === 0 ? "checked" : ""}><label for="w-${i}">${w} meter</label></div>`).join("")}</div></div>
-      <label class="field"><span>Panjang aktual (m)</span><input id="length" type="number" min="0.1" step="0.1" value="1"></label><label class="field"><span>Jumlah produk</span><input id="quantity" type="number" min="1" step="1" value="1"></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" value="1 m" disabled></div></div>
-      <p class="product-note" id="product-note">${product.note}</p>
-      <hr class="divider"><p class="section-label">3 · Finishing</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
-      <hr class="divider"><label class="field"><span class="section-label">4 · Catatan</span><textarea id="production-note" placeholder="Contoh: file banner utama, warna mengikuti logo, ring setiap 50 cm…"></textarea></label>
-      <div class="item-action-bar">
-        <div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div>
-        <button id="add-item" class="primary">+ Tambah ke Pesanan</button>
-      </div>` : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories.find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
+  const intro = state.selectedCategory === "all" ? `<div class="recommendation-head"><div><h3>Rekomendasi untuk kasir</h3><p>Produk relevan berdasarkan bestseller dan aktivitas operasional.</p></div><span class="recommendation-chip">Terlaris</span></div>` : '<p class="section-label">1 · Pilih bahan</p>';
+  const productContent = visibleProducts.length
+    ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${productConfigurationHtml(product)}`
+    : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories.find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid">
-    <section class="panel"><div class="panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2></div><div class="panel-body">
-      <div class="category-tabs" role="tablist" aria-label="Kategori produk">${categoryTabs}</div>
-      <div class="category-content">${productContent}</div>
+    <section class="panel"><div class="panel-head product-panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2><div class="product-search-wrap"><span>⌕</span><input id="product-search" type="search" placeholder="Cari produk…" autocomplete="off"><kbd>Ctrl K</kbd><div id="search-popover" class="search-popover hidden"></div></div></div><div class="panel-body">
+      <div class="category-tabs" role="tablist" aria-label="Kategori produk">${categoryTabs}</div><div class="category-content">${productContent}</div>
     </div></section>
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
   bindPos();
-  if (state.selectedCategory === "outdoor") updatePreview();
+  if (product) updatePreview();
 }
 
 function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
-  return state.cart.map((line, i) => `<div class="cart-item"><div><h4>${line.productName}</h4><p>${line.width} m × ${line.billedLength} m · ${line.quantity}x</p><p>${line.finishingNames || "Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p><strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`).join("");
+  return state.cart.map((line, i) => `<div class="cart-item"><div><h4>${line.productName}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p><p>${line.finishingNames || "Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p><strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`).join("");
 }
 
 function checkoutHtml() {
@@ -135,8 +163,9 @@ function checkoutHtml() {
 
 function readCurrentLine() {
   const product = selectedProduct();
-  const width = Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
-  const length = Number(document.querySelector("#length")?.value || 1);
+  const isUnit = product.priceBasis === "unit";
+  const width = isUnit ? 1 : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
+  const length = isUnit ? 1 : Number(document.querySelector("#length")?.value || 1);
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity);
   let finishTotal = 0;
@@ -153,6 +182,7 @@ function readCurrentLine() {
       const finish = product.finishing.find((x) => x.id === f.id);
       return `${finish?.name} × ${f.units}`;
     }).join(", "),
+    displaySize: isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity}x`,
     productionNote: document.querySelector("#production-note")?.value.trim() || "",
     previewTotal: base.total + finishTotal
   };
@@ -160,9 +190,13 @@ function readCurrentLine() {
 
 function updatePreview() {
   const line = readCurrentLine();
-  document.querySelector("#billed-length").value = `${line.billedLength} m`;
+  const product = selectedProduct();
+  const billedInput = document.querySelector("#billed-length");
+  if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
-  document.querySelector("#formula-text").textContent = `${line.width} m × ${line.billedLength} m × ${line.quantity}`;
+  document.querySelector("#formula-text").textContent = product.priceBasis === "unit"
+    ? `${line.quantity} ${product.unitName || "unit"}`
+    : `${line.width} m × ${line.billedLength} m × ${line.quantity}`;
 }
 
 function toggleFinishing(input) {
@@ -171,7 +205,7 @@ function toggleFinishing(input) {
   const stepper = document.querySelector(`[data-stepper="${finish.id}"]`);
   stepper?.classList.toggle("hidden", !input.checked);
   if (input.checked) {
-    const width = Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
+    const width = product.priceBasis === "unit" ? 1 : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
     const length = billedLength(document.querySelector("#length")?.value || 1);
     document.querySelector(`[data-finish-qty="${finish.id}"]`).value = suggestedFinishUnits(finish, width, length);
   }
@@ -183,7 +217,65 @@ function syncDraft(form) {
   state.draft = { customerName: values.customerName || "", phone: values.phone || "", deadline: values.deadline || "", fileStatus: values.fileStatus || "SIAP_CETAK" };
 }
 
+function searchPopoverHtml(query = "") {
+  const normalized = query.trim().toLowerCase();
+  const products = normalized
+    ? state.products.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(normalized)).slice(0, 7)
+    : state.products.filter((product) => product.featured).slice(0, 4);
+  const title = normalized ? "Saran pencarian" : "Quick Search · Bestseller";
+  if (!products.length) return `<div class="search-popover-head">${title}</div><div class="search-empty">Produk tidak ditemukan</div>`;
+  return `<div class="search-popover-head">${title}</div><div class="search-results">${products.map((product, index) => `<button type="button" class="search-result ${index === 0 ? "keyboard-active" : ""}" data-search-product="${product.id}"><span class="search-result-icon">▦</span><span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.category)} · ${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}</small></span><b>›</b></button>`).join("")}</div><div class="search-help">↑↓ Navigasi &nbsp; Enter Pilih &nbsp; Esc Tutup</div>`;
+}
+
+function selectSearchProduct(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+  syncDraft(document.querySelector("#checkout"));
+  state.selectedProduct = product.id;
+  state.selectedCategory = categoryKey(product);
+  renderPos();
+}
+
+function bindProductSearch() {
+  const search = document.querySelector("#product-search");
+  const popover = document.querySelector("#search-popover");
+  if (!search || !popover) return;
+  let activeIndex = 0;
+  const refresh = () => {
+    popover.innerHTML = searchPopoverHtml(search.value);
+    popover.classList.remove("hidden");
+    activeIndex = 0;
+    popover.querySelectorAll("[data-search-product]").forEach((button) => button.onclick = () => selectSearchProduct(button.dataset.searchProduct));
+  };
+  const move = (direction) => {
+    const results = [...popover.querySelectorAll("[data-search-product]")];
+    if (!results.length) return;
+    activeIndex = (activeIndex + direction + results.length) % results.length;
+    results.forEach((item, index) => item.classList.toggle("keyboard-active", index === activeIndex));
+  };
+  search.addEventListener("focus", refresh);
+  search.addEventListener("input", refresh);
+  search.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); move(1); }
+    if (event.key === "ArrowUp") { event.preventDefault(); move(-1); }
+    if (event.key === "Enter") {
+      const result = popover.querySelectorAll("[data-search-product]")[activeIndex];
+      if (result) { event.preventDefault(); selectSearchProduct(result.dataset.searchProduct); }
+    }
+    if (event.key === "Escape") { popover.classList.add("hidden"); search.blur(); }
+  });
+  document.onkeydown = (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault(); search.focus();
+    }
+  };
+  document.onclick = (event) => {
+    if (!event.target.closest(".product-search-wrap")) popover.classList.add("hidden");
+  };
+}
+
 function bindPos() {
+  bindProductSearch();
   document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout"));
     state.selectedCategory = button.dataset.category;
@@ -268,7 +360,7 @@ function nextAction(order) {
 
 function itemDetail(item) {
   const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}`).join(", ");
-  return `<strong>${escapeHtml(item.productName)}</strong><small>${item.width} × ${item.billedLength} m · ${item.quantity}x</small>${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
+  return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
 }
 
 function openOrder(id) {
@@ -346,12 +438,12 @@ function startEditOrder(order) {
     length: item.actualLength, billedLength: item.billedLength, quantity: item.quantity,
     finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units })),
     finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}`).join(", "),
-    productionNote: item.productionNote || "", previewTotal: item.subtotal
+    displaySize: item.displaySize, productionNote: item.productionNote || "", previewTotal: item.subtotal
   }));
   state.draft = { customerName: order.customerName || "", phone: order.phone || "", deadline: order.deadline || "", fileStatus: order.fileStatus || "SIAP_CETAK" };
   state.editingOrderId = order.id;
-  state.selectedCategory = "outdoor";
   state.selectedProduct = state.cart[0]?.productId || state.selectedProduct;
+  state.selectedCategory = categoryKey(state.products.find((product) => product.id === state.selectedProduct) || {});
   state.view = "pos";
   dialog.close(); render(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -362,7 +454,7 @@ function printOrder(order, type) {
   printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : "TANDA TERIMA PESANAN"}</div><hr>
     <div class="print-meta"><b>${order.code}</b><span>${dateFormat.format(new Date(order.createdAt))}</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
-    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${item.width} × ${item.billedLength} m · ${item.quantity}x${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
+    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
     ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div><div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
     <hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
   document.body.classList.add("printing");
@@ -371,7 +463,7 @@ function printOrder(order, type) {
 }
 
 function renderStock() {
-  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head"><h2>Stok per Lebar Roll</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>Lebar</th><th>Stok</th><th>Update</th><th></th></tr></thead><tbody>${state.inventory.map((item) => `<tr><td><strong>${item.productName}</strong></td><td>${item.width} m</td><td class="${item.quantity < 0 ? "stock-negative" : ""}">${item.quantity.toLocaleString("id-ID")} ${item.unit}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td><td><button class="secondary" data-adjust="${item.sku}">Sesuaikan</button></td></tr>`).join("")}</tbody></table></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${move.productName}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${move.orderCode}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
+  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head"><h2>Stok per Lebar Roll</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>Lebar</th><th>Stok</th><th>Update</th><th></th></tr></thead><tbody>${state.inventory.map((item) => `<tr><td><strong>${item.productName}</strong></td><td>${item.width == null ? "—" : item.width + " m"}</td><td class="${item.quantity < 0 ? "stock-negative" : ""}">${item.quantity.toLocaleString("id-ID")} ${item.unit}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td><td><button class="secondary" data-adjust="${item.sku}">Sesuaikan</button></td></tr>`).join("")}</tbody></table></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${move.productName}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${move.orderCode}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
   document.querySelectorAll("[data-adjust]").forEach((button) => button.onclick = async () => {
     const change = window.prompt("Masukkan perubahan stok meter lari. Contoh: 50 atau -2.5");
     if (!change) return;
