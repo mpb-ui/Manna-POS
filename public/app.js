@@ -1,8 +1,13 @@
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
+const productCategories = [
+  ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
+  ["lf-sticker", "LF Sticker"], ["display-banner", "Display & Banner"],
+  ["merchandise", "Merchandise"], ["atk", "ATK"]
+];
 const state = {
   products: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
-  cart: [], view: "pos", selectedProduct: null, editingOrderId: null,
+  cart: [], view: "pos", selectedProduct: null, selectedCategory: "outdoor", editingOrderId: null,
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" }
 };
 const root = document.querySelector("#view-root");
@@ -90,24 +95,28 @@ function finishingHtml(product) {
 
 function renderPos() {
   const product = selectedProduct();
-  root.innerHTML = `<div class="view-grid">
-    <section class="panel"><div class="panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Konfigurasi Produk"}</h2><span class="badge info">Outdoor</span></div><div class="panel-body">
+  const categoryTabs = productCategories.map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${label}</button>`).join("");
+  const productContent = state.selectedCategory === "outdoor" ? `
       <p class="section-label">1 · Pilih bahan</p><div class="product-grid">${state.products.map((p) => `<div class="choice-card"><input type="radio" id="p-${p.id}" name="product" value="${p.id}" ${p.id === state.selectedProduct ? "checked" : ""}><label for="p-${p.id}"><strong>${p.name}</strong><small>${rupiah.format(p.price)} ${p.unitLabel}</small></label></div>`).join("")}</div>
       <hr class="divider"><p class="section-label">2 · Ukuran & jumlah</p>
       <div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((w, i) => `<div class="chip"><input type="radio" name="width" id="w-${i}" value="${w}" ${i === 0 ? "checked" : ""}><label for="w-${i}">${w} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual (m)</span><input id="length" type="number" min="0.1" step="0.1" value="1"></label><label class="field"><span>Jumlah produk</span><input id="quantity" type="number" min="1" step="1" value="1"></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" value="1 m" disabled></div></div>
       <p class="product-note" id="product-note">${product.note}</p>
       <hr class="divider"><p class="section-label">3 · Finishing</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
-      <hr class="divider"><label class="field"><span class="section-label">4 · Catatan produksi item</span><textarea id="production-note" placeholder="Contoh: file banner utama, warna mengikuti logo, ring setiap 50 cm…"></textarea></label>
+      <hr class="divider"><label class="field"><span class="section-label">4 · Catatan</span><textarea id="production-note" placeholder="Contoh: file banner utama, warna mengikuti logo, ring setiap 50 cm…"></textarea></label>
       <div class="item-action-bar">
         <div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div>
         <button id="add-item" class="primary">+ Tambah ke Pesanan</button>
-      </div>
+      </div>` : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories.find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
+  root.innerHTML = `<div class="view-grid">
+    <section class="panel"><div class="panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2></div><div class="panel-body">
+      <div class="category-tabs" role="tablist" aria-label="Kategori produk">${categoryTabs}</div>
+      <div class="category-content">${productContent}</div>
     </div></section>
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
   bindPos();
-  updatePreview();
+  if (state.selectedCategory === "outdoor") updatePreview();
 }
 
 function cartHtml() {
@@ -175,6 +184,11 @@ function syncDraft(form) {
 }
 
 function bindPos() {
+  document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => {
+    syncDraft(document.querySelector("#checkout"));
+    state.selectedCategory = button.dataset.category;
+    renderPos();
+  }));
   document.querySelectorAll('input[name="product"]').forEach((input) => input.addEventListener("change", () => { state.selectedProduct = input.value; renderPos(); }));
   document.querySelectorAll('#length,#quantity,input[name="width"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
@@ -188,7 +202,8 @@ function bindPos() {
     const input = document.querySelector(`[data-finish-qty="${button.dataset.plus}"]`);
     input.value = Number(input.value || 0) + 1; updatePreview();
   });
-  document.querySelector("#add-item").onclick = () => {
+  const addItem = document.querySelector("#add-item");
+  if (addItem) addItem.onclick = () => {
     const line = readCurrentLine(); state.cart.push(line);
     syncDraft(document.querySelector("#checkout")); renderPos(); toast("Produk ditambahkan");
   };
@@ -335,6 +350,7 @@ function startEditOrder(order) {
   }));
   state.draft = { customerName: order.customerName || "", phone: order.phone || "", deadline: order.deadline || "", fileStatus: order.fileStatus || "SIAP_CETAK" };
   state.editingOrderId = order.id;
+  state.selectedCategory = "outdoor";
   state.selectedProduct = state.cart[0]?.productId || state.selectedProduct;
   state.view = "pos";
   dialog.close(); render(); window.scrollTo({ top: 0, behavior: "smooth" });
