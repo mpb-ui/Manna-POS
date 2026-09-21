@@ -50,6 +50,33 @@ function activity(state, order, message, actor = "Kasir") {
   state.activities.unshift(entry);
 }
 
+function text(value) { return String(value || "").trim(); }
+function identifier(prefix, value) {
+  const slug = text(value).toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${prefix}-${slug || crypto.randomUUID().slice(0, 8)}`;
+}
+function unique(state, collection, field, value, currentId) {
+  if (state[collection].some((item) => item.id !== currentId && text(item[field]).toLowerCase() === text(value).toLowerCase())) {
+    throw new Error(`${field === "sku" || field === "code" ? "Kode" : "Nama"} sudah digunakan`);
+  }
+}
+function normalizeTiers(body, retailPrice) {
+  if (!body.wholesaleEnabled) return [];
+  const tiers = (body.priceTiers || []).slice(0, 10).map((tier) => ({
+    min: Math.max(1, Number(tier.min || 1)), max: tier.max === "" || tier.max == null ? null : Number(tier.max),
+    price: Math.max(0, Number(tier.price || 0))
+  })).sort((a, b) => a.min - b.min);
+  if (!tiers.length) throw new Error("Tambahkan minimal satu tingkat harga grosir");
+  for (let index = 0; index < tiers.length; index += 1) {
+    const tier = tiers[index];
+    if (!tier.price) throw new Error("Harga setiap tingkat wajib diisi");
+    if (tier.max != null && tier.max < tier.min) throw new Error("Maksimum quantity tidak boleh lebih kecil dari minimum");
+    if (index && (tiers[index - 1].max == null || tier.min <= tiers[index - 1].max)) throw new Error("Rentang harga grosir tidak boleh tumpang tindih");
+  }
+  if (tiers[0].min !== 1) tiers.unshift({ min: 1, max: tiers[0].min - 1, price: retailPrice });
+  return tiers.slice(0, 10);
+}
+
 function normalizeOrder(order) {
   order.designPic ||= "";
   order.paidAmount = Number(order.paidAmount || 0);
@@ -70,8 +97,101 @@ app.get("/api/bootstrap", async (_req, res, next) => {
   try {
     const state = await store.read();
     state.orders.forEach(normalizeOrder);
-    res.json({ products: state.products, orders: state.orders, inventory: state.inventory, stockMovements: state.stockMovements.slice(0, 50), statusLabels: STATUS_LABEL });
+    res.json({ products: state.products.filter((item) => item.active !== false), allProducts: state.products, materials: state.materials, machines: state.machines, orders: state.orders, inventory: state.inventory, stockMovements: state.stockMovements.slice(0, 50), statusLabels: STATUS_LABEL });
   } catch (error) { next(error); }
+});
+
+app.post("/api/materials", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase();
+      if (!name || !sku || !text(req.body.unit)) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
+      unique(state, "materials", "sku", sku); unique(state, "materials", "name", name);
+      const material = { id: identifier("mat", sku), sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
+      state.materials.push(material);
+      state.inventory.push({ sku, materialId: material.id, productName: name, width: null, quantity: material.stock, minStock: material.minStock, unit: material.unit, updatedAt: now() });
+      return material;
+    });
+    res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+app.put("/api/materials/:id", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const material = state.materials.find((item) => item.id === req.params.id);
+      if (!material) throw new Error("Bahan tidak ditemukan");
+      const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase(); const unit = text(req.body.unit);
+      if (!name || !sku || !unit) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
+      unique(state, "materials", "sku", sku, material.id); unique(state, "materials", "name", name, material.id);
+      const oldSku = material.sku;
+      Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", unit, minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false });
+      const stock = state.inventory.find((item) => item.sku === oldSku || item.materialId === material.id);
+      if (stock) Object.assign(stock, { sku, materialId: material.id, productName: name, minStock: material.minStock, unit, updatedAt: now() });
+      return material;
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+app.post("/api/machines", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
+      if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
+      unique(state, "machines", "code", code); unique(state, "machines", "name", name);
+      const machine = { id: identifier("mach", code), code, name, type: text(req.body.type) || "Produksi", status: text(req.body.status) || "AKTIF", costPerHour: Math.max(0, Number(req.body.costPerHour || 0)), capacity: text(req.body.capacity), active: req.body.active !== false };
+      state.machines.push(machine); return machine;
+    });
+    res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+app.put("/api/machines/:id", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const machine = state.machines.find((item) => item.id === req.params.id);
+      if (!machine) throw new Error("Mesin tidak ditemukan");
+      const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
+      if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
+      unique(state, "machines", "code", code, machine.id); unique(state, "machines", "name", name, machine.id);
+      Object.assign(machine, { code, name, type: text(req.body.type) || "Produksi", status: text(req.body.status) || "AKTIF", costPerHour: Math.max(0, Number(req.body.costPerHour || 0)), capacity: text(req.body.capacity), active: req.body.active !== false });
+      return machine;
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+function saveProduct(state, body, current = null) {
+  const name = text(body.name); const sku = text(body.sku).toUpperCase();
+  const price = Math.max(0, Number(body.price || 0)); const baseCost = Math.max(0, Number(body.baseCost || 0));
+  if (!name || !sku || !text(body.category) || !price) throw new Error("Nama, SKU, kategori, dan harga jual wajib diisi");
+  unique(state, "products", "sku", sku, current?.id); unique(state, "products", "name", name, current?.id);
+  const priceBasis = ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : "unit";
+  const saleUnit = text(body.saleUnit) || "pcs";
+  const sourceIds = new Set();
+  const materialSources = (body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
+    const material = state.materials.find((item) => item.id === source.materialId);
+    if (!material || material.active === false) throw new Error("Pilih bahan aktif yang valid");
+    if (sourceIds.has(material.id)) throw new Error("Bahan yang sama tidak boleh ditambahkan dua kali");
+    sourceIds.add(material.id);
+    return { materialId: material.id, sku: material.sku, name: material.name, unit: material.unit, quantity: Number(source.quantity), wastePercent: Math.max(0, Number(source.wastePercent || 0)) };
+  });
+  if (!materialSources.length) throw new Error("Produk wajib memiliki minimal satu sumber bahan");
+  const machineIds = [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
+  if (!machineIds.length) throw new Error("Pilih minimal satu mesin");
+  const unitLabels = { pcs: "/pcs", lbr: "/lembar", "m²": "/m²", pack: "/pack", rim: "/rim", set: "/set", "m lari": "/m lari" };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category: text(body.category), baseCost, price, priceBasis, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), materialSources, machineIds, finishing: (body.finishing || []).map((item, index) => ({ id: item.id || identifier(`finish-${index + 1}`, item.name), name: text(item.name), price: Math.max(0, Number(item.price || 0)), rule: text(item.rule) || "free" })).filter((item) => item.name) };
+  if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
+  if (current) Object.assign(current, product); else state.products.push(product);
+  return product;
+}
+
+app.post("/api/products", async (req, res, next) => {
+  try { const result = await store.mutate((state) => saveProduct(state, req.body)); res.status(201).json(result); } catch (error) { next(error); }
+});
+app.put("/api/products/:id", async (req, res, next) => {
+  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id); if (!product) throw new Error("Produk tidak ditemukan"); return saveProduct(state, req.body, product); }); res.json(result); } catch (error) { next(error); }
 });
 
 app.post("/api/orders", async (req, res, next) => {
@@ -191,13 +311,15 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
       order.updatedAt = now();
       if (target === STATUS.DONE && !order.stockCommitted) {
         for (const line of order.items) {
-          const stock = state.inventory.find((item) => item.sku === line.stockSku);
-          if (stock) {
-            stock.quantity = Number(stock.quantity) - Number(line.stockConsumption);
+          const consumptions = line.materials?.length ? line.materials : [{ sku: line.stockSku, name: line.productName, units: line.stockConsumption }];
+          for (const consumption of consumptions) {
+            const stock = state.inventory.find((item) => item.sku === consumption.sku || item.materialId === consumption.materialId);
+            if (!stock) continue;
+            stock.quantity = Number(stock.quantity) - Number(consumption.units || 0);
             stock.updatedAt = now();
             state.stockMovements.unshift({
               id: crypto.randomUUID(), sku: stock.sku, productName: stock.productName,
-              change: -line.stockConsumption, balance: stock.quantity, orderCode: order.code,
+              change: -Number(consumption.units || 0), balance: stock.quantity, orderCode: order.code,
               reason: "Pemakaian produksi selesai", createdAt: now()
             });
           }

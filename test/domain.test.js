@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { roundBillingLength, calculateLine, allowedNextStatus, STATUS } from "../lib/domain.js";
+import { roundBillingLength, calculateLine, allowedNextStatus, STATUS, tierPriceForQuantity } from "../lib/domain.js";
 import { PRODUCTS } from "../lib/store.js";
 
 test("panjang ditagihkan dibulatkan per 50 cm dengan minimum 1 m", () => {
@@ -49,4 +49,21 @@ test("produk satuan menghitung quantity dan finishing masing-masing", () => {
   assert.equal(line.stockSku, "card-unit");
   assert.equal(line.stockConsumption, 2);
   assert.equal(line.displaySize, "2 box");
+});
+
+test("harga grosir memilih tingkat berdasarkan quantity", () => {
+  const product = { price: 10000, wholesaleEnabled: true, priceTiers: [{ min: 1, max: 1, price: 10000 }, { min: 2, max: 10, price: 9000 }, { min: 11, max: 50, price: 8000 }] };
+  assert.equal(tierPriceForQuantity(product, 1), 10000);
+  assert.equal(tierPriceForQuantity(product, 5), 9000);
+  assert.equal(tierPriceForQuantity(product, 20), 8000);
+  assert.equal(tierPriceForQuantity({ ...product, wholesaleEnabled: false }, 20), 10000);
+});
+
+test("snapshot BOM menghitung bahan dan waste dari unit jual", () => {
+  const line = calculateLine({
+    id: "x-banner", name: "X-Banner", price: 10000, priceBasis: "unit", unitName: "set", widths: [], finishing: [],
+    materialSources: [{ materialId: "albatros", sku: "BHN-ALB", name: "Albatros", unit: "m²", quantity: .8, wastePercent: 5 }, { materialId: "stand", sku: "ACC-X", name: "Kaki", unit: "pcs", quantity: 1, wastePercent: 0 }]
+  }, { quantity: 2, finishing: [] });
+  assert.equal(line.materials[0].units, 1.68);
+  assert.equal(line.materials[1].units, 2);
 });

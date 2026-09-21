@@ -19,6 +19,9 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Stok per material dan lebar roll dalam meter lari.
 - Stok baru berkurang satu kali ketika order masuk status **Selesai**.
 - Penyesuaian stok dan riwayat mutasi.
+- Master Data mandiri untuk menambah dan mengedit bahan, produk, serta mesin.
+- BOM multi-bahan dan relasi multi-mesin pada setiap produk.
+- Harga grosir bertingkat (3 tingkat awal, maksimum 10) dengan perhitungan otomatis di POS.
 - Print tanda terima untuk order selesai/diambil.
 - Autentikasi PIN untuk deployment publik.
 
@@ -41,6 +44,6 @@ Tanpa `DATABASE_URL`, aplikasi memakai penyimpanan memory untuk development. Unt
 | `SESSION_SECRET` | Secret untuk cookie sesi |
 | `NODE_ENV` | Isi `production` pada Railway |
 
-## Catatan stok awal
+## Catatan data awal
 
-Semua stok awal dibuat `0` agar sistem tidak mengarang angka stok fisik. Masukkan stok riil melalui menu **Stok Bahan → Sesuaikan** sebelum dipakai sebagai sumber data operasional.
+Data bahan, produk, mesin, HPP, dan stok awal saat ini berupa dummy untuk tahap MVP. Ganti dengan data riil melalui menu **Master Data** dan **Stok Bahan** sebelum dipakai sebagai sumber data operasional.

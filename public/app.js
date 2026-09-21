@@ -6,8 +6,9 @@ const productCategories = [
   ["merchandise", "Merchandise"], ["atk", "ATK"]
 ];
 const state = {
-  products: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
+  products: [], allProducts: [], materials: [], machines: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", editingOrderId: null,
+  masterTab: "products",
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" }
 };
 const root = document.querySelector("#view-root");
@@ -54,10 +55,11 @@ async function load() {
 
 function render() {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  document.querySelector("#page-title").textContent = { pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan" }[state.view];
+  document.querySelector("#page-title").textContent = { pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan", master: "Master Data" }[state.view];
   if (state.view === "pos") renderPos();
   if (state.view === "projects") renderProjects();
   if (state.view === "stock") renderStock();
+  if (state.view === "master") renderMaster();
 }
 
 function selectedProduct() { return state.products.find((p) => p.id === state.selectedProduct); }
@@ -65,7 +67,9 @@ function billedLength(value) { return Math.max(1, Math.ceil(Number(value || 1) *
 function productBase(product, width, length, quantity) {
   const billed = billedLength(length);
   const units = product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
-  return { billed, total: units * product.price };
+  const tier = product.wholesaleEnabled ? (product.priceTiers || []).filter((item) => Number(item.min) <= quantity && (item.max == null || item.max === "" || quantity <= Number(item.max))).sort((a, b) => Number(b.min) - Number(a.min))[0] : null;
+  const unitPrice = Number(tier?.price ?? product.price);
+  return { billed, total: units * unitPrice, unitPrice, tier };
 }
 function suggestedFinishUnits(finish, width, length) {
   if (finish.rule === "free") return 1;
@@ -177,7 +181,7 @@ function readCurrentLine() {
   });
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed,
-    quantity, finishing,
+    quantity, unitPrice: base.unitPrice, finishing,
     finishingNames: finishing.map((f) => {
       const finish = product.finishing.find((x) => x.id === f.id);
       return `${finish?.name} × ${f.units}`;
@@ -195,8 +199,8 @@ function updatePreview() {
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
   document.querySelector("#formula-text").textContent = product.priceBasis === "unit"
-    ? `${line.quantity} ${product.unitName || "unit"}`
-    : `${line.width} m × ${line.billedLength} m × ${line.quantity}`;
+    ? `${line.quantity} ${product.unitName || "unit"}${line.unitPrice !== product.price ? ` · Grosir ${rupiah.format(line.unitPrice)}/${product.unitName || "unit"}` : ""}`
+    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.unitPrice !== product.price ? ` · Grosir ${rupiah.format(line.unitPrice)} ${product.unitLabel}` : ""}`;
 }
 
 function toggleFinishing(input) {
@@ -462,10 +466,117 @@ function printOrder(order, type) {
   window.print();
 }
 
+function masterHeader(title) {
+  const labels = { products: "Produk", materials: "Bahan", machines: "Mesin" };
+  return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, dan harga jual POS.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
+    <div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>
+    <div class="master-tabs">${Object.entries(labels).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
+}
+
+function renderMaster() {
+  const title = { products: "Produk", materials: "Bahan", machines: "Mesin" }[state.masterTab];
+  const productRows = state.allProducts.map((product) => {
+    const materials = (product.materialSources || []).map((source) => source.name).filter(Boolean).join(", ") || "—";
+    const machines = (product.machineIds || []).map((id) => state.machines.find((item) => item.id === id)?.name).filter(Boolean).join(", ") || "—";
+    return `<tr><td><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.sku || "—")}</small></td><td>${escapeHtml(product.category)}</td><td>${escapeHtml(product.saleUnit || product.unitName || "—")}</td><td class="compact-cell">${escapeHtml(materials)}</td><td class="compact-cell">${escapeHtml(machines)}</td><td><strong>${rupiah.format(product.price)}</strong>${product.wholesaleEnabled ? '<small class="blue-text">Harga grosir aktif</small>' : ""}</td><td><span class="badge ${product.active === false ? "warn" : "ok"}">${product.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-product="${product.id}">Edit</button></td></tr>`;
+  }).join("");
+  const materialRows = state.materials.map((material) => {
+    const stock = state.inventory.find((item) => item.materialId === material.id || item.sku === material.sku);
+    return `<tr><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small></td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}</td><td class="${Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(material.unit)}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
+  }).join("");
+  const machineRows = state.machines.map((machine) => `<tr><td><strong>${escapeHtml(machine.name)}</strong><small>${escapeHtml(machine.code)}</small></td><td>${escapeHtml(machine.type)}</td><td>${escapeHtml(machine.capacity || "—")}</td><td>${rupiah.format(machine.costPerHour)}/jam</td><td><span class="badge ${machine.status === "AKTIF" ? "ok" : "warn"}">${escapeHtml(machine.status)}</span></td><td><button class="secondary" data-edit-machine="${machine.id}">Edit</button></td></tr>`).join("");
+  const tables = {
+    products: `<table><thead><tr><th>Produk</th><th>Kategori</th><th>Satuan</th><th>Bahan terkait</th><th>Mesin</th><th>Harga jual</th><th>Status</th><th></th></tr></thead><tbody>${productRows}</tbody></table>`,
+    materials: `<table><thead><tr><th>Bahan</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Harga dasar</th><th>Supplier</th><th>Status</th><th></th></tr></thead><tbody>${materialRows}</tbody></table>`,
+    machines: `<table><thead><tr><th>Mesin</th><th>Jenis</th><th>Kapasitas</th><th>Biaya</th><th>Status</th><th></th></tr></thead><tbody>${machineRows}</tbody></table>`
+  };
+  root.innerHTML = `<div class="master-page">${masterHeader(title)}<section class="panel"><div class="panel-head"><h2>Daftar ${title}</h2><input id="master-search" class="search" placeholder="Cari ${title.toLowerCase()}…"></div><div class="table-wrap master-table">${tables[state.masterTab]}</div></section></div>`;
+  document.querySelectorAll("[data-master-tab]").forEach((button) => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
+  document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : openMachineForm();
+  document.querySelectorAll("[data-edit-product]").forEach((button) => button.onclick = () => openProductForm(state.allProducts.find((item) => item.id === button.dataset.editProduct)));
+  document.querySelectorAll("[data-edit-material]").forEach((button) => button.onclick = () => openMaterialForm(state.materials.find((item) => item.id === button.dataset.editMaterial)));
+  document.querySelectorAll("[data-edit-machine]").forEach((button) => button.onclick = () => openMachineForm(state.machines.find((item) => item.id === button.dataset.editMachine)));
+  document.querySelector("#master-search").oninput = (event) => document.querySelectorAll(".master-table tbody tr").forEach((row) => row.classList.toggle("hidden", !row.textContent.toLowerCase().includes(event.target.value.toLowerCase())));
+}
+
+function showMasterDialog(title, body) {
+  dialog.classList.add("master-dialog");
+  const detail = document.querySelector("#order-detail");
+  detail.innerHTML = `<div class="detail-head"><div><span class="eyebrow">Master Data</span><h2 style="margin:5px 0 0">${title}</h2></div><button class="detail-close">×</button></div><div class="detail-body">${body}</div>`;
+  detail.querySelector(".detail-close").onclick = () => dialog.close();
+  dialog.onclose = () => { dialog.classList.remove("master-dialog"); dialog.onclose = null; };
+  dialog.showModal();
+  return detail;
+}
+
+function switchHtml(name, checked, label = "Aktif") {
+  return `<label class="switch-row"><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><span class="switch"></span><b>${label}</b></label>`;
+}
+
+function openMaterialForm(material = null) {
+  const detail = showMasterDialog(material ? "Edit Bahan" : "Tambah Bahan", `<form id="material-form" class="master-form"><div class="form-grid">
+    <label class="field"><span>Nama bahan *</span><input name="name" value="${escapeHtml(material?.name || "")}" required></label><label class="field"><span>SKU bahan *</span><input name="sku" value="${escapeHtml(material?.sku || "")}" required></label>
+    <label class="field"><span>Kategori bahan</span><input name="category" value="${escapeHtml(material?.category || "")}" placeholder="Roll Outdoor, Kertas, Aksesori"></label><label class="field"><span>Satuan stok *</span><select name="unit">${["m²", "m lari", "pcs", "lbr", "kg", "pack", "rim"].map((unit) => `<option ${material?.unit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label>
+    ${material ? "" : `<label class="field"><span>Stok awal</span><input name="stock" type="number" min="0" step="0.01" value="0"></label>`}<label class="field"><span>Stok minimum</span><input name="minStock" type="number" min="0" step="0.01" value="${material?.minStock || 0}"></label>
+    <label class="field"><span>Harga dasar / satuan</span><input name="cost" type="number" min="0" value="${material?.cost || 0}"></label><label class="field"><span>Supplier</span><input name="supplier" value="${escapeHtml(material?.supplier || "")}"></label>
+  </div><div class="form-footer">${switchHtml("active", material?.active !== false)}<button class="primary" type="submit">Simpan Bahan</button></div></form>`);
+  detail.querySelector("#material-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.active = event.target.elements.active.checked; try { await api(material ? `/api/materials/${material.id}` : "/api/materials", { method: material ? "PUT" : "POST", body: JSON.stringify(values) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "materials"; render(); toast("Bahan berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+}
+
+function openMachineForm(machine = null) {
+  const detail = showMasterDialog(machine ? "Edit Mesin" : "Tambah Mesin", `<form id="machine-form" class="master-form"><div class="form-grid">
+    <label class="field"><span>Nama mesin *</span><input name="name" value="${escapeHtml(machine?.name || "")}" required></label><label class="field"><span>Kode mesin *</span><input name="code" value="${escapeHtml(machine?.code || "")}" required></label>
+    <label class="field"><span>Jenis mesin</span><input name="type" value="${escapeHtml(machine?.type || "")}" placeholder="Large Format, Finishing"></label><label class="field"><span>Status</span><select name="status">${["AKTIF", "MAINTENANCE", "NONAKTIF"].map((status) => `<option ${machine?.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+    <label class="field"><span>Biaya operasional / jam</span><input name="costPerHour" type="number" min="0" value="${machine?.costPerHour || 0}"></label><label class="field"><span>Kapasitas</span><input name="capacity" value="${escapeHtml(machine?.capacity || "")}" placeholder="Contoh: 12 m²/jam"></label>
+  </div><div class="form-footer">${switchHtml("active", machine?.active !== false)}<button class="primary" type="submit">Simpan Mesin</button></div></form>`);
+  detail.querySelector("#machine-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.active = event.target.elements.active.checked; try { await api(machine ? `/api/machines/${machine.id}` : "/api/machines", { method: machine ? "PUT" : "POST", body: JSON.stringify(values) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "machines"; render(); toast("Mesin berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+}
+
+function tierRowHtml(tier = {}, index = 0) {
+  return `<div class="tier-row" data-tier-row><b>${index + 1}</b><input data-tier-min type="number" min="1" value="${tier.min ?? (index ? index * 10 + 1 : 1)}" aria-label="Minimum quantity"><input data-tier-max type="number" min="1" value="${tier.max ?? ""}" placeholder="∞" aria-label="Maksimum quantity"><input data-tier-price type="number" min="0" value="${tier.price || ""}" placeholder="Harga" aria-label="Harga per unit"><span data-tier-margin>—</span><button type="button" data-remove-tier title="Hapus">×</button></div>`;
+}
+
+function materialRowHtml(source = {}) {
+  return `<div class="builder-row" data-material-row><select data-material-id><option value="">Pilih bahan</option>${state.materials.filter((item) => item.active !== false || item.id === source.materialId).map((item) => `<option value="${item.id}" ${item.id === source.materialId ? "selected" : ""}>${escapeHtml(item.name)} · ${escapeHtml(item.unit)}</option>`).join("")}</select><input data-material-qty type="number" min="0.0001" step="0.0001" value="${source.quantity || 1}" placeholder="Jumlah"><input data-material-waste type="number" min="0" step="0.1" value="${source.wastePercent || 0}" placeholder="Waste %"><button type="button" data-remove-builder>×</button></div>`;
+}
+
+function finishingRowHtml(item = {}) {
+  return `<div class="builder-row finishing-builder" data-finishing-row><input data-finishing-name value="${escapeHtml(item.name || "")}" placeholder="Nama finishing"><input data-finishing-price type="number" min="0" value="${item.price || 0}" placeholder="Harga"><select data-finishing-rule>${[["free","Per unit"],["point","Per titik"],["perimeter","Keliling"],["top_bottom","Atas–bawah"],["left_right","Kanan–kiri"],["length","Meter lari"]].map(([value,label]) => `<option value="${value}" ${item.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select><button type="button" data-remove-builder>×</button></div>`;
+}
+
+function openProductForm(product = null) {
+  const defaultTiers = product?.priceTiers?.length ? product.priceTiers : [{ min: 1, max: 1, price: product?.price || 10000 }, { min: 2, max: 10, price: product?.price ? Math.round(product.price * .9) : 9000 }, { min: 11, max: 50, price: product?.price ? Math.round(product.price * .8) : 8000 }];
+  const sources = product?.materialSources?.length ? product.materialSources : [{}];
+  const finishings = product?.finishing?.length ? product.finishing : [{}];
+  const categories = productCategories.filter(([id]) => id !== "all").map(([, label]) => label);
+  const detail = showMasterDialog(product ? "Edit Produk" : "Tambah Produk", `<form id="product-form" class="master-form product-form"><div class="product-form-grid"><section><p class="section-label">Informasi produk</p><div class="form-grid">
+    <label class="field"><span>Nama produk *</span><input name="name" value="${escapeHtml(product?.name || "")}" required></label><label class="field"><span>SKU produk *</span><input name="sku" value="${escapeHtml(product?.sku || "")}" required></label>
+    <label class="field"><span>Kategori *</span><select name="category">${categories.map((category) => `<option ${product?.category === category ? "selected" : ""}>${category}</option>`).join("")}</select></label><label class="field"><span>Satuan jual *</span><select name="saleUnit">${["pcs", "lbr", "m²", "m lari", "pack", "rim", "set"].map((unit) => `<option ${product?.saleUnit === unit || product?.unitName === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label>
+    <label class="field"><span>Dasar perhitungan</span><select name="priceBasis"><option value="unit" ${product?.priceBasis === "unit" ? "selected" : ""}>Per unit</option><option value="sqm" ${product?.priceBasis === "sqm" ? "selected" : ""}>Luas m²</option><option value="linear_m" ${product?.priceBasis === "linear_m" ? "selected" : ""}>Meter lari</option></select></label><label class="field"><span>Pilihan lebar (pisahkan koma)</span><input name="widths" value="${escapeHtml((product?.widths || []).join(", "))}" placeholder="1, 1.27, 1.52"></label>
+    <label class="field"><span>Harga Dasar / HPP</span><input name="baseCost" type="number" min="0" value="${product?.baseCost || 0}"></label><label class="field"><span>Harga Jual *</span><input name="price" type="number" min="0" value="${product?.price || 10000}" required></label>
+    <div class="margin-summary full"><span>Margin kotor</span><strong id="margin-summary">—</strong></div><label class="field full"><span>Catatan produk</span><textarea name="note">${escapeHtml(product?.note || "")}</textarea></label>
+  </div><div class="toggle-group">${switchHtml("active", product?.active !== false)}${switchHtml("featured", Boolean(product?.featured), "Tampilkan di Semua")}</div></section>
+  <section><p class="section-label">Kebutuhan produksi</p><div class="builder-card"><div class="builder-head"><strong>Sumber bahan *</strong><button id="add-material-row" class="text-button" type="button">+ Tambah Bahan</button></div><div id="material-rows">${sources.map(materialRowHtml).join("")}</div><small>Jumlah pemakaian dihitung per satuan jual. Stok berkurang saat status Selesai.</small></div>
+  <div class="builder-card"><div class="builder-head"><strong>Mesin yang digunakan *</strong></div><div class="machine-options">${state.machines.map((machine) => `<label><input type="checkbox" name="machineId" value="${machine.id}" ${(product?.machineIds || []).includes(machine.id) ? "checked" : ""}><span>${escapeHtml(machine.name)}</span></label>`).join("")}</div></div>
+  <div class="builder-card"><div class="builder-head"><strong>Finishing / Add-on</strong><button id="add-finishing-row" class="text-button" type="button">+ Tambah Finishing</button></div><div id="finishing-rows">${finishings.map(finishingRowHtml).join("")}</div></div></section></div>
+  <section class="wholesale-card"><div class="builder-head"><div><strong>Harga Grosir</strong><p>Harga berubah otomatis berdasarkan jumlah pesanan.</p></div>${switchHtml("wholesaleEnabled", Boolean(product?.wholesaleEnabled))}</div><div id="tier-editor" class="${product?.wholesaleEnabled ? "" : "disabled-section"}"><div class="tier-head"><span>Tingkat</span><span>Min. Qty</span><span>Maks. Qty</span><span>Harga / Unit</span><span>Margin</span><span>Aksi</span></div><div id="tier-rows">${defaultTiers.map(tierRowHtml).join("")}</div><div class="tier-footer"><small>Maksimal 10 tingkat harga · Rentang tidak boleh tumpang tindih.</small><button id="add-tier" class="secondary" type="button">+ Tambah Tingkat Harga <b id="tier-count">${defaultTiers.length}/10</b></button></div></div></section>
+  <div class="form-footer"><button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan Produk</button></div></form>`);
+  const form = detail.querySelector("#product-form");
+  const refreshMargins = () => { const hpp = Number(form.elements.baseCost.value || 0); const price = Number(form.elements.price.value || 0); const margin = price ? ((price - hpp) / price * 100) : 0; detail.querySelector("#margin-summary").textContent = `${margin.toFixed(1)}% · ${rupiah.format(price - hpp)}`; detail.querySelectorAll("[data-tier-row]").forEach((row) => { const tierPrice = Number(row.querySelector("[data-tier-price]").value || 0); row.querySelector("[data-tier-margin]").textContent = tierPrice ? `${(((tierPrice - hpp) / tierPrice) * 100).toFixed(0)}%` : "—"; }); };
+  const bindBuilders = () => { detail.querySelectorAll("[data-remove-builder]").forEach((button) => button.onclick = () => button.closest(".builder-row").remove()); detail.querySelectorAll("[data-remove-tier]").forEach((button) => button.onclick = () => { if (detail.querySelectorAll("[data-tier-row]").length <= 1) return; button.closest(".tier-row").remove(); [...detail.querySelectorAll("[data-tier-row]")].forEach((row, index) => row.querySelector("b").textContent = index + 1); detail.querySelector("#tier-count").textContent = `${detail.querySelectorAll("[data-tier-row]").length}/10`; refreshMargins(); }); detail.querySelectorAll("[data-tier-price]").forEach((input) => input.oninput = refreshMargins); };
+  form.elements.baseCost.oninput = refreshMargins; form.elements.price.oninput = refreshMargins;
+  form.elements.wholesaleEnabled.onchange = () => detail.querySelector("#tier-editor").classList.toggle("disabled-section", !form.elements.wholesaleEnabled.checked);
+  detail.querySelector("#add-tier").onclick = () => { const rows = detail.querySelector("#tier-rows"); const count = rows.children.length; if (count >= 10) return toast("Maksimal 10 tingkat harga", "error"); rows.insertAdjacentHTML("beforeend", tierRowHtml({ min: count * 10 + 1, max: (count + 1) * 10, price: form.elements.price.value }, count)); detail.querySelector("#tier-count").textContent = `${count + 1}/10`; bindBuilders(); refreshMargins(); };
+  detail.querySelector("#add-material-row").onclick = () => { detail.querySelector("#material-rows").insertAdjacentHTML("beforeend", materialRowHtml()); bindBuilders(); };
+  detail.querySelector("#add-finishing-row").onclick = () => { detail.querySelector("#finishing-rows").insertAdjacentHTML("beforeend", finishingRowHtml()); bindBuilders(); };
+  detail.querySelector("#cancel-master").onclick = () => dialog.close(); bindBuilders(); refreshMargins();
+  form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const payload = { ...values, active: form.elements.active.checked, featured: form.elements.featured.checked, wholesaleEnabled: form.elements.wholesaleEnabled.checked, widths: values.widths.split(",").map((value) => value.trim()).filter(Boolean), machineIds: [...form.querySelectorAll('input[name="machineId"]:checked')].map((input) => input.value), materialSources: [...form.querySelectorAll("[data-material-row]")].map((row) => ({ materialId: row.querySelector("[data-material-id]").value, quantity: row.querySelector("[data-material-qty]").value, wastePercent: row.querySelector("[data-material-waste]").value })).filter((item) => item.materialId), finishing: [...form.querySelectorAll("[data-finishing-row]")].map((row) => ({ name: row.querySelector("[data-finishing-name]").value, price: row.querySelector("[data-finishing-price]").value, rule: row.querySelector("[data-finishing-rule]").value })).filter((item) => item.name.trim()), priceTiers: [...form.querySelectorAll("[data-tier-row]")].map((row) => ({ min: row.querySelector("[data-tier-min]").value, max: row.querySelector("[data-tier-max]").value, price: row.querySelector("[data-tier-price]").value })) }; try { await api(product ? `/api/products/${product.id}` : "/api/products", { method: product ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Produk berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+}
+
 function renderStock() {
-  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head"><h2>Stok per Lebar Roll</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>Lebar</th><th>Stok</th><th>Update</th><th></th></tr></thead><tbody>${state.inventory.map((item) => `<tr><td><strong>${item.productName}</strong></td><td>${item.width == null ? "—" : item.width + " m"}</td><td class="${item.quantity < 0 ? "stock-negative" : ""}">${item.quantity.toLocaleString("id-ID")} ${item.unit}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td><td><button class="secondary" data-adjust="${item.sku}">Sesuaikan</button></td></tr>`).join("")}</tbody></table></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${move.productName}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${move.orderCode}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
+  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head"><h2>Stok Bahan</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Update</th><th></th></tr></thead><tbody>${state.inventory.map((item) => `<tr><td><strong>${item.productName}</strong></td><td>${escapeHtml(item.sku)}</td><td class="${Number(item.quantity) <= Number(item.minStock || 0) ? "stock-negative" : ""}">${Number(item.quantity).toLocaleString("id-ID")} ${item.unit}</td><td>${Number(item.minStock || 0).toLocaleString("id-ID")} ${item.unit}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td><td><button class="secondary" data-adjust="${item.sku}">Sesuaikan</button></td></tr>`).join("")}</tbody></table></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${move.productName}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${move.orderCode}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
   document.querySelectorAll("[data-adjust]").forEach((button) => button.onclick = async () => {
-    const change = window.prompt("Masukkan perubahan stok meter lari. Contoh: 50 atau -2.5");
+    const change = window.prompt("Masukkan perubahan stok. Contoh: 50 atau -2.5");
     if (!change) return;
     const reason = window.prompt("Alasan penyesuaian:", "Stok awal / stok masuk");
     try { await api(`/api/inventory/${button.dataset.adjust}`, { method: "PATCH", body: JSON.stringify({ change, reason }) }); await load(); toast("Stok diperbarui"); } catch (error) { toast(error.message, "error"); }
