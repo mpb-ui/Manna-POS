@@ -77,6 +77,19 @@ function normalizeTiers(body, retailPrice) {
   return tiers.slice(0, 10);
 }
 
+function normalizeDiscount(body) {
+  const source = body.discount || {};
+  const enabled = Boolean(source.enabled);
+  const type = source.type === "nominal" ? "nominal" : "percent";
+  const value = Math.max(0, Number(source.value || 0));
+  const startsAt = text(source.startsAt);
+  const endsAt = text(source.endsAt);
+  if (enabled && !value) throw new Error("Nilai diskon wajib diisi saat promo diaktifkan");
+  if (type === "percent" && value > 100) throw new Error("Diskon persentase maksimal 100%");
+  if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) throw new Error("Waktu selesai promo harus setelah waktu mulai");
+  return { enabled, type, value, startsAt, endsAt };
+}
+
 function normalizeOrder(order) {
   order.designPic ||= "";
   order.paidAmount = Number(order.paidAmount || 0);
@@ -97,7 +110,7 @@ app.get("/api/bootstrap", async (_req, res, next) => {
   try {
     const state = await store.read();
     state.orders.forEach(normalizeOrder);
-    res.json({ products: state.products.filter((item) => item.active !== false), allProducts: state.products, materials: state.materials, machines: state.machines, orders: state.orders, inventory: state.inventory, stockMovements: state.stockMovements.slice(0, 50), statusLabels: STATUS_LABEL });
+    res.json({ products: state.products.filter((item) => item.active !== false), allProducts: state.products, materials: state.materials, finishings: state.finishings, machines: state.machines, orders: state.orders, inventory: state.inventory, stockMovements: state.stockMovements.slice(0, 50), statusLabels: STATUS_LABEL });
   } catch (error) { next(error); }
 });
 
@@ -129,6 +142,36 @@ app.put("/api/materials/:id", async (req, res, next) => {
       const stock = state.inventory.find((item) => item.sku === oldSku || item.materialId === material.id);
       if (stock) Object.assign(stock, { sku, materialId: material.id, productName: name, minStock: material.minStock, unit, updatedAt: now() });
       return material;
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+app.post("/api/finishings", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
+      const categories = [...new Set(req.body.categories || [])].map(text).filter(Boolean);
+      if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
+      unique(state, "finishings", "code", code); unique(state, "finishings", "name", name);
+      const finishing = { id: identifier("fin", code), code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false };
+      state.finishings.push(finishing); return finishing;
+    });
+    res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+app.put("/api/finishings/:id", async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const finishing = state.finishings.find((item) => item.id === req.params.id);
+      if (!finishing) throw new Error("Finishing tidak ditemukan");
+      const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
+      const categories = [...new Set(req.body.categories || [])].map(text).filter(Boolean);
+      if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
+      unique(state, "finishings", "code", code, finishing.id); unique(state, "finishings", "name", name, finishing.id);
+      Object.assign(finishing, { code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false });
+      return finishing;
     });
     res.json(result);
   } catch (error) { next(error); }
@@ -181,7 +224,9 @@ function saveProduct(state, body, current = null) {
   const machineIds = [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
   if (!machineIds.length) throw new Error("Pilih minimal satu mesin");
   const unitLabels = { pcs: "/pcs", lbr: "/lembar", "m²": "/m²", pack: "/pack", rim: "/rim", set: "/set", "m lari": "/m lari" };
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category: text(body.category), baseCost, price, priceBasis, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), materialSources, machineIds, finishing: (body.finishing || []).map((item, index) => ({ id: item.id || identifier(`finish-${index + 1}`, item.name), name: text(item.name), price: Math.max(0, Number(item.price || 0)), rule: text(item.rule) || "free" })).filter((item) => item.name) };
+  const finishingIds = [...new Set(body.finishingIds || [])].filter((id) => state.finishings.some((item) => item.id === id && item.active !== false && item.categories.includes(text(body.category))));
+  const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category: text(body.category), baseCost, price, priceBasis, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;

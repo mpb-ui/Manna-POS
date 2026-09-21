@@ -1,12 +1,21 @@
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
+function localDateTimeInput(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
+}
+function makassarInputToIso(value) { return value ? new Date(`${value}:00+08:00`).toISOString() : ""; }
 const productCategories = [
   ["all", "Semua"], ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
   ["lf-sticker", "LF Sticker"], ["display-banner", "Display & Banner"],
   ["merchandise", "Merchandise"], ["atk", "ATK"]
 ];
 const state = {
-  products: [], allProducts: [], materials: [], machines: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
+  products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", editingOrderId: null,
   masterTab: "products",
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" }
@@ -63,13 +72,26 @@ function render() {
 }
 
 function selectedProduct() { return state.products.find((p) => p.id === state.selectedProduct); }
+function discountActive(product, at = new Date()) {
+  const discount = product?.discount;
+  if (!discount?.enabled || Number(discount.value || 0) <= 0) return false;
+  const timestamp = at.getTime();
+  return (!discount.startsAt || timestamp >= new Date(discount.startsAt).getTime()) && (!discount.endsAt || timestamp <= new Date(discount.endsAt).getTime());
+}
+function promoPrice(product, price) {
+  if (!discountActive(product)) return Number(price || 0);
+  const value = Number(product.discount.value || 0);
+  return product.discount.type === "nominal" ? Math.max(0, Number(price) - value) : Math.max(0, Math.round(Number(price) * (1 - Math.min(value, 100) / 100)));
+}
+function discountLabel(product) { return product.discount?.type === "nominal" ? `Hemat ${rupiah.format(product.discount.value)}` : `Diskon ${Number(product.discount?.value || 0)}%`; }
 function billedLength(value) { return Math.max(1, Math.ceil(Number(value || 1) * 2 - 1e-9) / 2); }
 function productBase(product, width, length, quantity) {
   const billed = billedLength(length);
   const units = product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
   const tier = product.wholesaleEnabled ? (product.priceTiers || []).filter((item) => Number(item.min) <= quantity && (item.max == null || item.max === "" || quantity <= Number(item.max))).sort((a, b) => Number(b.min) - Number(a.min))[0] : null;
-  const unitPrice = Number(tier?.price ?? product.price);
-  return { billed, total: units * unitPrice, unitPrice, tier };
+  const originalUnitPrice = Number(tier?.price ?? product.price);
+  const unitPrice = promoPrice(product, originalUnitPrice);
+  return { billed, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
 }
 function suggestedFinishUnits(finish, width, length) {
   if (finish.rule === "free") return 1;
@@ -113,22 +135,37 @@ function productCardsHtml(products) {
     <input type="radio" id="p-${product.id}" name="product" value="${product.id}" ${product.id === state.selectedProduct ? "checked" : ""}>
     <label for="p-${product.id}">
       ${recommended ? `<span class="product-category">${escapeHtml(product.category)}</span>` : ""}
-      <strong>${escapeHtml(product.name)}</strong><small>${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}</small>
+      ${discountActive(product) ? '<span class="discount-badge">DISKON</span>' : ""}<strong>${escapeHtml(product.name)}</strong><small>${discountActive(product) ? `<s>${rupiah.format(product.price)}</s> <b>${rupiah.format(promoPrice(product, product.price))}</b>` : rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}</small>
       ${recommended ? `<em>★ ${escapeHtml(product.recommendation || "Produk pilihan")}</em>` : ""}
     </label>
   </div>`).join("");
 }
 
-function productConfigurationHtml(product) {
+function catalogCardHtml(product, promo = false) {
+  return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}">
+    <div class="catalog-card-top"><span>${escapeHtml(product.category)}</span>${promo ? '<b>DISKON</b>' : '<b>TERLARIS</b>'}</div>
+    <strong>${escapeHtml(product.name)}</strong><p>${escapeHtml(product.recommendation || (promo ? discountLabel(product) : "Produk pilihan"))}</p>
+    <div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong>`}<small>${escapeHtml(product.unitLabel)}</small></div>
+  </button>`;
+}
+
+function allCatalogHtml() {
+  const bestsellers = state.products.filter((product) => product.featured);
+  const promos = state.products.filter((product) => discountActive(product));
+  return `<div class="catalog-section"><div class="catalog-heading"><div><span>A</span><div><h3>Produk Terlaris</h3><p>Produk yang paling sering dipilih kasir.</p></div></div><b>${bestsellers.length} produk</b></div><div class="catalog-grid">${bestsellers.map((product) => catalogCardHtml(product)).join("") || '<div class="catalog-empty">Belum ada produk terlaris.</div>'}</div></div>
+    <div class="catalog-section promo-section"><div class="catalog-heading"><div><span>B</span><div><h3>Produk Sedang Promo</h3><p>Promo aktif akan hilang otomatis setelah periodenya berakhir.</p></div></div><b>${promos.length} promo aktif</b></div><div class="catalog-grid">${promos.map((product) => catalogCardHtml(product, true)).join("") || '<div class="catalog-empty">Belum ada promo yang sedang aktif.</div>'}</div></div>`;
+}
+
+function productConfigurationHtml(product, popup = false) {
   const isUnit = product.priceBasis === "unit";
   const measurement = isUnit
     ? `<div class="form-grid"><label class="field"><span>Jumlah ${escapeHtml(product.unitName || "unit")}</span><input id="quantity" type="number" min="1" step="1" value="1"></label></div>`
     : `<div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual (m)</span><input id="length" type="number" min="0.1" step="0.1" value="1"></label><label class="field"><span>Jumlah produk</span><input id="quantity" type="number" min="1" step="1" value="1"></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" value="1 m" disabled></div></div>`;
-  return `<hr class="divider"><p class="section-label">2 · Ukuran & jumlah</p>${measurement}
+  return `<hr class="divider"><p class="section-label">${popup ? "Ukuran & jumlah" : "2 · Ukuran & jumlah"}</p>${measurement}
     <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
-    <hr class="divider"><p class="section-label">3 · Finishing</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
-    <hr class="divider"><label class="field"><span class="section-label">4 · Catatan</span><textarea id="production-note" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label>
+    <hr class="divider"><p class="section-label">${popup ? "Finishing" : "3 · Finishing"}</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
+    <hr class="divider"><label class="field"><span class="section-label">${popup ? "Catatan" : "4 · Catatan"}</span><textarea id="production-note" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label>
     <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary">+ Tambah ke Pesanan</button></div>`;
 }
 
@@ -137,8 +174,8 @@ function renderPos() {
   if (!visibleProducts.some((product) => product.id === state.selectedProduct)) state.selectedProduct = visibleProducts[0]?.id || null;
   const product = selectedProduct();
   const categoryTabs = productCategories.map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${label}</button>`).join("");
-  const intro = state.selectedCategory === "all" ? `<div class="recommendation-head"><div><h3>Rekomendasi untuk kasir</h3><p>Produk relevan berdasarkan bestseller dan aktivitas operasional.</p></div><span class="recommendation-chip">Terlaris</span></div>` : '<p class="section-label">1 · Pilih bahan</p>';
-  const productContent = visibleProducts.length
+  const intro = '<p class="section-label">1 · Pilih bahan</p>';
+  const productContent = state.selectedCategory === "all" ? allCatalogHtml() : visibleProducts.length
     ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${productConfigurationHtml(product)}`
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories.find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid">
@@ -148,7 +185,7 @@ function renderPos() {
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
   bindPos();
-  if (product) updatePreview();
+  if (product && state.selectedCategory !== "all") updatePreview();
 }
 
 function cartHtml() {
@@ -181,7 +218,7 @@ function readCurrentLine() {
   });
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed,
-    quantity, unitPrice: base.unitPrice, finishing,
+    quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
     finishingNames: finishing.map((f) => {
       const finish = product.finishing.find((x) => x.id === f.id);
       return `${finish?.name} × ${f.units}`;
@@ -199,8 +236,8 @@ function updatePreview() {
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
   document.querySelector("#formula-text").textContent = product.priceBasis === "unit"
-    ? `${line.quantity} ${product.unitName || "unit"}${line.unitPrice !== product.price ? ` · Grosir ${rupiah.format(line.unitPrice)}/${product.unitName || "unit"}` : ""}`
-    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.unitPrice !== product.price ? ` · Grosir ${rupiah.format(line.unitPrice)} ${product.unitLabel}` : ""}`;
+    ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
+    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
 }
 
 function toggleFinishing(input) {
@@ -278,14 +315,7 @@ function bindProductSearch() {
   };
 }
 
-function bindPos() {
-  bindProductSearch();
-  document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => {
-    syncDraft(document.querySelector("#checkout"));
-    state.selectedCategory = button.dataset.category;
-    renderPos();
-  }));
-  document.querySelectorAll('input[name="product"]').forEach((input) => input.addEventListener("change", () => { state.selectedProduct = input.value; renderPos(); }));
+function bindProductConfiguration(onAdd) {
   document.querySelectorAll('#length,#quantity,input[name="width"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
@@ -298,11 +328,37 @@ function bindPos() {
     const input = document.querySelector(`[data-finish-qty="${button.dataset.plus}"]`);
     input.value = Number(input.value || 0) + 1; updatePreview();
   });
-  const addItem = document.querySelector("#add-item");
-  if (addItem) addItem.onclick = () => {
-    const line = readCurrentLine(); state.cart.push(line);
+  document.querySelector("#add-item")?.addEventListener("click", () => onAdd(readCurrentLine()));
+}
+
+function openProductConfigurator(productId) {
+  const product = state.products.find((item) => item.id === productId);
+  if (!product) return;
+  syncDraft(document.querySelector("#checkout"));
+  state.selectedProduct = product.id;
+  dialog.classList.add("configurator-dialog");
+  const detail = document.querySelector("#order-detail");
+  detail.innerHTML = `<div class="detail-head configurator-head"><div><span class="product-category">${escapeHtml(product.category)}</span><h2>${escapeHtml(product.name)}</h2><p>${discountActive(product) ? `<span class="discount-badge">DISKON</span> ${escapeHtml(discountLabel(product))}` : `${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}`}</p></div><button class="detail-close">×</button></div><div class="detail-body configurator-body">${productConfigurationHtml(product, true)}</div>`;
+  detail.querySelector(".detail-close").onclick = () => dialog.close();
+  dialog.onclose = () => { dialog.classList.remove("configurator-dialog"); dialog.onclose = null; };
+  dialog.showModal();
+  bindProductConfiguration((line) => { state.cart.push(line); dialog.close(); renderPos(); toast("Produk ditambahkan"); });
+  updatePreview();
+}
+
+function bindPos() {
+  bindProductSearch();
+  document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => {
+    syncDraft(document.querySelector("#checkout"));
+    state.selectedCategory = button.dataset.category;
+    renderPos();
+  }));
+  document.querySelectorAll("[data-config-product]").forEach((button) => button.addEventListener("click", () => openProductConfigurator(button.dataset.configProduct)));
+  document.querySelectorAll('input[name="product"]').forEach((input) => input.addEventListener("change", () => { state.selectedProduct = input.value; renderPos(); }));
+  bindProductConfiguration((line) => {
+    state.cart.push(line);
     syncDraft(document.querySelector("#checkout")); renderPos(); toast("Produk ditambahkan");
-  };
+  });
   document.querySelectorAll("[data-remove]").forEach((button) => button.onclick = () => {
     syncDraft(document.querySelector("#checkout")); state.cart.splice(Number(button.dataset.remove), 1); renderPos();
   });
@@ -467,36 +523,44 @@ function printOrder(order, type) {
 }
 
 function masterHeader(title) {
-  const labels = { products: "Produk", materials: "Bahan", machines: "Mesin" };
+  const labels = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin" };
   return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, dan harga jual POS.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
     <div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>
     <div class="master-tabs">${Object.entries(labels).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
 }
 
 function renderMaster() {
-  const title = { products: "Produk", materials: "Bahan", machines: "Mesin" }[state.masterTab];
+  const title = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin" }[state.masterTab];
   const productRows = state.allProducts.map((product) => {
     const materials = (product.materialSources || []).map((source) => source.name).filter(Boolean).join(", ") || "—";
     const machines = (product.machineIds || []).map((id) => state.machines.find((item) => item.id === id)?.name).filter(Boolean).join(", ") || "—";
-    return `<tr><td><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.sku || "—")}</small></td><td>${escapeHtml(product.category)}</td><td>${escapeHtml(product.saleUnit || product.unitName || "—")}</td><td class="compact-cell">${escapeHtml(materials)}</td><td class="compact-cell">${escapeHtml(machines)}</td><td><strong>${rupiah.format(product.price)}</strong>${product.wholesaleEnabled ? '<small class="blue-text">Harga grosir aktif</small>' : ""}</td><td><span class="badge ${product.active === false ? "warn" : "ok"}">${product.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-product="${product.id}">Edit</button></td></tr>`;
+    return `<tr data-master-row data-category="${escapeHtml(product.category)}" data-machines="${escapeHtml((product.machineIds || []).join(","))}" data-promo="${discountActive(product)}"><td><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.sku || "—")}</small></td><td>${escapeHtml(product.category)}</td><td>${escapeHtml(product.saleUnit || product.unitName || "—")}</td><td class="compact-cell">${escapeHtml(materials)}</td><td class="compact-cell">${escapeHtml(machines)}</td><td><strong>${rupiah.format(product.price)}</strong>${product.wholesaleEnabled ? '<small class="blue-text">Harga grosir aktif</small>' : ""}${discountActive(product) ? `<small class="promo-text">DISKON · ${escapeHtml(discountLabel(product))}</small>` : ""}</td><td><span class="badge ${product.active === false ? "warn" : "ok"}">${product.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-product="${product.id}">Edit</button></td></tr>`;
   }).join("");
   const materialRows = state.materials.map((material) => {
     const stock = state.inventory.find((item) => item.materialId === material.id || item.sku === material.sku);
     return `<tr><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small></td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}</td><td class="${Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(material.unit)}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
   }).join("");
   const machineRows = state.machines.map((machine) => `<tr><td><strong>${escapeHtml(machine.name)}</strong><small>${escapeHtml(machine.code)}</small></td><td>${escapeHtml(machine.type)}</td><td>${escapeHtml(machine.capacity || "—")}</td><td>${rupiah.format(machine.costPerHour)}/jam</td><td><span class="badge ${machine.status === "AKTIF" ? "ok" : "warn"}">${escapeHtml(machine.status)}</span></td><td><button class="secondary" data-edit-machine="${machine.id}">Edit</button></td></tr>`).join("");
+  const finishingRows = state.finishings.map((finishing) => `<tr><td><strong>${escapeHtml(finishing.name)}</strong><small>${escapeHtml(finishing.code)}</small></td><td class="compact-cell">${(finishing.categories || []).map((category) => `<span class="mini-chip">${escapeHtml(category)}</span>`).join(" ")}</td><td>${rupiah.format(finishing.price)}</td><td>${escapeHtml({ free: "Per unit", point: "Per titik", perimeter: "Keliling", top_bottom: "Atas–bawah", left_right: "Kanan–kiri", length: "Meter lari" }[finishing.rule] || finishing.rule)}</td><td><span class="badge ${finishing.active === false ? "warn" : "ok"}">${finishing.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-finishing="${finishing.id}">Edit</button></td></tr>`).join("");
   const tables = {
     products: `<table><thead><tr><th>Produk</th><th>Kategori</th><th>Satuan</th><th>Bahan terkait</th><th>Mesin</th><th>Harga jual</th><th>Status</th><th></th></tr></thead><tbody>${productRows}</tbody></table>`,
     materials: `<table><thead><tr><th>Bahan</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Harga dasar</th><th>Supplier</th><th>Status</th><th></th></tr></thead><tbody>${materialRows}</tbody></table>`,
+    finishings: `<table><thead><tr><th>Finishing</th><th>Kategori sesuai</th><th>Harga</th><th>Perhitungan</th><th>Status</th><th></th></tr></thead><tbody>${finishingRows}</tbody></table>`,
     machines: `<table><thead><tr><th>Mesin</th><th>Jenis</th><th>Kapasitas</th><th>Biaya</th><th>Status</th><th></th></tr></thead><tbody>${machineRows}</tbody></table>`
   };
-  root.innerHTML = `<div class="master-page">${masterHeader(title)}<section class="panel"><div class="panel-head"><h2>Daftar ${title}</h2><input id="master-search" class="search" placeholder="Cari ${title.toLowerCase()}…"></div><div class="table-wrap master-table">${tables[state.masterTab]}</div></section></div>`;
+  const productFilters = state.masterTab === "products" ? `<select id="filter-category" class="filter-select"><option value="">Semua kategori</option>${productCategories.filter(([id]) => id !== "all").map(([, label]) => `<option>${label}</option>`).join("")}</select><select id="filter-machine" class="filter-select"><option value="">Semua mesin</option>${state.machines.map((machine) => `<option value="${machine.id}">${escapeHtml(machine.name)}</option>`).join("")}</select><button id="filter-promo" class="filter-chip" type="button">✦ Diskon</button>` : "";
+  root.innerHTML = `<div class="master-page">${masterHeader(title)}<section class="panel"><div class="panel-head master-list-head"><h2>Daftar ${title}</h2><div class="master-filters"><input id="master-search" class="search" placeholder="Cari ${title.toLowerCase()}…">${productFilters}</div></div><div class="table-wrap master-table">${tables[state.masterTab]}</div></section></div>`;
   document.querySelectorAll("[data-master-tab]").forEach((button) => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
-  document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : openMachineForm();
+  document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : state.masterTab === "finishings" ? openFinishingForm() : openMachineForm();
   document.querySelectorAll("[data-edit-product]").forEach((button) => button.onclick = () => openProductForm(state.allProducts.find((item) => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-material]").forEach((button) => button.onclick = () => openMaterialForm(state.materials.find((item) => item.id === button.dataset.editMaterial)));
+  document.querySelectorAll("[data-edit-finishing]").forEach((button) => button.onclick = () => openFinishingForm(state.finishings.find((item) => item.id === button.dataset.editFinishing)));
   document.querySelectorAll("[data-edit-machine]").forEach((button) => button.onclick = () => openMachineForm(state.machines.find((item) => item.id === button.dataset.editMachine)));
-  document.querySelector("#master-search").oninput = (event) => document.querySelectorAll(".master-table tbody tr").forEach((row) => row.classList.toggle("hidden", !row.textContent.toLowerCase().includes(event.target.value.toLowerCase())));
+  let promoOnly = false;
+  const applyFilters = () => { const query = document.querySelector("#master-search").value.toLowerCase(); const category = document.querySelector("#filter-category")?.value || ""; const machine = document.querySelector("#filter-machine")?.value || ""; document.querySelectorAll(".master-table tbody tr").forEach((row) => { const matches = row.textContent.toLowerCase().includes(query) && (!category || row.dataset.category === category) && (!machine || (row.dataset.machines || "").split(",").includes(machine)) && (!promoOnly || row.dataset.promo === "true"); row.classList.toggle("hidden", !matches); }); };
+  document.querySelector("#master-search").oninput = applyFilters;
+  document.querySelector("#filter-category")?.addEventListener("change", applyFilters); document.querySelector("#filter-machine")?.addEventListener("change", applyFilters);
+  document.querySelector("#filter-promo")?.addEventListener("click", (event) => { promoOnly = !promoOnly; event.currentTarget.classList.toggle("active", promoOnly); applyFilters(); });
 }
 
 function showMasterDialog(title, body) {
@@ -523,6 +587,17 @@ function openMaterialForm(material = null) {
   detail.querySelector("#material-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.active = event.target.elements.active.checked; try { await api(material ? `/api/materials/${material.id}` : "/api/materials", { method: material ? "PUT" : "POST", body: JSON.stringify(values) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "materials"; render(); toast("Bahan berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
+function openFinishingForm(finishing = null) {
+  const categories = productCategories.filter(([id]) => id !== "all").map(([, label]) => label);
+  const rules = [["free", "Per unit"], ["point", "Per titik"], ["perimeter", "Keliling"], ["top_bottom", "Atas–bawah"], ["left_right", "Kanan–kiri"], ["length", "Meter lari"]];
+  const detail = showMasterDialog(finishing ? "Edit Finishing" : "Tambah Finishing", `<form id="finishing-form" class="master-form"><div class="form-grid">
+    <label class="field"><span>Nama finishing *</span><input name="name" value="${escapeHtml(finishing?.name || "")}" required></label><label class="field"><span>Kode finishing *</span><input name="code" value="${escapeHtml(finishing?.code || "")}" required></label>
+    <label class="field"><span>Harga / unit</span><input name="price" type="number" min="0" value="${finishing?.price || 0}"></label><label class="field"><span>Dasar perhitungan</span><select name="rule">${rules.map(([value, label]) => `<option value="${value}" ${finishing?.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+    <div class="field full"><span>Kategori yang sesuai *</span><div class="category-checks">${categories.map((category) => `<label><input type="checkbox" name="category" value="${category}" ${(finishing?.categories || []).includes(category) ? "checked" : ""}><span>${category}</span></label>`).join("")}</div><small>Finishing hanya akan muncul saat menambahkan produk dalam kategori yang dipilih.</small></div>
+  </div><div class="form-footer">${switchHtml("active", finishing?.active !== false)}<button class="primary" type="submit">Simpan Finishing</button></div></form>`);
+  detail.querySelector("#finishing-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); const payload = { ...values, active: event.target.elements.active.checked, categories: [...event.target.querySelectorAll('input[name="category"]:checked')].map((input) => input.value) }; try { await api(finishing ? `/api/finishings/${finishing.id}` : "/api/finishings", { method: finishing ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "finishings"; render(); toast("Finishing berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+}
+
 function openMachineForm(machine = null) {
   const detail = showMasterDialog(machine ? "Edit Mesin" : "Tambah Mesin", `<form id="machine-form" class="master-form"><div class="form-grid">
     <label class="field"><span>Nama mesin *</span><input name="name" value="${escapeHtml(machine?.name || "")}" required></label><label class="field"><span>Kode mesin *</span><input name="code" value="${escapeHtml(machine?.code || "")}" required></label>
@@ -544,11 +619,18 @@ function finishingRowHtml(item = {}) {
   return `<div class="builder-row finishing-builder" data-finishing-row><input data-finishing-name value="${escapeHtml(item.name || "")}" placeholder="Nama finishing"><input data-finishing-price type="number" min="0" value="${item.price || 0}" placeholder="Harga"><select data-finishing-rule>${[["free","Per unit"],["point","Per titik"],["perimeter","Keliling"],["top_bottom","Atas–bawah"],["left_right","Kanan–kiri"],["length","Meter lari"]].map(([value,label]) => `<option value="${value}" ${item.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select><button type="button" data-remove-builder>×</button></div>`;
 }
 
+function finishingOptionsHtml(category, selectedIds = []) {
+  const options = state.finishings.filter((item) => item.active !== false && (item.categories || []).includes(category));
+  return options.length ? options.map((item) => `<label class="finishing-master-option"><input type="checkbox" name="finishingId" value="${item.id}" ${selectedIds.includes(item.id) ? "checked" : ""}><span><strong>${escapeHtml(item.name)}</strong><small>${item.price ? rupiah.format(item.price) : "Gratis"} · ${escapeHtml({ free: "per unit", point: "per titik", perimeter: "keliling", top_bottom: "atas–bawah", left_right: "kanan–kiri", length: "meter lari" }[item.rule] || item.rule)}</small></span></label>`).join("") : '<p class="empty-inline">Belum ada finishing aktif untuk kategori ini. Tambahkan melalui tab Finishing.</p>';
+}
+
 function openProductForm(product = null) {
   const defaultTiers = product?.priceTiers?.length ? product.priceTiers : [{ min: 1, max: 1, price: product?.price || 10000 }, { min: 2, max: 10, price: product?.price ? Math.round(product.price * .9) : 9000 }, { min: 11, max: 50, price: product?.price ? Math.round(product.price * .8) : 8000 }];
   const sources = product?.materialSources?.length ? product.materialSources : [{}];
-  const finishings = product?.finishing?.length ? product.finishing : [{}];
   const categories = productCategories.filter(([id]) => id !== "all").map(([, label]) => label);
+  const initialCategory = product?.category || categories[0];
+  const selectedFinishingIds = product?.finishingIds || [];
+  const discount = product?.discount || { enabled: false, type: "percent", value: 0, startsAt: "", endsAt: "" };
   const detail = showMasterDialog(product ? "Edit Produk" : "Tambah Produk", `<form id="product-form" class="master-form product-form"><div class="product-form-grid"><section><p class="section-label">Informasi produk</p><div class="form-grid">
     <label class="field"><span>Nama produk *</span><input name="name" value="${escapeHtml(product?.name || "")}" required></label><label class="field"><span>SKU produk *</span><input name="sku" value="${escapeHtml(product?.sku || "")}" required></label>
     <label class="field"><span>Kategori *</span><select name="category">${categories.map((category) => `<option ${product?.category === category ? "selected" : ""}>${category}</option>`).join("")}</select></label><label class="field"><span>Satuan jual *</span><select name="saleUnit">${["pcs", "lbr", "m²", "m lari", "pack", "rim", "set"].map((unit) => `<option ${product?.saleUnit === unit || product?.unitName === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label>
@@ -558,7 +640,8 @@ function openProductForm(product = null) {
   </div><div class="toggle-group">${switchHtml("active", product?.active !== false)}${switchHtml("featured", Boolean(product?.featured), "Tampilkan di Semua")}</div></section>
   <section><p class="section-label">Kebutuhan produksi</p><div class="builder-card"><div class="builder-head"><strong>Sumber bahan *</strong><button id="add-material-row" class="text-button" type="button">+ Tambah Bahan</button></div><div id="material-rows">${sources.map(materialRowHtml).join("")}</div><small>Jumlah pemakaian dihitung per satuan jual. Stok berkurang saat status Selesai.</small></div>
   <div class="builder-card"><div class="builder-head"><strong>Mesin yang digunakan *</strong></div><div class="machine-options">${state.machines.map((machine) => `<label><input type="checkbox" name="machineId" value="${machine.id}" ${(product?.machineIds || []).includes(machine.id) ? "checked" : ""}><span>${escapeHtml(machine.name)}</span></label>`).join("")}</div></div>
-  <div class="builder-card"><div class="builder-head"><strong>Finishing / Add-on</strong><button id="add-finishing-row" class="text-button" type="button">+ Tambah Finishing</button></div><div id="finishing-rows">${finishings.map(finishingRowHtml).join("")}</div></div></section></div>
+  <div class="builder-card"><div class="builder-head"><div><strong>Finishing / Add-on</strong><p>Otomatis difilter berdasarkan kategori produk.</p></div><button id="manage-finishing" class="text-button" type="button">Kelola Finishing</button></div><div id="finishing-options" class="finishing-master-grid">${finishingOptionsHtml(initialCategory, selectedFinishingIds)}</div></div></section></div>
+  <section class="wholesale-card discount-editor"><div class="builder-head"><div><strong>Promo / Diskon Produk</strong><p>Label DISKON dan harga promo aktif otomatis selama periode promo.</p></div>${switchHtml("discountEnabled", Boolean(discount.enabled), "Aktif")}</div><div id="discount-fields" class="form-grid ${discount.enabled ? "" : "disabled-section"}"><label class="field"><span>Jenis diskon</span><select name="discountType"><option value="percent" ${discount.type !== "nominal" ? "selected" : ""}>Persentase (%)</option><option value="nominal" ${discount.type === "nominal" ? "selected" : ""}>Nominal (Rp)</option></select></label><label class="field"><span>Nilai diskon</span><input name="discountValue" type="number" min="0" value="${discount.value || 0}"></label><label class="field"><span>Mulai promo (WITA)</span><input name="discountStartsAt" type="datetime-local" value="${escapeHtml(localDateTimeInput(discount.startsAt))}"></label><label class="field"><span>Selesai promo (WITA)</span><input name="discountEndsAt" type="datetime-local" value="${escapeHtml(localDateTimeInput(discount.endsAt))}"></label></div></section>
   <section class="wholesale-card"><div class="builder-head"><div><strong>Harga Grosir</strong><p>Harga berubah otomatis berdasarkan jumlah pesanan.</p></div>${switchHtml("wholesaleEnabled", Boolean(product?.wholesaleEnabled))}</div><div id="tier-editor" class="${product?.wholesaleEnabled ? "" : "disabled-section"}"><div class="tier-head"><span>Tingkat</span><span>Min. Qty</span><span>Maks. Qty</span><span>Harga / Unit</span><span>Margin</span><span>Aksi</span></div><div id="tier-rows">${defaultTiers.map(tierRowHtml).join("")}</div><div class="tier-footer"><small>Maksimal 10 tingkat harga · Rentang tidak boleh tumpang tindih.</small><button id="add-tier" class="secondary" type="button">+ Tambah Tingkat Harga <b id="tier-count">${defaultTiers.length}/10</b></button></div></div></section>
   <div class="form-footer"><button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan Produk</button></div></form>`);
   const form = detail.querySelector("#product-form");
@@ -566,11 +649,13 @@ function openProductForm(product = null) {
   const bindBuilders = () => { detail.querySelectorAll("[data-remove-builder]").forEach((button) => button.onclick = () => button.closest(".builder-row").remove()); detail.querySelectorAll("[data-remove-tier]").forEach((button) => button.onclick = () => { if (detail.querySelectorAll("[data-tier-row]").length <= 1) return; button.closest(".tier-row").remove(); [...detail.querySelectorAll("[data-tier-row]")].forEach((row, index) => row.querySelector("b").textContent = index + 1); detail.querySelector("#tier-count").textContent = `${detail.querySelectorAll("[data-tier-row]").length}/10`; refreshMargins(); }); detail.querySelectorAll("[data-tier-price]").forEach((input) => input.oninput = refreshMargins); };
   form.elements.baseCost.oninput = refreshMargins; form.elements.price.oninput = refreshMargins;
   form.elements.wholesaleEnabled.onchange = () => detail.querySelector("#tier-editor").classList.toggle("disabled-section", !form.elements.wholesaleEnabled.checked);
+  form.elements.discountEnabled.onchange = () => detail.querySelector("#discount-fields").classList.toggle("disabled-section", !form.elements.discountEnabled.checked);
+  form.elements.category.onchange = () => { const checked = [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value); detail.querySelector("#finishing-options").innerHTML = finishingOptionsHtml(form.elements.category.value, checked); };
   detail.querySelector("#add-tier").onclick = () => { const rows = detail.querySelector("#tier-rows"); const count = rows.children.length; if (count >= 10) return toast("Maksimal 10 tingkat harga", "error"); rows.insertAdjacentHTML("beforeend", tierRowHtml({ min: count * 10 + 1, max: (count + 1) * 10, price: form.elements.price.value }, count)); detail.querySelector("#tier-count").textContent = `${count + 1}/10`; bindBuilders(); refreshMargins(); };
   detail.querySelector("#add-material-row").onclick = () => { detail.querySelector("#material-rows").insertAdjacentHTML("beforeend", materialRowHtml()); bindBuilders(); };
-  detail.querySelector("#add-finishing-row").onclick = () => { detail.querySelector("#finishing-rows").insertAdjacentHTML("beforeend", finishingRowHtml()); bindBuilders(); };
+  detail.querySelector("#manage-finishing").onclick = () => { dialog.close(); state.masterTab = "finishings"; renderMaster(); };
   detail.querySelector("#cancel-master").onclick = () => dialog.close(); bindBuilders(); refreshMargins();
-  form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const payload = { ...values, active: form.elements.active.checked, featured: form.elements.featured.checked, wholesaleEnabled: form.elements.wholesaleEnabled.checked, widths: values.widths.split(",").map((value) => value.trim()).filter(Boolean), machineIds: [...form.querySelectorAll('input[name="machineId"]:checked')].map((input) => input.value), materialSources: [...form.querySelectorAll("[data-material-row]")].map((row) => ({ materialId: row.querySelector("[data-material-id]").value, quantity: row.querySelector("[data-material-qty]").value, wastePercent: row.querySelector("[data-material-waste]").value })).filter((item) => item.materialId), finishing: [...form.querySelectorAll("[data-finishing-row]")].map((row) => ({ name: row.querySelector("[data-finishing-name]").value, price: row.querySelector("[data-finishing-price]").value, rule: row.querySelector("[data-finishing-rule]").value })).filter((item) => item.name.trim()), priceTiers: [...form.querySelectorAll("[data-tier-row]")].map((row) => ({ min: row.querySelector("[data-tier-min]").value, max: row.querySelector("[data-tier-max]").value, price: row.querySelector("[data-tier-price]").value })) }; try { await api(product ? `/api/products/${product.id}` : "/api/products", { method: product ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Produk berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+  form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const payload = { ...values, active: form.elements.active.checked, featured: form.elements.featured.checked, wholesaleEnabled: form.elements.wholesaleEnabled.checked, discount: { enabled: form.elements.discountEnabled.checked, type: values.discountType, value: values.discountValue, startsAt: makassarInputToIso(values.discountStartsAt), endsAt: makassarInputToIso(values.discountEndsAt) }, widths: values.widths.split(",").map((value) => value.trim()).filter(Boolean), machineIds: [...form.querySelectorAll('input[name="machineId"]:checked')].map((input) => input.value), materialSources: [...form.querySelectorAll("[data-material-row]")].map((row) => ({ materialId: row.querySelector("[data-material-id]").value, quantity: row.querySelector("[data-material-qty]").value, wastePercent: row.querySelector("[data-material-waste]").value })).filter((item) => item.materialId), finishingIds: [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value), priceTiers: [...form.querySelectorAll("[data-tier-row]")].map((row) => ({ min: row.querySelector("[data-tier-min]").value, max: row.querySelector("[data-tier-max]").value, price: row.querySelector("[data-tier-price]").value })) }; try { await api(product ? `/api/products/${product.id}` : "/api/products", { method: product ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Produk berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
 function renderStock() {

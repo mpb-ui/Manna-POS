@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { roundBillingLength, calculateLine, allowedNextStatus, STATUS, tierPriceForQuantity } from "../lib/domain.js";
+import { roundBillingLength, calculateLine, allowedNextStatus, STATUS, tierPriceForQuantity, isDiscountActive, discountedPrice } from "../lib/domain.js";
 import { PRODUCTS } from "../lib/store.js";
 
 test("panjang ditagihkan dibulatkan per 50 cm dengan minimum 1 m", () => {
@@ -66,4 +66,21 @@ test("snapshot BOM menghitung bahan dan waste dari unit jual", () => {
   }, { quantity: 2, finishing: [] });
   assert.equal(line.materials[0].units, 1.68);
   assert.equal(line.materials[1].units, 2);
+});
+
+test("diskon hanya aktif di dalam periode promo", () => {
+  const product = { discount: { enabled: true, type: "percent", value: 10, startsAt: "2026-09-21T08:00:00Z", endsAt: "2026-09-22T08:00:00Z" } };
+  assert.equal(isDiscountActive(product, new Date("2026-09-21T12:00:00Z")), true);
+  assert.equal(isDiscountActive(product, new Date("2026-09-23T12:00:00Z")), false);
+  assert.equal(discountedPrice(product, 10000, new Date("2026-09-21T12:00:00Z")), 9000);
+  assert.equal(discountedPrice(product, 10000, new Date("2026-09-23T12:00:00Z")), 10000);
+});
+
+test("harga grosir dihitung sebelum diskon produk", () => {
+  const product = { id: "promo", name: "Promo", price: 10000, priceBasis: "unit", unitName: "pcs", widths: [], finishing: [], materialSources: [], wholesaleEnabled: true, priceTiers: [{ min: 2, max: 10, price: 9000 }], discount: { enabled: true, type: "percent", value: 10 } };
+  const line = calculateLine(product, { quantity: 5, finishing: [] });
+  assert.equal(line.originalUnitPrice, 9000);
+  assert.equal(line.unitPrice, 8100);
+  assert.equal(line.baseTotal, 40500);
+  assert.equal(line.discountApplied, true);
 });

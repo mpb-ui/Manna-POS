@@ -20,8 +20,11 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Stok baru berkurang satu kali ketika order masuk status **Selesai**.
 - Penyesuaian stok dan riwayat mutasi.
 - Master Data mandiri untuk menambah dan mengedit bahan, produk, serta mesin.
+- Master Finishing dengan relasi kategori agar pilihan finishing produk tidak perlu diketik ulang.
 - BOM multi-bahan dan relasi multi-mesin pada setiap produk.
 - Harga grosir bertingkat (3 tingkat awal, maksimum 10) dengan perhitungan otomatis di POS.
+- Promo produk terjadwal dengan diskon persen/nominal, label DISKON, dan harga otomatis.
+- Tab Semua berisi Produk Terlaris dan Promo Aktif; konfigurasi produk dibuka melalui popup.
 - Print tanda terima untuk order selesai/diambil.
 - Autentikasi PIN untuk deployment publik.
 
