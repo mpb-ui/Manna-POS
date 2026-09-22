@@ -24,7 +24,8 @@ const fileServices = [
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", editingOrderId: null,
-  masterTab: "products",
+  masterTab: "products", projectView: "list", projectSearch: "", projectDeadline: "all", projectPic: "all", projectPayment: "all", projectStatus: "all",
+  projectCollapsed: new Set(["DIAMBIL"]),
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" }
 };
 const root = document.querySelector("#view-root");
@@ -451,17 +452,103 @@ function paymentStatus(order) {
 
 function renderProjects() {
   const statuses = ["MENUNGGU_PEMBAYARAN", "DESAIN", "CETAK", "FINISHING", "SELESAI", "DIAMBIL"];
-  root.innerHTML = `<div class="toolbar-row"><input id="project-search" class="search" placeholder="Cari nomor atau pelanggan…"><button id="reload-projects" class="secondary">Muat ulang</button></div><div class="kanban-wrap"><div class="kanban">${statuses.map((status) => projectColumn(status)).join("")}</div></div>`;
-  document.querySelectorAll("[data-order]").forEach((card) => card.onclick = () => openOrder(card.dataset.order));
-  document.querySelector("#project-search").addEventListener("input", (event) => {
-    const value = event.target.value.toLowerCase();
-    document.querySelectorAll(".order-card").forEach((card) => card.classList.toggle("hidden", !card.textContent.toLowerCase().includes(value)));
-  });
+  const activeOrders = state.orders.filter((order) => !["DIAMBIL"].includes(order.status));
+  const late = activeOrders.filter((order) => projectDeadlineState(order) === "late").length;
+  const today = activeOrders.filter((order) => isProjectDeadlineToday(order)).length;
+  const noPic = activeOrders.filter((order) => !["MENUNGGU_PEMBAYARAN"].includes(order.status) && !order.designPic).length;
+  const ready = state.orders.filter((order) => order.status === "SELESAI").length;
+  root.innerHTML = `<div class="project-overview">
+      <div class="overview-card danger"><span>Terlambat</span><strong>${late}</strong></div><div class="overview-card warning"><span>Deadline hari ini</span><strong>${today}</strong></div><div class="overview-card"><span>Belum ada PIC</span><strong>${noPic}</strong></div><div class="overview-card success"><span>Siap diambil</span><strong>${ready}</strong></div>
+    </div><section class="panel project-panel"><div class="project-toolbar">
+      <div class="project-view-toggle"><button type="button" data-project-view="list" class="${state.projectView === "list" ? "active" : ""}">☷ List</button><button type="button" data-project-view="kanban" class="${state.projectView === "kanban" ? "active" : ""}">▥ Kanban</button></div>
+      <input id="project-search" class="search" value="${escapeHtml(state.projectSearch)}" placeholder="Cari kode, pelanggan, atau produk…">
+      <select id="project-deadline" class="project-filter"><option value="all">Semua deadline</option><option value="today">Hari ini</option><option value="late">Terlambat</option><option value="none">Tanpa deadline</option></select>
+      <select id="project-pic" class="project-filter"><option value="all">Semua PIC</option><option value="unassigned">Belum ada PIC</option><option value="Gema">Gema</option><option value="Qori">Qori</option><option value="Cc/Ko">Cc/Ko</option></select>
+      <select id="project-payment" class="project-filter"><option value="all">Semua pembayaran</option><option value="LUNAS">Lunas</option><option value="BELUM_LUNAS">Belum lunas</option><option value="BELUM_BAYAR">Belum bayar</option></select>
+      <button id="reload-projects" class="secondary">Muat ulang</button>
+    </div><div class="project-status-filters"><button data-project-status="all" class="${state.projectStatus === "all" ? "active" : ""}">Semua <b>${state.orders.length}</b></button>${statuses.map((status) => `<button data-project-status="${status}" class="${state.projectStatus === status ? "active" : ""}">${state.statusLabels[status]} <b>${state.orders.filter((order) => order.status === status).length}</b></button>`).join("")}</div><div id="project-content"></div></section>`;
+  document.querySelector("#project-deadline").value = state.projectDeadline;
+  document.querySelector("#project-pic").value = state.projectPic;
+  document.querySelector("#project-payment").value = state.projectPayment;
+  const refresh = () => renderProjectContent(statuses);
+  document.querySelectorAll("[data-project-view]").forEach((button) => button.onclick = () => { state.projectView = button.dataset.projectView; renderProjects(); });
+  document.querySelectorAll("[data-project-status]").forEach((button) => button.onclick = () => { state.projectStatus = button.dataset.projectStatus; renderProjects(); });
+  document.querySelector("#project-search").addEventListener("input", (event) => { state.projectSearch = event.target.value; refresh(); });
+  document.querySelector("#project-deadline").onchange = (event) => { state.projectDeadline = event.target.value; refresh(); };
+  document.querySelector("#project-pic").onchange = (event) => { state.projectPic = event.target.value; refresh(); };
+  document.querySelector("#project-payment").onchange = (event) => { state.projectPayment = event.target.value; refresh(); };
   document.querySelector("#reload-projects").onclick = load;
+  refresh();
 }
 
-function projectColumn(status) {
-  const orders = state.orders.filter((order) => order.status === status);
+function witaDateKey(value = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+}
+
+function projectDeadlineState(order) {
+  if (!order.deadline) return "none";
+  if (["SELESAI", "DIAMBIL"].includes(order.status)) return "future";
+  const deadline = new Date(order.deadline);
+  if (deadline.getTime() < Date.now()) return "late";
+  return isProjectDeadlineToday(order) ? "today" : "future";
+}
+
+function isProjectDeadlineToday(order) { return Boolean(order.deadline) && witaDateKey(order.deadline) === witaDateKey(); }
+
+function filteredProjectOrders() {
+  const query = state.projectSearch.trim().toLowerCase();
+  return state.orders.filter((order) => {
+    const searchText = `${order.code} ${order.customerName} ${order.phone || ""} ${(order.items || []).map((item) => item.productName).join(" ")}`.toLowerCase();
+    if (query && !searchText.includes(query)) return false;
+    if (state.projectStatus !== "all" && order.status !== state.projectStatus) return false;
+    if (state.projectDeadline === "today" && !isProjectDeadlineToday(order)) return false;
+    if (!["all", "today"].includes(state.projectDeadline) && projectDeadlineState(order) !== state.projectDeadline) return false;
+    if (state.projectPic === "unassigned" && order.designPic) return false;
+    if (!["all", "unassigned"].includes(state.projectPic) && order.designPic !== state.projectPic) return false;
+    if (state.projectPayment !== "all" && paymentStatus(order) !== state.projectPayment) return false;
+    return true;
+  });
+}
+
+function renderProjectContent(statuses) {
+  const content = document.querySelector("#project-content");
+  if (!content) return;
+  const orders = filteredProjectOrders();
+  content.innerHTML = state.projectView === "kanban"
+    ? `<div class="kanban-wrap"><div class="kanban">${statuses.map((status) => projectColumn(status, orders)).join("")}</div></div>`
+    : projectListHtml(statuses, orders);
+  content.querySelectorAll("[data-order]").forEach((button) => button.onclick = () => openOrder(button.dataset.order));
+  content.querySelectorAll("[data-project-group]").forEach((button) => button.onclick = () => {
+    const status = button.dataset.projectGroup;
+    if (state.projectCollapsed.has(status)) state.projectCollapsed.delete(status); else state.projectCollapsed.add(status);
+    renderProjectContent(statuses);
+  });
+}
+
+function projectListHtml(statuses, orders) {
+  if (!orders.length) return '<div class="project-empty">Tidak ada pesanan yang sesuai dengan filter.</div>';
+  return `<div class="project-table-wrap"><table class="project-table"><thead><tr><th>Order</th><th>Pelanggan</th><th>Produk</th><th>Deadline</th><th>PIC</th><th>Pembayaran</th><th class="text-right">Total</th><th></th></tr></thead><tbody>${statuses.map((status) => {
+    const grouped = orders.filter((order) => order.status === status);
+    if (!grouped.length) return "";
+    const collapsed = state.projectCollapsed.has(status);
+    const deadlineSummary = grouped.filter((order) => projectDeadlineState(order) === "late").length;
+    return `<tr class="project-group-row status-${status.toLowerCase()}"><td colspan="8"><button type="button" data-project-group="${status}"><span>${collapsed ? "›" : "⌄"}</span><strong>${state.statusLabels[status]}</strong><em>${grouped.length} pesanan</em>${deadlineSummary ? `<b>${deadlineSummary} terlambat</b>` : ""}</button></td></tr>${collapsed ? "" : grouped.map(projectListRow).join("")}`;
+  }).join("")}</tbody></table></div><div class="project-list-footer"><span>Menampilkan ${orders.length} dari ${state.orders.length} pesanan</span><span>List diperbarui otomatis dari alur produksi</span></div>`;
+}
+
+function projectListRow(order) {
+  const payment = paymentStatus(order);
+  const paymentClass = payment === "LUNAS" ? "ok" : payment === "BELUM_LUNAS" ? "danger-badge" : "warn";
+  const deadlineState = projectDeadlineState(order);
+  const products = (order.items || []).map((item) => item.productName);
+  const firstProduct = products[0] || "—";
+  const extraProducts = products.length > 1 ? ` +${products.length - 1} item` : "";
+  const hideFinancial = order.status === "DESAIN";
+  return `<tr class="project-order-row"><td><span class="order-code">${escapeHtml(order.code)}</span></td><td><strong>${escapeHtml(order.customerName)}</strong><small>${escapeHtml(order.phone || "Walk-in")}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</td><td>${order.designPic ? `<span class="project-pic"><i>${escapeHtml(order.designPic.slice(0, 1))}</i>${escapeHtml(order.designPic)}</span>` : '<span class="project-unassigned">Belum ada</span>'}</td><td>${hideFinancial ? "—" : `<span class="badge ${paymentClass}">${payment.replaceAll("_", " ")}</span>`}</td><td class="project-total">${hideFinancial ? "—" : rupiah.format(order.total)}</td><td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
+}
+
+function projectColumn(status, source = state.orders) {
+  const orders = source.filter((order) => order.status === status);
   return `<section class="kanban-column"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${orders.length}</span></div>${orders.map((order) => {
     const payment = paymentStatus(order);
     const hidePrice = status === "DESAIN";
