@@ -84,3 +84,22 @@ test("harga grosir dihitung sebelum diskon produk", () => {
   assert.equal(line.baseTotal, 40500);
   assert.equal(line.discountApplied, true);
 });
+
+test("biaya edit file ditambahkan satu kali per item", () => {
+  const product = { id: "print", name: "Print", price: 30000, priceBasis: "sqm", widths: [1], finishing: [], materialSources: [] };
+  const line = calculateLine(product, { width: 1, length: 1, quantity: 3, fileServiceId: "DESIGN_B", finishing: [] });
+  assert.equal(line.baseTotal, 90000);
+  assert.equal(line.fileServiceTotal, 35000);
+  assert.equal(line.subtotal, 125000);
+});
+
+test("spanduk template memakai ukuran dan kode design yang tersedia", () => {
+  const product = {
+    id: "spanduk-template", name: "Spanduk Template", price: 30000, priceBasis: "sqm", widths: [1.5, 2, 3],
+    templateProduct: true, sizeVariants: [{ width: 2, length: 1.5 }], designTemplates: ["SB-01"], finishing: [], materialSources: []
+  };
+  const line = calculateLine(product, { width: 2, length: 1.5, quantity: 1, templateDesign: "SB-01", fileServiceId: "READY", finishing: [] });
+  assert.equal(line.subtotal, 90000);
+  assert.equal(line.templateDesign, "SB-01");
+  assert.match(line.displaySize, /SB-01/);
+});
