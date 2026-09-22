@@ -199,7 +199,7 @@ function checkoutHtml() {
     <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
     <label class="field"><span>No. WhatsApp</span><input name="phone" value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
-  </div><button class="primary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft Pesanan"}</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button" style="margin-top:8px">Batal Edit</button>' : ""}</form>`;
+  </div><div class="checkout-actions"><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft Pesanan"}</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></form>`;
 }
 
 function readCurrentLine() {
@@ -365,8 +365,8 @@ function bindPos() {
   const checkout = document.querySelector("#checkout");
   checkout.addEventListener("input", () => syncDraft(checkout));
   checkout.addEventListener("change", () => syncDraft(checkout));
-  checkout.addEventListener("submit", async (event) => {
-    event.preventDefault(); syncDraft(checkout);
+  async function savePosOrder(openPayment = false) {
+    syncDraft(checkout);
     try {
       const payload = { ...state.draft, items: state.cart };
       const order = state.editingOrderId
@@ -376,7 +376,16 @@ function bindPos() {
       state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" };
       await load(); toast(`${order.code} berhasil disimpan`);
       state.view = "projects"; render();
+      if (openPayment) openOrder(order.id, true);
     } catch (error) { toast(error.message, "error"); }
+  }
+  checkout.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    await savePosOrder(false);
+  });
+  document.querySelector("#pay-order")?.addEventListener("click", async () => {
+    if (!checkout.reportValidity()) return;
+    await savePosOrder(true);
   });
   document.querySelector("#cancel-edit")?.addEventListener("click", () => {
     state.cart = []; state.editingOrderId = null;
@@ -423,7 +432,7 @@ function itemDetail(item) {
   return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
 }
 
-function openOrder(id) {
+function openOrder(id, showPayment = false) {
   const order = state.orders.find((item) => item.id === id);
   const isDesign = order.status === "DESAIN";
   const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
@@ -465,6 +474,7 @@ function openOrder(id) {
   detail.querySelector("#print-spk")?.addEventListener("click", () => printOrder(order, "spk"));
   detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));
   dialog.showModal();
+  if (showPayment) detail.querySelector("#payment-form-wrap")?.classList.remove("hidden");
 }
 
 function paymentFormHtml(order, outstanding) {
@@ -669,6 +679,18 @@ function renderStock() {
 }
 
 document.querySelectorAll(".nav-item").forEach((button) => button.onclick = () => { state.view = button.dataset.view; render(); });
+const shell = document.querySelector("#app-shell");
+const sidebarToggle = document.querySelector("#sidebar-toggle");
+function setSidebarCollapsed(collapsed) {
+  shell.classList.toggle("sidebar-collapsed", collapsed);
+  sidebarToggle.textContent = collapsed ? "›" : "‹";
+  sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+  sidebarToggle.setAttribute("aria-label", collapsed ? "Buka sidebar" : "Tutup sidebar");
+  sidebarToggle.title = collapsed ? "Buka sidebar" : "Tutup sidebar";
+  localStorage.setItem("manna-sidebar-collapsed", collapsed ? "1" : "0");
+}
+setSidebarCollapsed(localStorage.getItem("manna-sidebar-collapsed") === "1");
+sidebarToggle.onclick = () => setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
 document.querySelector("#refresh-btn").onclick = load;
 document.querySelector("#today").textContent = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" }).format(new Date());
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
