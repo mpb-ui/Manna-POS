@@ -163,8 +163,8 @@ function templateOptionsHtml(product) {
 
 function catalogCardHtml(product, promo = false) {
   return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}">
-    <div class="catalog-card-top">${promo ? '<b>DISKON</b>' : ""}<span>${escapeHtml(product.category)}</span></div>
-    <strong>${escapeHtml(product.name)}</strong>${promo ? `<p>${escapeHtml(discountLabel(product))}</p>` : ""}
+    <div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.category)}</span></div>
+    ${promo ? `<div class="catalog-promo-copy"><b>DISKON</b><p>${escapeHtml(discountLabel(product))}</p></div>` : ""}
     <div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong>`}<small>${escapeHtml(product.unitLabel)}</small></div>
   </button>`;
 }
@@ -494,7 +494,7 @@ function openOrder(id, showPayment = false) {
     <div class="order-items-detail">${order.items.map((item, index) => `<div class="detail-item"><span class="item-number">${index + 1}</span><div>${itemDetail(item)}</div>${isDesign ? "" : `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>`}</div>`).join("")}</div>
     ${isDesign ? "" : `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>`}
     <p class="note" style="margin-top:12px"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</p>
-    ${isDesign ? `<div class="operator-box"><label class="field"><span>Nama Operator Design</span><input id="design-pic-input" value="${escapeHtml(order.designPic || "")}" placeholder="Ketik nama operator yang menangani"></label><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
+    ${isDesign ? `<div class="operator-box"><div class="field"><span>Nama Operator Design</span><div class="operator-choices">${[["gema", "Gema"], ["qori", "Qori"], ["cc-ko", "Cc/Ko"]].map(([id, name]) => `<div class="chip"><input type="radio" name="design-pic" id="operator-${id}" value="${name}" ${order.designPic === name ? "checked" : ""}><label for="operator-${id}">${name}</label></div>`).join("")}</div></div><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
     <div id="payment-form-wrap" class="payment-form-wrap hidden">${paymentFormHtml(order, outstanding)}</div>
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
     <div class="detail-actions">
@@ -511,7 +511,9 @@ function openOrder(id, showPayment = false) {
   bindPaymentForm(order, outstanding);
   detail.querySelector("#save-design-pic")?.addEventListener("click", async () => {
     try {
-      await api(`/api/orders/${order.id}/design-pic`, { method: "PATCH", body: JSON.stringify({ designPic: detail.querySelector("#design-pic-input").value }) });
+      const designPic = detail.querySelector('input[name="design-pic"]:checked')?.value || "";
+      if (!designPic) return toast("Pilih nama operator design", "error");
+      await api(`/api/orders/${order.id}/design-pic`, { method: "PATCH", body: JSON.stringify({ designPic }) });
       dialog.close(); await load(); toast("PIC Operator Design disimpan");
     } catch (error) { toast(error.message, "error"); }
   });
