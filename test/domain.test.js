@@ -96,10 +96,23 @@ test("biaya edit file ditambahkan satu kali per item", () => {
 test("spanduk template memakai ukuran dan kode design yang tersedia", () => {
   const product = {
     id: "spanduk-template", name: "Spanduk Template", price: 30000, priceBasis: "sqm", widths: [1.5, 2, 3],
-    templateProduct: true, sizeVariants: [{ width: 2, length: 1.5 }], designTemplates: ["SB-01"], finishing: [], materialSources: []
+    templateProduct: true, templateDesignPrice: 35000, sizeVariants: [{ width: 2, length: 1.5 }], designTemplates: ["SB-01"], finishing: [], materialSources: []
   };
-  const line = calculateLine(product, { width: 2, length: 1.5, quantity: 1, templateDesign: "SB-01", fileServiceId: "READY", finishing: [] });
-  assert.equal(line.subtotal, 90000);
+  const line = calculateLine(product, { width: 2, length: 1.5, quantity: 1, templateDesign: "SB-01", fileServiceId: "DESIGN_D", finishing: [] });
+  assert.equal(line.baseTotal, 90000);
+  assert.equal(line.templateDesignTotal, 35000);
+  assert.equal(line.fileServiceTotal, 0);
+  assert.equal(line.subtotal, 125000);
   assert.equal(line.templateDesign, "SB-01");
   assert.match(line.displaySize, /SB-01/);
+});
+
+test("catatan finishing tersimpan pada finishing yang dipilih", () => {
+  const product = {
+    id: "banner", name: "Banner", price: 30000, priceBasis: "sqm", widths: [1], materialSources: [],
+    finishing: [{ id: "eyelets", name: "Mata Ayam", price: 500, rule: "point" }]
+  };
+  const line = calculateLine(product, { width: 1, length: 1, quantity: 1, finishing: [{ id: "eyelets", units: 4, note: "Jarak tiap 50 cm" }] });
+  assert.equal(line.finishing[0].note, "Jarak tiap 50 cm");
+  assert.equal(line.finishing[0].subtotal, 2000);
 });

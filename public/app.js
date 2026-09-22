@@ -117,11 +117,15 @@ function finishingHtml(product) {
         <input type="checkbox" id="f-${finish.id}" value="${finish.id}">
         <label for="f-${finish.id}"><strong>${finish.name}</strong><small>${finish.price ? rupiah.format(finish.price) + " /unit" : "Gratis"}</small></label>
       </div>
-      <div class="qty-stepper hidden" data-stepper="${finish.id}">
-        <button type="button" data-minus="${finish.id}">−</button>
-        <input type="number" min="1" step="1" data-finish-qty="${finish.id}" value="1" aria-label="Jumlah ${finish.name}">
-        <button type="button" data-plus="${finish.id}">+</button>
+      <div class="finish-actions">
+        <button type="button" class="finish-note-toggle" data-finish-note-toggle="${finish.id}" disabled>Catatan</button>
+        <div class="qty-stepper hidden" data-stepper="${finish.id}">
+          <button type="button" data-minus="${finish.id}">−</button>
+          <input type="number" min="1" step="1" data-finish-qty="${finish.id}" value="1" aria-label="Jumlah ${finish.name}">
+          <button type="button" data-plus="${finish.id}">+</button>
+        </div>
       </div>
+      <div class="finish-note-row hidden" data-finish-note-row="${finish.id}"><input type="text" data-finish-note="${finish.id}" placeholder="Catatan khusus ${escapeHtml(finish.name)}"></div>
     </div>`).join("");
 }
 
@@ -153,14 +157,14 @@ function fileServicesHtml() {
 
 function templateOptionsHtml(product) {
   const sizes = (product.sizeVariants || []).map((size, index) => `<div class="chip"><input type="radio" name="template-size" id="size-${size.id}" value="${size.width}x${size.length}" ${index === 0 ? "checked" : ""}><label for="size-${size.id}">${escapeHtml(size.label)}</label></div>`).join("");
-  const designs = (product.designTemplates || []).map((code, index) => `<div class="template-chip"><input type="radio" name="template-design" id="template-${code}" value="${code}" ${index === 0 ? "checked" : ""}><label for="template-${code}"><span class="template-thumb template-tone-${index % 5 + 1}" aria-hidden="true"><i>${code.split("-")[0]}</i></span><strong>${code}</strong></label></div>`).join("");
+  const designs = (product.designTemplates || []).map((code, index) => `<div class="template-chip"><input type="radio" name="template-design" id="template-${code}" value="${code}" ${index === 0 ? "checked" : ""}><label for="template-${code}"><span class="template-thumb template-tone-${index % 5 + 1}" aria-hidden="true"><i>${code.split("-")[0]}</i></span><span><strong>${code}</strong><small>+ ${rupiah.format(product.templateDesignPrice || 35000)}</small></span></label></div>`).join("");
   return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div><label class="field template-quantity"><span>Jumlah Produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label>`;
 }
 
 function catalogCardHtml(product, promo = false) {
   return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}">
-    <div class="catalog-card-top"><span>${escapeHtml(product.category)}</span>${promo ? '<b>DISKON</b>' : '<b>TERLARIS</b>'}</div>
-    <strong>${escapeHtml(product.name)}</strong><p>${escapeHtml(product.recommendation || (promo ? discountLabel(product) : "Produk pilihan"))}</p>
+    <div class="catalog-card-top">${promo ? '<b>DISKON</b>' : ""}<span>${escapeHtml(product.category)}</span></div>
+    <strong>${escapeHtml(product.name)}</strong>${promo ? `<p>${escapeHtml(discountLabel(product))}</p>` : ""}
     <div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong>`}<small>${escapeHtml(product.unitLabel)}</small></div>
   </button>`;
 }
@@ -179,12 +183,12 @@ function productConfigurationHtml(product, popup = false) {
     : `<div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual</span><span class="input-with-unit"><input id="length" type="number" min="0.1" step="0.1" value="1"><b>m</b></span></label><label class="field"><span>Jumlah produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>`;
   const measurementTitle = product.templateProduct ? "Pilihan varian" : "Ukuran & jumlah";
-  const fileStep = product.templateProduct ? 3 : 3;
-  const finishStep = fileStep + 1;
+  const fileSection = product.templateProduct ? "" : `<hr class="divider"><p class="section-label">${popup ? "File" : "3 · File"}</p>${fileServicesHtml()}`;
+  const finishStep = product.templateProduct ? 3 : 4;
   const noteStep = finishStep + 1;
   return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}
     <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
-    <hr class="divider"><p class="section-label">${popup ? "File" : `${fileStep} · File`}</p>${fileServicesHtml()}
+    ${fileSection}
     <hr class="divider"><p class="section-label">${popup ? "Finishing" : `${finishStep} · Finishing`}</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
     <hr class="divider"><label class="field"><span class="section-label">${popup ? "Catatan" : `${noteStep} · Catatan`}</span><textarea id="production-note" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label>
     <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary">+ Tambah ke Pesanan</button></div>`;
@@ -211,7 +215,7 @@ function renderPos() {
 
 function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
-  return state.cart.map((line, i) => `<div class="cart-item"><div><h4>${line.productName}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p><p>${escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? ` · ${escapeHtml(line.finishingNames)}` : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p><strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`).join("");
+  return state.cart.map((line, i) => `<div class="cart-item"><div><h4>${line.productName}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p><strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`).join("");
 }
 
 function checkoutHtml() {
@@ -231,26 +235,28 @@ function readCurrentLine() {
   const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : Number(document.querySelector("#length")?.value || 1);
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity);
-  const fileService = fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
+  const fileService = product.templateProduct ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
+  const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) : 0;
   let finishTotal = 0;
   const finishing = [...document.querySelectorAll('#finishing-grid input[type="checkbox"]:checked')].map((input) => {
     const finish = product.finishing.find((f) => f.id === input.value);
     const units = Math.max(1, Number(document.querySelector(`[data-finish-qty="${finish.id}"]`)?.value || 1));
     finishTotal += units * finish.price;
-    return { id: finish.id, units };
+    return { id: finish.id, units, note: document.querySelector(`[data-finish-note="${finish.id}"]`)?.value.trim() || "" };
   });
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed, templateDesign,
+    baseTotal: base.total, templateDesignTotal,
     fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price,
     quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
     finishingNames: finishing.map((f) => {
       const finish = product.finishing.find((x) => x.id === f.id);
-      return `${finish?.name} × ${f.units}`;
+      return `${finish?.name} × ${f.units}${f.note ? ` (${f.note})` : ""}`;
     }).join(", "),
     displaySize: isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`,
     productionNote: document.querySelector("#production-note")?.value.trim() || "",
-    previewTotal: base.total + finishTotal + fileService.price
+    previewTotal: base.total + finishTotal + fileService.price + templateDesignTotal
   };
 }
 
@@ -262,14 +268,18 @@ function updatePreview() {
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
   document.querySelector("#formula-text").textContent = product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
-    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
+    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
 }
 
 function toggleFinishing(input) {
   const product = selectedProduct();
   const finish = product.finishing.find((item) => item.id === input.value);
   const stepper = document.querySelector(`[data-stepper="${finish.id}"]`);
+  const noteToggle = document.querySelector(`[data-finish-note-toggle="${finish.id}"]`);
+  const noteRow = document.querySelector(`[data-finish-note-row="${finish.id}"]`);
   stepper?.classList.toggle("hidden", !input.checked);
+  if (noteToggle) noteToggle.disabled = !input.checked;
+  if (!input.checked) noteRow?.classList.add("hidden");
   if (input.checked) {
     const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
     const width = product.priceBasis === "unit" ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
@@ -346,6 +356,11 @@ function bindProductConfiguration(onAdd) {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   document.querySelectorAll('#finishing-grid input[type="checkbox"]').forEach((input) => input.addEventListener("change", () => toggleFinishing(input)));
+  document.querySelectorAll("[data-finish-note-toggle]").forEach((button) => button.onclick = () => {
+    const row = document.querySelector(`[data-finish-note-row="${button.dataset.finishNoteToggle}"]`);
+    row?.classList.toggle("hidden");
+    if (!row?.classList.contains("hidden")) row.querySelector("input")?.focus();
+  });
   document.querySelectorAll("[data-minus]").forEach((button) => button.onclick = () => {
     const input = document.querySelector(`[data-finish-qty="${button.dataset.minus}"]`);
     input.value = Math.max(1, Number(input.value || 1) - 1); updatePreview();
@@ -463,8 +478,9 @@ function nextAction(order) {
 }
 
 function itemDetail(item) {
-  const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}`).join(", ");
-  return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small><small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}</small>${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
+  const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}${finish.note ? ` — ${escapeHtml(finish.note)}` : ""}`).join(", ");
+  const templateParts = item.templateDesign ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : "";
+  return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
 }
 
 function openOrder(id, showPayment = false) {
@@ -541,10 +557,11 @@ function startEditOrder(order) {
   state.cart = order.items.map((item) => ({
     productId: item.productId, productName: item.productName, width: item.width,
     length: item.actualLength, billedLength: item.billedLength, quantity: item.quantity,
-    finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units })),
-    finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}`).join(", "),
+    finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units, note: finish.note || "" })),
+    finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}${finish.note ? ` (${finish.note})` : ""}`).join(", "),
     displaySize: item.displaySize, templateDesign: item.templateDesign || "", fileServiceId: item.fileService?.id || "READY",
     fileServiceName: item.fileService?.name || "File Siap Cetak", fileServicePrice: item.fileService?.price || 0,
+    baseTotal: item.baseTotal, templateDesignTotal: item.templateDesignTotal || 0,
     productionNote: item.productionNote || "", previewTotal: item.subtotal
   }));
   state.draft = { customerName: order.customerName || "", phone: order.phone || "", deadline: order.deadline || "", fileStatus: order.fileStatus || "SIAP_CETAK" };
@@ -561,7 +578,7 @@ function printOrder(order, type) {
   printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : "TANDA TERIMA PESANAN"}</div><hr>
     <div class="print-meta"><b>${order.code}</b><span>${dateFormat.format(new Date(order.createdAt))}</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
-    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
+    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
     ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div><div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
     <hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
   document.body.classList.add("printing");
@@ -730,6 +747,15 @@ setSidebarCollapsed(localStorage.getItem("manna-sidebar-collapsed") === "1");
 sidebarToggle.onclick = () => setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
 document.querySelector("#refresh-btn").onclick = load;
 document.querySelector("#today").textContent = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" }).format(new Date());
+document.addEventListener("invalid", (event) => {
+  if (event.target.validity?.valueMissing) event.target.setCustomValidity("Kolom tidak boleh kosong");
+}, true);
+document.addEventListener("input", (event) => {
+  if (typeof event.target.setCustomValidity === "function") event.target.setCustomValidity("");
+}, true);
+document.addEventListener("change", (event) => {
+  if (typeof event.target.setCustomValidity === "function") event.target.setCustomValidity("");
+}, true);
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   try { await api("/api/login", { method: "POST", body: JSON.stringify({ pin: document.querySelector("#login-pin").value }) }); showApp(); await load(); } catch (error) { toast(error.message, "error"); }
