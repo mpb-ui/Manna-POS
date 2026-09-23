@@ -331,9 +331,10 @@ app.patch("/api/orders/:id/design-pic", async (req, res, next) => {
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
-      if (order.status !== STATUS.DESIGN) throw new Error("PIC hanya dapat ditetapkan pada tahap Operator Design");
+      if (![STATUS.DESIGN, STATUS.PRINT, STATUS.FINISHING, STATUS.DONE].includes(order.status)) throw new Error("PIC hanya dapat ditetapkan pada pesanan aktif");
       const designPic = String(req.body.designPic || "").trim();
       if (!designPic) throw new Error("Nama operator wajib diisi");
+      if (!["Gema", "Qori", "Cc/Ko"].includes(designPic)) throw new Error("Nama operator tidak valid");
       order.designPic = designPic;
       order.updatedAt = now();
       activity(state, order, `Pekerjaan diambil oleh ${designPic}`, designPic);

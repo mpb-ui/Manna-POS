@@ -456,14 +456,8 @@ function renderProjects() {
   const statuses = state.projectCategory === "waiting" ? waitingStatuses : orderStatuses;
   const orderCount = state.orders.filter((order) => orderStatuses.includes(order.status)).length;
   const waitingCount = state.orders.filter((order) => waitingStatuses.includes(order.status)).length;
-  const categoryOrders = state.orders.filter((order) => statuses.includes(order.status));
-  const late = categoryOrders.filter((order) => projectDeadlineState(order) === "late").length;
-  const today = categoryOrders.filter((order) => isProjectDeadlineToday(order)).length;
-  const overview = state.projectCategory === "waiting"
-    ? `<div class="overview-card warning"><span>Menunggu konfirmasi</span><strong>${waitingCount}</strong></div><div class="overview-card"><span>Draft hari ini</span><strong>${categoryOrders.filter((order) => witaDateKey(order.createdAt) === witaDateKey()).length}</strong></div><div class="overview-card danger"><span>Deadline terlewat</span><strong>${late}</strong></div><div class="overview-card"><span>Deadline hari ini</span><strong>${today}</strong></div>`
-    : `<div class="overview-card danger"><span>Terlambat</span><strong>${late}</strong></div><div class="overview-card warning"><span>Deadline hari ini</span><strong>${today}</strong></div><div class="overview-card"><span>Belum ada PIC</span><strong>${categoryOrders.filter((order) => !order.designPic).length}</strong></div><div class="overview-card success"><span>Siap diambil</span><strong>${state.orders.filter((order) => order.status === "SELESAI").length}</strong></div>`;
   root.innerHTML = `<div class="project-category-tabs"><button type="button" data-project-category="orders" class="${state.projectCategory === "orders" ? "active" : ""}">Order <b>${orderCount}</b></button><button type="button" data-project-category="waiting" class="${state.projectCategory === "waiting" ? "active" : ""}">Menunggu Pembayaran <b>${waitingCount}</b></button></div>
-    <div class="project-overview">${overview}</div><section class="panel project-panel"><div class="project-toolbar">
+    <section class="panel project-panel"><div class="project-toolbar">
       ${state.projectCategory === "orders" ? `<div class="project-view-toggle"><button type="button" data-project-view="list" class="${state.projectView === "list" ? "active" : ""}">☷ List</button><button type="button" data-project-view="kanban" class="${state.projectView === "kanban" ? "active" : ""}">▥ Kanban</button></div>` : ""}
       <input id="project-search" class="search" value="${escapeHtml(state.projectSearch)}" placeholder="Cari kode, pelanggan, atau produk…">
       <select id="project-deadline" class="project-filter"><option value="all">Semua deadline</option><option value="today">Hari ini</option><option value="late">Terlambat</option><option value="none">Tanpa deadline</option></select>
@@ -521,6 +515,21 @@ function renderProjectContent(statuses) {
     ? `<div class="kanban-wrap"><div class="kanban">${statuses.map((status) => projectColumn(status, orders)).join("")}</div></div>`
     : projectListHtml(statuses, orders);
   content.querySelectorAll("[data-order]").forEach((button) => button.onclick = () => openOrder(button.dataset.order));
+  content.querySelectorAll("[data-project-pic-order]").forEach((select) => select.addEventListener("change", async () => {
+    const order = state.orders.find((item) => item.id === select.dataset.projectPicOrder);
+    const previousPic = order?.designPic || "";
+    select.disabled = true;
+    try {
+      const designPic = select.value;
+      await api(`/api/orders/${select.dataset.projectPicOrder}/design-pic`, { method: "PATCH", body: JSON.stringify({ designPic }) });
+      if (order) order.designPic = designPic;
+      select.classList.remove("unassigned");
+      toast(`PIC diubah menjadi ${designPic}`);
+    } catch (error) {
+      select.value = previousPic;
+      toast(error.message, "error");
+    } finally { select.disabled = false; }
+  }));
   content.querySelectorAll("[data-project-group]").forEach((button) => button.onclick = () => {
     const status = button.dataset.projectGroup;
     if (state.projectCollapsed.has(status)) state.projectCollapsed.delete(status); else state.projectCollapsed.add(status);
@@ -531,8 +540,8 @@ function renderProjectContent(statuses) {
 function projectListHtml(statuses, orders) {
   if (!orders.length) return '<div class="project-empty">Tidak ada pesanan yang sesuai dengan filter.</div>';
   const waiting = state.projectCategory === "waiting";
-  const columnCount = waiting ? 5 : 6;
-  return `<div class="project-table-wrap"><table class="project-table ${waiting ? "waiting-table" : ""}"><thead><tr><th>Order</th><th>Produk</th><th>Deadline</th>${waiting ? "" : "<th>PIC</th>"}<th class="text-right">Total</th><th></th></tr></thead><tbody>${statuses.map((status) => {
+  const columnCount = waiting ? 4 : 5;
+  return `<div class="project-table-wrap"><table class="project-table ${waiting ? "waiting-table" : ""}"><thead><tr><th>Order</th><th>Produk</th><th>Deadline</th>${waiting ? "" : "<th>PIC</th>"}<th></th></tr></thead><tbody>${statuses.map((status) => {
     const grouped = orders.filter((order) => order.status === status);
     if (!grouped.length) return "";
     const collapsed = state.projectCollapsed.has(status);
@@ -549,7 +558,8 @@ function projectListRow(order) {
   const extraProducts = products.length > 1 ? ` +${products.length - 1} item` : "";
   const waiting = state.projectCategory === "waiting";
   const invoiceMeta = `${order.phone || "Walk-in"} - ${order.code}`;
-  return `<tr class="project-order-row"><td class="project-order-identity"><strong>${escapeHtml(order.customerName)}</strong><small>${escapeHtml(invoiceMeta)}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</td>${waiting ? "" : `<td>${order.designPic ? `<span class="project-pic"><i>${escapeHtml(order.designPic.slice(0, 1))}</i>${escapeHtml(order.designPic)}</span>` : '<span class="project-unassigned">Belum ada</span>'}</td>`}<td class="project-total">${rupiah.format(order.total)}</td><td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
+  const picOptions = ["Gema", "Qori", "Cc/Ko"].map((name) => `<option value="${name}" ${order.designPic === name ? "selected" : ""}>${name}</option>`).join("");
+  return `<tr class="project-order-row"><td class="project-order-identity"><strong>${escapeHtml(order.customerName)}</strong><small>${escapeHtml(invoiceMeta)}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</td>${waiting ? "" : `<td><select class="project-pic-select ${order.designPic ? "" : "unassigned"}" data-project-pic-order="${order.id}" aria-label="Pilih PIC untuk ${escapeHtml(order.customerName)}"><option value="" disabled ${order.designPic ? "" : "selected"}>Belum ada</option>${picOptions}</select></td>`}<td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
 }
 
 function projectColumn(status, source = state.orders) {
@@ -626,7 +636,7 @@ function paymentFormHtml(order, outstanding) {
   return `<form id="payment-form"><h3>Form Pembayaran</h3><div class="form-grid">
     <div class="field full"><span>Jenis pembayaran</span><div class="chips"><div class="chip"><input type="radio" name="type" id="pay-full" value="LUNAS" checked><label for="pay-full">Pelunasan</label></div><div class="chip"><input type="radio" name="type" id="pay-dp" value="DP"><label for="pay-dp">Pembayaran Sebagian / DP</label></div></div></div>
     <label class="field"><span>Metode</span><select name="method" required><option value="">Pilih metode</option><option value="TUNAI">Tunai</option><option value="TRANSFER">Transfer</option><option value="QRIS">QRIS</option><option value="PO / TEMPO">PO / Tempo</option></select></label>
-    <label class="field"><span>Nominal diterima</span><input name="amount" type="number" min="0" value="${outstanding}" required></label>
+    <label class="field"><span>Nominal diterima</span><div class="payment-amount-field"><input name="amount" type="number" min="0" value="${outstanding}" required><button type="button" id="payment-half" class="payment-half hidden">50%</button></div></label>
     <label class="field full"><span>Nomor PO / referensi (opsional)</span><input name="poNumber"></label>
   </div><div class="payment-balance"><span>Sudah dibayar: ${rupiah.format(order.paidAmount || 0)}</span><strong>Sisa: ${rupiah.format(outstanding)}</strong></div><button class="primary full" type="submit">Simpan Pembayaran</button></form>`;
 }
@@ -634,10 +644,17 @@ function paymentFormHtml(order, outstanding) {
 function bindPaymentForm(order, outstanding) {
   const form = document.querySelector("#payment-form");
   if (!form) return;
+  const halfButton = form.querySelector("#payment-half");
+  const applyHalfPayment = () => {
+    form.elements.amount.value = Math.min(outstanding, Math.round(Number(order.total || 0) * 0.5));
+  };
   form.querySelectorAll('input[name="type"]').forEach((input) => input.addEventListener("change", () => {
-    if (input.checked && input.value === "LUNAS") form.elements.amount.value = outstanding;
-    if (input.checked && input.value === "DP" && Number(form.elements.amount.value) >= outstanding) form.elements.amount.value = "";
+    if (!input.checked) return;
+    const partial = input.value === "DP";
+    halfButton.classList.toggle("hidden", !partial);
+    if (partial) applyHalfPayment(); else form.elements.amount.value = outstanding;
   }));
+  halfButton.addEventListener("click", applyHalfPayment);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
