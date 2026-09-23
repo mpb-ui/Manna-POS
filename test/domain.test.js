@@ -1,12 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { roundBillingLength, calculateLine, allowedNextStatus, STATUS, tierPriceForQuantity, isDiscountActive, discountedPrice } from "../lib/domain.js";
-import { PRODUCTS } from "../lib/store.js";
+import { PRODUCTS, MACHINES } from "../lib/store.js";
 
 test("panjang ditagihkan dibulatkan per 50 cm dengan minimum 1 m", () => {
   assert.equal(roundBillingLength(0.4), 1);
   assert.equal(roundBillingLength(1.2), 1.5);
   assert.equal(roundBillingLength(2), 2);
+});
+
+test("LF Poster dan LF Sticker dibulatkan ke atas per 10 cm", () => {
+  assert.equal(roundBillingLength(0.4, 0.1), 1);
+  assert.equal(roundBillingLength(1.01, 0.1), 1.1);
+  assert.equal(roundBillingLength(1.1, 0.1), 1.1);
+  const poster = PRODUCTS.find((item) => item.id === "poster-albatros");
+  const line = calculateLine(poster, { width: 0.9, length: 1.01, quantity: 1, finishing: [] });
+  assert.equal(line.billedLength, 1.1);
+  assert.equal(line.baseTotal, 148500);
+});
+
+test("finishing LF per m² mengikuti luas yang ditagihkan", () => {
+  const sticker = PRODUCTS.find((item) => item.id === "lf-sticker-white-glossy");
+  const line = calculateLine(sticker, { width: 1.5, length: 1.01, quantity: 2, finishing: [{ id: "kisscut", units: 1 }] });
+  assert.equal(line.billedLength, 1.1);
+  assert.equal(line.finishing[0].units, 3.3);
+  assert.equal(line.finishingTotal, 148500);
+});
+
+test("katalog spreadsheet memuat produk LF dan 23 mesin", () => {
+  assert.equal(PRODUCTS.filter((item) => item.category === "LF Poster").length, 9);
+  assert.equal(PRODUCTS.filter((item) => item.category === "LF Sticker").length, 10);
+  assert.equal(MACHINES.length, 23);
+  assert.equal(MACHINES.find((item) => item.name === "Allwin Outdoor")?.code, "C8i 4 Head");
 });
 
 test("FL 280 menghitung luas dan mata ayam", () => {

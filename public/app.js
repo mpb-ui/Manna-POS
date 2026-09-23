@@ -93,14 +93,17 @@ function promoPrice(product, price) {
   return product.discount.type === "nominal" ? Math.max(0, Number(price) - value) : Math.max(0, Math.round(Number(price) * (1 - Math.min(value, 100) / 100)));
 }
 function discountLabel(product) { return product.discount?.type === "nominal" ? `Hemat ${rupiah.format(product.discount.value)}` : `Diskon ${Number(product.discount?.value || 0)}%`; }
-function billedLength(value) { return Math.max(1, Math.ceil(Number(value || 1) * 2 - 1e-9) / 2); }
+function billedLength(value, increment = 0.5) {
+  const step = Number(increment) > 0 ? Number(increment) : 0.5;
+  return Math.max(1, Number((Math.ceil(Number(value || 1) / step - 1e-9) * step).toFixed(4)));
+}
 function productBase(product, width, length, quantity) {
-  const billed = billedLength(length);
+  const billed = billedLength(length, product.billingIncrement);
   const units = product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
   const tier = product.wholesaleEnabled ? (product.priceTiers || []).filter((item) => Number(item.min) <= quantity && (item.max == null || item.max === "" || quantity <= Number(item.max))).sort((a, b) => Number(b.min) - Number(a.min))[0] : null;
   const originalUnitPrice = Number(tier?.price ?? product.price);
   const unitPrice = promoPrice(product, originalUnitPrice);
-  return { billed, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
+  return { billed, units, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
 }
 function suggestedFinishUnits(finish, width, length) {
   if (finish.rule === "free") return 1;
@@ -118,14 +121,14 @@ function finishingHtml(product) {
     <div class="finish-option" data-finish-option="${finish.id}">
       <div class="finish-main">
         <input type="checkbox" id="f-${finish.id}" value="${finish.id}">
-        <label for="f-${finish.id}"><strong>${finish.name}</strong><small>${finish.price ? rupiah.format(finish.price) + " /unit" : "Gratis"}</small></label>
+        <label for="f-${finish.id}"><strong>${finish.name}</strong><small>${finish.price ? rupiah.format(finish.price) + (finish.rule === "area" ? " /m²" : " /unit") : "Gratis"}</small></label>
       </div>
       <div class="finish-actions">
         <button type="button" class="finish-note-toggle" data-finish-note-toggle="${finish.id}" disabled>Catatan</button>
         <div class="qty-stepper hidden" data-stepper="${finish.id}">
-          <button type="button" data-minus="${finish.id}">−</button>
-          <input type="number" min="1" step="1" data-finish-qty="${finish.id}" value="1" aria-label="Jumlah ${finish.name}">
-          <button type="button" data-plus="${finish.id}">+</button>
+          <button type="button" data-minus="${finish.id}" ${finish.rule === "area" ? "disabled" : ""}>−</button>
+          <input type="number" min="${finish.rule === "area" ? "0.1" : "1"}" step="${finish.rule === "area" ? "0.1" : "1"}" data-finish-qty="${finish.id}" value="1" aria-label="Jumlah ${finish.name}" ${finish.rule === "area" ? "readonly" : ""}>
+          <button type="button" data-plus="${finish.id}" ${finish.rule === "area" ? "disabled" : ""}>+</button>
         </div>
       </div>
       <div class="finish-note-row hidden" data-finish-note-row="${finish.id}"><input type="text" data-finish-note="${finish.id}" placeholder="Catatan khusus ${escapeHtml(finish.name)}"></div>
@@ -244,7 +247,10 @@ function readCurrentLine() {
   let finishTotal = 0;
   const finishing = [...document.querySelectorAll('#finishing-grid input[type="checkbox"]:checked')].map((input) => {
     const finish = product.finishing.find((f) => f.id === input.value);
-    const units = Math.max(1, Number(document.querySelector(`[data-finish-qty="${finish.id}"]`)?.value || 1));
+    const areaUnits = product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : product.priceBasis === "sqm" ? width * base.billed * quantity : base.billed * quantity;
+    const units = finish.rule === "area" ? Number(areaUnits.toFixed(4)) : Math.max(1, Number(document.querySelector(`[data-finish-qty="${finish.id}"]`)?.value || 1));
+    const quantityInput = document.querySelector(`[data-finish-qty="${finish.id}"]`);
+    if (finish.rule === "area" && quantityInput) quantityInput.value = units;
     finishTotal += units * finish.price;
     return { id: finish.id, units, note: document.querySelector(`[data-finish-note="${finish.id}"]`)?.value.trim() || "" };
   });
@@ -286,8 +292,12 @@ function toggleFinishing(input) {
   if (input.checked) {
     const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
     const width = product.priceBasis === "unit" ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
-    const length = product.templateProduct ? Number(templateSize?.[1]) : billedLength(document.querySelector("#length")?.value || 1);
-    document.querySelector(`[data-finish-qty="${finish.id}"]`).value = suggestedFinishUnits(finish, width, length);
+    const length = product.templateProduct ? Number(templateSize?.[1]) : billedLength(document.querySelector("#length")?.value || 1, product.billingIncrement);
+    const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
+    const suggested = finish.rule === "area"
+      ? (product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : Number(width) * Number(length) * quantity)
+      : suggestedFinishUnits(finish, width, length);
+    document.querySelector(`[data-finish-qty="${finish.id}"]`).value = Number(suggested.toFixed?.(4) ?? suggested);
   }
   updatePreview();
 }
@@ -742,7 +752,7 @@ function renderMaster() {
     return `<tr><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small></td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}</td><td class="${Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(material.unit)}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
   }).join("");
   const machineRows = state.machines.map((machine) => `<tr><td><strong>${escapeHtml(machine.name)}</strong><small>${escapeHtml(machine.code)}</small></td><td>${escapeHtml(machine.type)}</td><td>${escapeHtml(machine.capacity || "—")}</td><td>${rupiah.format(machine.costPerHour)}/jam</td><td><span class="badge ${machine.status === "AKTIF" ? "ok" : "warn"}">${escapeHtml(machine.status)}</span></td><td><button class="secondary" data-edit-machine="${machine.id}">Edit</button></td></tr>`).join("");
-  const finishingRows = state.finishings.map((finishing) => `<tr><td><strong>${escapeHtml(finishing.name)}</strong><small>${escapeHtml(finishing.code)}</small></td><td class="compact-cell">${(finishing.categories || []).map((category) => `<span class="mini-chip">${escapeHtml(category)}</span>`).join(" ")}</td><td>${rupiah.format(finishing.price)}</td><td>${escapeHtml({ free: "Per unit", point: "Per titik", perimeter: "Keliling", top_bottom: "Atas–bawah", left_right: "Kanan–kiri", length: "Meter lari" }[finishing.rule] || finishing.rule)}</td><td><span class="badge ${finishing.active === false ? "warn" : "ok"}">${finishing.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-finishing="${finishing.id}">Edit</button></td></tr>`).join("");
+  const finishingRows = state.finishings.map((finishing) => `<tr><td><strong>${escapeHtml(finishing.name)}</strong><small>${escapeHtml(finishing.code)}</small></td><td class="compact-cell">${(finishing.categories || []).map((category) => `<span class="mini-chip">${escapeHtml(category)}</span>`).join(" ")}</td><td>${rupiah.format(finishing.price)}</td><td>${escapeHtml({ free: "Per unit", area: "Per m²", point: "Per titik", perimeter: "Keliling", top_bottom: "Atas–bawah", left_right: "Kanan–kiri", length: "Meter lari" }[finishing.rule] || finishing.rule)}</td><td><span class="badge ${finishing.active === false ? "warn" : "ok"}">${finishing.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-finishing="${finishing.id}">Edit</button></td></tr>`).join("");
   const tables = {
     products: `<table><thead><tr><th>Produk</th><th>Kategori</th><th>Satuan</th><th>Bahan terkait</th><th>Mesin</th><th>Harga jual</th><th>Status</th><th></th></tr></thead><tbody>${productRows}</tbody></table>`,
     materials: `<table><thead><tr><th>Bahan</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Harga dasar</th><th>Supplier</th><th>Status</th><th></th></tr></thead><tbody>${materialRows}</tbody></table>`,
@@ -790,7 +800,7 @@ function openMaterialForm(material = null) {
 
 function openFinishingForm(finishing = null) {
   const categories = productCategories.filter(([id]) => id !== "all").map(([, label]) => label);
-  const rules = [["free", "Per unit"], ["point", "Per titik"], ["perimeter", "Keliling"], ["top_bottom", "Atas–bawah"], ["left_right", "Kanan–kiri"], ["length", "Meter lari"]];
+  const rules = [["free", "Per unit"], ["area", "Per m²"], ["point", "Per titik"], ["perimeter", "Keliling"], ["top_bottom", "Atas–bawah"], ["left_right", "Kanan–kiri"], ["length", "Meter lari"]];
   const detail = showMasterDialog(finishing ? "Edit Finishing" : "Tambah Finishing", `<form id="finishing-form" class="master-form"><div class="form-grid">
     <label class="field"><span>Nama finishing *</span><input name="name" value="${escapeHtml(finishing?.name || "")}" required></label><label class="field"><span>Kode finishing *</span><input name="code" value="${escapeHtml(finishing?.code || "")}" required></label>
     <label class="field"><span>Harga / unit</span><input name="price" type="number" min="0" value="${finishing?.price || 0}"></label><label class="field"><span>Dasar perhitungan</span><select name="rule">${rules.map(([value, label]) => `<option value="${value}" ${finishing?.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>

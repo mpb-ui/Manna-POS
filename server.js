@@ -182,7 +182,7 @@ app.post("/api/machines", async (req, res, next) => {
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
-      unique(state, "machines", "code", code); unique(state, "machines", "name", name);
+      unique(state, "machines", "name", name);
       const machine = { id: identifier("mach", code), code, name, type: text(req.body.type) || "Produksi", status: text(req.body.status) || "AKTIF", costPerHour: Math.max(0, Number(req.body.costPerHour || 0)), capacity: text(req.body.capacity), active: req.body.active !== false };
       state.machines.push(machine); return machine;
     });
@@ -197,7 +197,7 @@ app.put("/api/machines/:id", async (req, res, next) => {
       if (!machine) throw new Error("Mesin tidak ditemukan");
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
-      unique(state, "machines", "code", code, machine.id); unique(state, "machines", "name", name, machine.id);
+      unique(state, "machines", "name", name, machine.id);
       Object.assign(machine, { code, name, type: text(req.body.type) || "Produksi", status: text(req.body.status) || "AKTIF", costPerHour: Math.max(0, Number(req.body.costPerHour || 0)), capacity: text(req.body.capacity), active: req.body.active !== false });
       return machine;
     });
@@ -222,11 +222,12 @@ function saveProduct(state, body, current = null) {
   });
   if (!materialSources.length) throw new Error("Produk wajib memiliki minimal satu sumber bahan");
   const machineIds = [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
-  if (!machineIds.length) throw new Error("Pilih minimal satu mesin");
+  if (!machineIds.length && !current) throw new Error("Pilih minimal satu mesin");
   const unitLabels = { pcs: "/pcs", lbr: "/lembar", "m²": "/m²", pack: "/pack", rim: "/rim", set: "/set", "m lari": "/m lari" };
   const finishingIds = [...new Set(body.finishingIds || [])].filter((id) => state.finishings.some((item) => item.id === id && item.active !== false && item.categories.includes(text(body.category))));
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category: text(body.category), baseCost, price, priceBasis, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [] };
+  const category = text(body.category);
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, baseCost, price, priceBasis, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [] };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;
