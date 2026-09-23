@@ -143,6 +143,7 @@ body{font-size:15.5px}
 .template-chip label{display:flex;align-items:center;gap:9px;min-height:58px;border:1px solid var(--line);border-radius:10px;padding:7px 10px;background:#fff;cursor:pointer;color:var(--ink)}
 .template-chip label>strong{font-size:12px;white-space:nowrap}
 .template-chip input:checked+label{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.size-variant-options{margin-top:2px}.size-variant-chip label{display:grid!important;gap:3px;min-width:112px;text-align:center}.size-variant-chip label strong{font-size:12px}.size-variant-chip label small{font-size:9px;color:var(--muted);font-weight:600}.size-variant-chip input:checked+label small{color:var(--blue)}.fixed-size-custom{margin-top:10px}
 
 /* Product-card, template, and finishing refinements */
 .choice-card label{transition:border-color .15s,box-shadow .15s,transform .15s}

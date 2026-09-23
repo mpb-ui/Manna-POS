@@ -97,14 +97,15 @@ function billedLength(value, increment = 0.5) {
   const step = Number(increment) > 0 ? Number(increment) : 0.5;
   return Math.max(1, Number((Math.ceil(Number(value || 1) / step - 1e-9) * step).toFixed(4)));
 }
-function productBase(product, width, length, quantity) {
+function productBase(product, width, length, quantity, fixedVariant = null) {
   const billed = billedLength(length, product.billingIncrement);
-  const units = product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
+  const units = fixedVariant ? Number(quantity) : product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
   const tier = product.wholesaleEnabled ? (product.priceTiers || []).filter((item) => Number(item.min) <= quantity && (item.max == null || item.max === "" || quantity <= Number(item.max))).sort((a, b) => Number(b.min) - Number(a.min))[0] : null;
-  const originalUnitPrice = Number(tier?.price ?? product.price);
+  const originalUnitPrice = Number(fixedVariant?.price ?? tier?.price ?? product.price);
   const unitPrice = promoPrice(product, originalUnitPrice);
   return { billed, units, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
 }
+function manualAreaFinishing(finish) { return finish.rule === "area" && finish.name === "Kisscut LF"; }
 function suggestedFinishUnits(finish, width, length) {
   if (finish.rule === "free") return 1;
   if (finish.rule === "point") return 4;
@@ -126,13 +127,24 @@ function finishingHtml(product) {
       <div class="finish-actions">
         <button type="button" class="finish-note-toggle" data-finish-note-toggle="${finish.id}" disabled>Catatan</button>
         <div class="qty-stepper hidden" data-stepper="${finish.id}">
-          <button type="button" data-minus="${finish.id}" ${finish.rule === "area" ? "disabled" : ""}>−</button>
-          <input type="number" min="${finish.rule === "area" ? "0.1" : "1"}" step="${finish.rule === "area" ? "0.1" : "1"}" data-finish-qty="${finish.id}" value="1" aria-label="Jumlah ${finish.name}" ${finish.rule === "area" ? "readonly" : ""}>
-          <button type="button" data-plus="${finish.id}" ${finish.rule === "area" ? "disabled" : ""}>+</button>
+          <button type="button" data-minus="${finish.id}" ${finish.rule === "area" && !manualAreaFinishing(finish) ? "disabled" : ""}>−</button>
+          <input type="number" min="1" step="${manualAreaFinishing(finish) ? "0.1" : "1"}" data-finish-qty="${finish.id}" value="1" aria-label="Jumlah ${finish.name}" ${finish.rule === "area" && !manualAreaFinishing(finish) ? "readonly" : ""}>
+          <button type="button" data-plus="${finish.id}" ${finish.rule === "area" && !manualAreaFinishing(finish) ? "disabled" : ""}>+</button>
         </div>
       </div>
       <div class="finish-note-row hidden" data-finish-note-row="${finish.id}"><input type="text" data-finish-note="${finish.id}" placeholder="Catatan khusus ${escapeHtml(finish.name)}"></div>
     </div>`).join("");
+}
+
+function fixedSizeMeasurementHtml(product) {
+  const hasCustomSize = product.priceBasis !== "unit";
+  const options = [
+    ...(hasCustomSize ? [{ id: "custom", label: "Meteran", price: null }] : []),
+    ...(product.fixedSizeVariants || [])
+  ];
+  const chips = options.map((variant, index) => `<div class="chip size-variant-chip"><input type="radio" name="size-variant" id="size-variant-${product.id}-${variant.id}" value="${variant.id}" ${index === 0 ? "checked" : ""}><label for="size-variant-${product.id}-${variant.id}"><strong>${escapeHtml(variant.label)}</strong>${variant.price ? `<small>${rupiah.format(variant.price)}</small>` : ""}</label></div>`).join("");
+  const customFields = hasCustomSize ? `<div class="form-grid three fixed-size-custom" data-size-custom><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div><label class="field"><span>Panjang aktual</span><span class="input-with-unit"><input id="length" type="number" min="0.1" step="0.1" value="1"><b>m</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>` : "";
+  return `<div class="field full"><span>Pilih ukuran</span><div class="chips size-variant-options">${chips}</div></div>${customFields}<div class="form-grid"><label class="field"><span>Jumlah Produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label></div>`;
 }
 
 function categoryKey(product) {
@@ -184,7 +196,9 @@ function allCatalogHtml() {
 
 function productConfigurationHtml(product, popup = false) {
   const isUnit = product.priceBasis === "unit";
-  const measurement = product.templateProduct ? templateOptionsHtml(product) : isUnit
+  const measurement = product.templateProduct ? templateOptionsHtml(product) : product.fixedSizeVariants?.length
+    ? fixedSizeMeasurementHtml(product)
+    : isUnit
     ? `<div class="form-grid"><label class="field"><span>Jumlah ${escapeHtml(product.unitName || "unit")}</span><input id="quantity" type="number" min="1" step="1" value="1"></label></div>`
     : `<div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual</span><span class="input-with-unit"><input id="length" type="number" min="0.1" step="0.1" value="1"><b>m</b></span></label><label class="field"><span>Jumlah produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>`;
@@ -235,27 +249,31 @@ function checkoutHtml() {
 
 function readCurrentLine() {
   const product = selectedProduct();
-  const isUnit = product.priceBasis === "unit";
+  const sizeVariantId = document.querySelector('input[name="size-variant"]:checked')?.value || "";
+  const fixedVariant = (product.fixedSizeVariants || []).find((item) => item.id === sizeVariantId) || null;
+  const isFixedSize = Boolean(fixedVariant);
+  const isUnit = product.priceBasis === "unit" || isFixedSize;
   const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
   const width = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
   const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : Number(document.querySelector("#length")?.value || 1);
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
-  const base = productBase(product, width, length, quantity);
+  const base = productBase(product, width, length, quantity, fixedVariant);
   const fileService = product.templateProduct ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
   const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) : 0;
   let finishTotal = 0;
   const finishing = [...document.querySelectorAll('#finishing-grid input[type="checkbox"]:checked')].map((input) => {
     const finish = product.finishing.find((f) => f.id === input.value);
-    const areaUnits = product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : product.priceBasis === "sqm" ? width * base.billed * quantity : base.billed * quantity;
-    const units = finish.rule === "area" ? Number(areaUnits.toFixed(4)) : Math.max(1, Number(document.querySelector(`[data-finish-qty="${finish.id}"]`)?.value || 1));
+    const areaUnits = isFixedSize ? Number(fixedVariant.area || 1) * quantity : product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : product.priceBasis === "sqm" ? width * base.billed * quantity : base.billed * quantity;
     const quantityInput = document.querySelector(`[data-finish-qty="${finish.id}"]`);
+    const units = manualAreaFinishing(finish) ? Math.max(1, Number(quantityInput?.value || 1)) : finish.rule === "area" ? Number(areaUnits.toFixed(4)) : Math.max(1, Number(quantityInput?.value || 1));
     if (finish.rule === "area" && quantityInput) quantityInput.value = units;
     finishTotal += units * finish.price;
     return { id: finish.id, units, note: document.querySelector(`[data-finish-note="${finish.id}"]`)?.value.trim() || "" };
   });
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed, templateDesign,
+    sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "",
     baseTotal: base.total, templateDesignTotal,
     fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price,
     quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
@@ -263,7 +281,7 @@ function readCurrentLine() {
       const finish = product.finishing.find((x) => x.id === f.id);
       return `${finish?.name} × ${f.units}${f.note ? ` (${f.note})` : ""}`;
     }).join(", "),
-    displaySize: isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`,
+    displaySize: isFixedSize ? `${fixedVariant.label} · ${quantity} Lbr` : isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`,
     productionNote: document.querySelector("#production-note")?.value.trim() || "",
     previewTotal: base.total + finishTotal + fileService.price + templateDesignTotal
   };
@@ -275,9 +293,16 @@ function updatePreview() {
   const billedInput = document.querySelector("#billed-length");
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
-  document.querySelector("#formula-text").textContent = product.priceBasis === "unit"
+  document.querySelector("#formula-text").textContent = line.sizeVariantId
+    ? `${line.sizeVariantLabel} × ${line.quantity} Lbr · ${rupiah.format(line.unitPrice)}/lembar`
+    : product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
     : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
+}
+
+function syncFixedSizeUi() {
+  const selected = document.querySelector('input[name="size-variant"]:checked')?.value || "";
+  document.querySelector("[data-size-custom]")?.classList.toggle("hidden", selected !== "custom");
 }
 
 function toggleFinishing(input) {
@@ -290,14 +315,16 @@ function toggleFinishing(input) {
   if (noteToggle) noteToggle.disabled = !input.checked;
   if (!input.checked) noteRow?.classList.add("hidden");
   if (input.checked) {
+    const fixedVariantId = document.querySelector('input[name="size-variant"]:checked')?.value || "";
+    const fixedVariant = (product.fixedSizeVariants || []).find((item) => item.id === fixedVariantId);
     const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
     const width = product.priceBasis === "unit" ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
     const length = product.templateProduct ? Number(templateSize?.[1]) : billedLength(document.querySelector("#length")?.value || 1, product.billingIncrement);
     const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
     const suggested = finish.rule === "area"
-      ? (product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : Number(width) * Number(length) * quantity)
+      ? (fixedVariant ? Number(fixedVariant.area || 1) * quantity : product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : Number(width) * Number(length) * quantity)
       : suggestedFinishUnits(finish, width, length);
-    document.querySelector(`[data-finish-qty="${finish.id}"]`).value = Number(suggested.toFixed?.(4) ?? suggested);
+    document.querySelector(`[data-finish-qty="${finish.id}"]`).value = manualAreaFinishing(finish) ? Math.max(1, Number(suggested.toFixed?.(4) ?? suggested)) : Number(suggested.toFixed?.(4) ?? suggested);
   }
   updatePreview();
 }
@@ -365,10 +392,12 @@ function bindProductSearch() {
 }
 
 function bindProductConfiguration(onAdd) {
-  document.querySelectorAll('#length,#quantity,input[name="width"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll('#length,#quantity,input[name="width"],input[name="size-variant"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   document.querySelectorAll('#finishing-grid input[type="checkbox"]').forEach((input) => input.addEventListener("change", () => toggleFinishing(input)));
+  document.querySelectorAll('input[name="size-variant"]').forEach((input) => input.addEventListener("change", syncFixedSizeUi));
+  syncFixedSizeUi();
   document.querySelectorAll("[data-finish-note-toggle]").forEach((button) => button.onclick = () => {
     const row = document.querySelector(`[data-finish-note-row="${button.dataset.finishNoteToggle}"]`);
     row?.classList.toggle("hidden");
@@ -704,6 +733,7 @@ function startEditOrder(order) {
   state.cart = order.items.map((item) => ({
     productId: item.productId, productName: item.productName, width: item.width,
     length: item.actualLength, billedLength: item.billedLength, quantity: item.quantity,
+    sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
     finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units, note: finish.note || "" })),
     finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}${finish.note ? ` (${finish.note})` : ""}`).join(", "),
     displaySize: item.displaySize, templateDesign: item.templateDesign || "", fileServiceId: item.fileService?.id || "READY",

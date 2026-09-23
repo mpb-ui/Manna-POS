@@ -21,15 +21,41 @@ test("LF Poster dan LF Sticker dibulatkan ke atas per 10 cm", () => {
 
 test("finishing LF per m² mengikuti luas yang ditagihkan", () => {
   const sticker = PRODUCTS.find((item) => item.id === "lf-sticker-white-glossy");
-  const line = calculateLine(sticker, { width: 1.5, length: 1.01, quantity: 2, finishing: [{ id: "kisscut", units: 1 }] });
+  const line = calculateLine(sticker, { width: 1.5, length: 1.01, quantity: 2, finishing: [{ id: "manual-cut-lf", units: 1 }] });
   assert.equal(line.billedLength, 1.1);
   assert.equal(line.finishing[0].units, 3.3);
   assert.equal(line.finishingTotal, 148500);
 });
 
+test("Kisscut LF memiliki quantity manual minimal satu", () => {
+  const sticker = PRODUCTS.find((item) => item.id === "lf-sticker-white-glossy");
+  const minimum = calculateLine(sticker, { width: 1, length: 1, quantity: 1, finishing: [{ id: "kisscut", units: 0.5 }] });
+  const manual = calculateLine(sticker, { width: 1, length: 1, quantity: 1, finishing: [{ id: "kisscut", units: 2.5 }] });
+  assert.equal(minimum.finishing[0].units, 1);
+  assert.equal(minimum.finishingTotal, 45000);
+  assert.equal(manual.finishing[0].units, 2.5);
+  assert.equal(manual.finishingTotal, 112500);
+});
+
+test("varian A1 memakai harga tetap dan hanya quantity", () => {
+  const albatros = PRODUCTS.find((item) => item.id === "poster-albatros");
+  const line = calculateLine(albatros, { sizeVariantId: "a1", quantity: 2, fileServiceId: "READY", finishing: [] });
+  assert.equal(line.baseTotal, 200000);
+  assert.equal(line.displaySize, "A1 · 2 Lbr");
+  assert.equal(line.stockConsumption, 1);
+});
+
+test("Backlite Film memakai satu produk dengan empat varian ukuran", () => {
+  const backlite = PRODUCTS.find((item) => item.id === "poster-backlite-film");
+  assert.deepEqual(backlite.fixedSizeVariants.map((item) => item.label), ["A4", "A3", "A2", "A1"]);
+  const line = calculateLine(backlite, { sizeVariantId: "a2", quantity: 3, fileServiceId: "READY", finishing: [] });
+  assert.equal(line.baseTotal, 450000);
+  assert.equal(line.displaySize, "A2 · 3 Lbr");
+});
+
 test("katalog spreadsheet memuat produk LF dan 23 mesin", () => {
-  assert.equal(PRODUCTS.filter((item) => item.category === "LF Poster").length, 9);
-  assert.equal(PRODUCTS.filter((item) => item.category === "LF Sticker").length, 10);
+  assert.equal(PRODUCTS.filter((item) => item.category === "LF Poster").length, 4);
+  assert.equal(PRODUCTS.filter((item) => item.category === "LF Sticker").length, 7);
   assert.equal(MACHINES.length, 23);
   assert.equal(MACHINES.find((item) => item.name === "Allwin Outdoor")?.code, "C8i 4 Head");
 });
