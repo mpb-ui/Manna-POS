@@ -165,7 +165,7 @@ function productCardsHtml(products) {
   const recommended = state.selectedCategory === "all";
   return products.map((product) => `<div class="choice-card ${recommended ? "recommended-card" : ""}">
     <input type="radio" id="p-${product.id}" name="product" value="${product.id}" ${product.id === state.selectedProduct ? "checked" : ""}>
-    <label for="p-${product.id}" role="button" tabindex="0" ${product.groupedProduct ? `data-config-product="${product.id}"` : `data-select-product="${product.id}"`} aria-pressed="${product.id === state.selectedProduct}">
+    <label for="p-${product.id}" role="button" tabindex="0" data-select-product="${product.id}" aria-pressed="${product.id === state.selectedProduct}">
       ${recommended ? `<span class="product-category">${escapeHtml(product.category)}</span>` : ""}
       ${discountActive(product) ? '<span class="discount-badge">DISKON</span>' : ""}<strong>${escapeHtml(product.name)}</strong><small>${product.groupedProduct ? "Mulai dari " : ""}${discountActive(product) ? `<s>${rupiah.format(product.price)}</s> <b>${rupiah.format(promoPrice(product, product.price))}</b>` : rupiah.format(product.cardPrice || product.price)} ${escapeHtml(product.unitLabel)}</small>
       ${recommended ? `<em>★ ${escapeHtml(product.recommendation || "Produk pilihan")}</em>` : ""}
@@ -223,9 +223,9 @@ function renderPos() {
   if (!visibleProducts.some((product) => product.id === state.selectedProduct)) state.selectedProduct = null;
   const product = selectedProduct();
   const categoryTabs = productCategories.map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${label}</button>`).join("");
-  const intro = '<p class="section-label">1 · Pilih bahan</p>';
+  const intro = `<p class="section-label">1 · ${state.selectedCategory === "display-banner" ? "Pilih produk" : "Pilih bahan"}</p>`;
   const productContent = state.selectedCategory === "all" ? allCatalogHtml() : visibleProducts.length
-    ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${product && !product.groupedProduct ? productConfigurationHtml(product) : ""}`
+    ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${product ? productConfigurationHtml(product) : ""}`
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories.find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid">
     <section class="panel"><div class="panel-head product-panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2><div class="product-search-wrap"><span>⌕</span><input id="product-search" type="search" placeholder="Cari produk…" autocomplete="off"><kbd>Ctrl K</kbd><div id="search-popover" class="search-popover hidden"></div></div></div><div class="panel-body">
@@ -357,7 +357,6 @@ function selectSearchProduct(productId) {
   state.selectedProduct = product.id;
   state.selectedCategory = categoryKey(product);
   renderPos();
-  if (product.groupedProduct) openProductConfigurator(product.id);
 }
 
 function bindProductSearch() {
