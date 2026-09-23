@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { roundBillingLength, calculateLine, allowedNextStatus, STATUS, tierPriceForQuantity, isDiscountActive, discountedPrice } from "../lib/domain.js";
-import { PRODUCTS, MACHINES } from "../lib/store.js";
+import { PRODUCTS, MACHINES, MATERIALS } from "../lib/store.js";
 
 test("panjang ditagihkan dibulatkan per 50 cm dengan minimum 1 m", () => {
   assert.equal(roundBillingLength(0.4), 1);
@@ -51,6 +51,39 @@ test("Backlite Film memakai satu produk dengan empat varian ukuran", () => {
   const line = calculateLine(backlite, { sizeVariantId: "a2", quantity: 3, fileServiceId: "READY", finishing: [] });
   assert.equal(line.baseTotal, 450000);
   assert.equal(line.displaySize, "A2 · 3 Lbr");
+});
+
+test("Display & Banner memakai tujuh produk induk dengan varian harga tetap", () => {
+  const products = PRODUCTS.filter((item) => item.category === "Display & Banner");
+  assert.equal(products.length, 7);
+  assert.ok(products.every((item) => item.groupedProduct));
+  assert.equal(products.find((item) => item.id === "display-tripod").fixedSizeVariants.length, 10);
+  assert.equal(products.find((item) => item.id === "display-roll-banner").fixedSizeVariants.length, 6);
+});
+
+test("pilihan Foamboard dan Impraboard wajib tunggal", () => {
+  const mockup = PRODUCTS.find((item) => item.id === "display-mockup");
+  assert.throws(() => calculateLine(mockup, { sizeVariantId: "30x40", quantity: 1, choices: [], finishing: [] }), /Pilih bahan/i);
+  const line = calculateLine(mockup, { sizeVariantId: "40x60", quantity: 2, choices: [{ groupId: "board", optionId: "impraboard" }], finishing: [] });
+  assert.equal(line.baseTotal, 370000);
+  assert.match(line.displaySize, /Impraboard/);
+  assert.equal(line.materials[0].materialId, "mat-impraboard");
+  assert.equal(line.materials[0].units, 2);
+});
+
+test("Tripod menghitung varian dan add-on klip", () => {
+  const tripod = PRODUCTS.find((item) => item.id === "display-tripod");
+  const line = calculateLine(tripod, { sizeVariantId: "60x120-2", quantity: 1, choices: [{ groupId: "board", optionId: "foamboard" }], finishing: [{ id: "tripod-clip", units: 1 }] });
+  assert.equal(line.baseTotal, 585000);
+  assert.equal(line.finishingTotal, 20000);
+  assert.equal(line.subtotal, 605000);
+  assert.equal(line.materials.find((item) => item.materialId === "mat-foamboard").units, 2);
+});
+
+test("database bahan memuat sepuluh komponen Display & Banner", () => {
+  const names = ["Kaki X-Banner", "Roll Banner 60×160", "Roll Banner 85×200", "Kaki Mini X-Banner", "Tripod Banner", "Foamboard", "Impraboard", "H-Banner", "Event Desk", "Klip Tripod"];
+  const materialNames = new Set(MATERIALS.map((item) => item.name));
+  assert.ok(names.every((name) => materialNames.has(name)));
 });
 
 test("katalog spreadsheet memuat produk LF dan 23 mesin", () => {

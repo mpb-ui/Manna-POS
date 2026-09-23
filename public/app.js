@@ -144,7 +144,11 @@ function fixedSizeMeasurementHtml(product) {
   ];
   const chips = options.map((variant, index) => `<div class="chip size-variant-chip"><input type="radio" name="size-variant" id="size-variant-${product.id}-${variant.id}" value="${variant.id}" ${index === 0 ? "checked" : ""}><label for="size-variant-${product.id}-${variant.id}"><strong>${escapeHtml(variant.label)}</strong>${variant.price ? `<small>${rupiah.format(variant.price)}</small>` : ""}</label></div>`).join("");
   const customFields = hasCustomSize ? `<div class="form-grid three fixed-size-custom" data-size-custom><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div><label class="field"><span>Panjang aktual</span><span class="input-with-unit"><input id="length" type="number" min="0.1" step="0.1" value="1"><b>m</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>` : "";
-  return `<div class="field full"><span>Pilih ukuran</span><div class="chips size-variant-options">${chips}</div></div>${customFields}<div class="form-grid"><label class="field"><span>Jumlah Produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label></div>`;
+  return `<div class="field full"><span>Pilih varian</span><div class="chips size-variant-options">${chips}</div></div>${customFields}<div class="form-grid"><label class="field"><span>Jumlah Produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>${escapeHtml(product.groupedProduct ? product.unitName || "unit" : "Lbr")}</b></span></label></div>`;
+}
+
+function choiceGroupsHtml(product) {
+  return (product.choiceGroups || []).map((group) => `<div class="variant-choice-group"><span class="variant-label">${escapeHtml(group.label)}</span><div class="chips exclusive-choice-options">${(group.options || []).map((option, index) => `<div class="chip exclusive-choice"><input type="radio" name="choice-${group.id}" id="choice-${product.id}-${group.id}-${option.id}" value="${option.id}" ${index === 0 ? "checked" : ""}><label for="choice-${product.id}-${group.id}-${option.id}"><i aria-hidden="true"></i>${escapeHtml(option.label)}</label></div>`).join("")}</div><small>Hanya satu pilihan yang dapat dipilih.</small></div>`).join("");
 }
 
 function categoryKey(product) {
@@ -161,9 +165,9 @@ function productCardsHtml(products) {
   const recommended = state.selectedCategory === "all";
   return products.map((product) => `<div class="choice-card ${recommended ? "recommended-card" : ""}">
     <input type="radio" id="p-${product.id}" name="product" value="${product.id}" ${product.id === state.selectedProduct ? "checked" : ""}>
-    <label for="p-${product.id}" role="button" tabindex="0" data-select-product="${product.id}" aria-pressed="${product.id === state.selectedProduct}">
+    <label for="p-${product.id}" role="button" tabindex="0" ${product.groupedProduct ? `data-config-product="${product.id}"` : `data-select-product="${product.id}"`} aria-pressed="${product.id === state.selectedProduct}">
       ${recommended ? `<span class="product-category">${escapeHtml(product.category)}</span>` : ""}
-      ${discountActive(product) ? '<span class="discount-badge">DISKON</span>' : ""}<strong>${escapeHtml(product.name)}</strong><small>${discountActive(product) ? `<s>${rupiah.format(product.price)}</s> <b>${rupiah.format(promoPrice(product, product.price))}</b>` : rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}</small>
+      ${discountActive(product) ? '<span class="discount-badge">DISKON</span>' : ""}<strong>${escapeHtml(product.name)}</strong><small>${product.groupedProduct ? "Mulai dari " : ""}${discountActive(product) ? `<s>${rupiah.format(product.price)}</s> <b>${rupiah.format(promoPrice(product, product.price))}</b>` : rupiah.format(product.cardPrice || product.price)} ${escapeHtml(product.unitLabel)}</small>
       ${recommended ? `<em>★ ${escapeHtml(product.recommendation || "Produk pilihan")}</em>` : ""}
     </label>
   </div>`).join("");
@@ -206,7 +210,7 @@ function productConfigurationHtml(product, popup = false) {
   const fileSection = product.templateProduct ? "" : `<hr class="divider"><p class="section-label">${popup ? "File" : "3 · File"}</p>${fileServicesHtml()}`;
   const finishStep = product.templateProduct ? 3 : 4;
   const noteStep = finishStep + 1;
-  return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}
+  return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}${choiceGroupsHtml(product)}
     <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
     ${fileSection}
     <hr class="divider"><p class="section-label">${popup ? "Finishing" : `${finishStep} · Finishing`}</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
@@ -221,7 +225,7 @@ function renderPos() {
   const categoryTabs = productCategories.map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${label}</button>`).join("");
   const intro = '<p class="section-label">1 · Pilih bahan</p>';
   const productContent = state.selectedCategory === "all" ? allCatalogHtml() : visibleProducts.length
-    ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${product ? productConfigurationHtml(product) : ""}`
+    ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${product && !product.groupedProduct ? productConfigurationHtml(product) : ""}`
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories.find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid">
     <section class="panel"><div class="panel-head product-panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2><div class="product-search-wrap"><span>⌕</span><input id="product-search" type="search" placeholder="Cari produk…" autocomplete="off"><kbd>Ctrl K</kbd><div id="search-popover" class="search-popover hidden"></div></div></div><div class="panel-body">
@@ -271,9 +275,11 @@ function readCurrentLine() {
     finishTotal += units * finish.price;
     return { id: finish.id, units, note: document.querySelector(`[data-finish-note="${finish.id}"]`)?.value.trim() || "" };
   });
+  const choices = (product.choiceGroups || []).map((group) => ({ groupId: group.id, optionId: document.querySelector(`input[name="choice-${group.id}"]:checked`)?.value || "" }));
+  const choiceLabels = choices.map((choice) => product.choiceGroups.find((group) => group.id === choice.groupId)?.options.find((option) => option.id === choice.optionId)?.label).filter(Boolean);
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed, templateDesign,
-    sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "",
+    sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "", choices,
     baseTotal: base.total, templateDesignTotal,
     fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price,
     quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
@@ -281,7 +287,7 @@ function readCurrentLine() {
       const finish = product.finishing.find((x) => x.id === f.id);
       return `${finish?.name} × ${f.units}${f.note ? ` (${f.note})` : ""}`;
     }).join(", "),
-    displaySize: isFixedSize ? `${fixedVariant.label} · ${quantity} Lbr` : isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`,
+    displaySize: `${isFixedSize ? `${fixedVariant.label} · ${quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lbr"}` : isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`}${choiceLabels.length ? ` · ${choiceLabels.join(" · ")}` : ""}`,
     productionNote: document.querySelector("#production-note")?.value.trim() || "",
     previewTotal: base.total + finishTotal + fileService.price + templateDesignTotal
   };
@@ -294,7 +300,7 @@ function updatePreview() {
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
   document.querySelector("#formula-text").textContent = line.sizeVariantId
-    ? `${line.sizeVariantLabel} × ${line.quantity} Lbr · ${rupiah.format(line.unitPrice)}/lembar`
+    ? `${line.sizeVariantLabel} × ${line.quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lbr"} · ${rupiah.format(line.unitPrice)}/${product.groupedProduct ? product.unitName || "unit" : "lembar"}`
     : product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
     : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
@@ -351,6 +357,7 @@ function selectSearchProduct(productId) {
   state.selectedProduct = product.id;
   state.selectedCategory = categoryKey(product);
   renderPos();
+  if (product.groupedProduct) openProductConfigurator(product.id);
 }
 
 function bindProductSearch() {
@@ -392,7 +399,7 @@ function bindProductSearch() {
 }
 
 function bindProductConfiguration(onAdd) {
-  document.querySelectorAll('#length,#quantity,input[name="width"],input[name="size-variant"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll('#length,#quantity,input[name="width"],input[name="size-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   document.querySelectorAll('#finishing-grid input[type="checkbox"]').forEach((input) => input.addEventListener("change", () => toggleFinishing(input)));
@@ -734,6 +741,7 @@ function startEditOrder(order) {
     productId: item.productId, productName: item.productName, width: item.width,
     length: item.actualLength, billedLength: item.billedLength, quantity: item.quantity,
     sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
+    choices: (item.choices || []).map((choice) => ({ groupId: choice.groupId, optionId: choice.optionId })),
     finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units, note: finish.note || "" })),
     finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}${finish.note ? ` (${finish.note})` : ""}`).join(", "),
     displaySize: item.displaySize, templateDesign: item.templateDesign || "", fileServiceId: item.fileService?.id || "READY",

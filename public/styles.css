@@ -144,6 +144,7 @@ body{font-size:15.5px}
 .template-chip label>strong{font-size:12px;white-space:nowrap}
 .template-chip input:checked+label{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
 .size-variant-options{margin-top:2px}.size-variant-chip label{display:grid!important;gap:3px;min-width:112px;text-align:center}.size-variant-chip label strong{font-size:12px}.size-variant-chip label small{font-size:9px;color:var(--muted);font-weight:600}.size-variant-chip input:checked+label small{color:var(--blue)}.fixed-size-custom{margin-top:10px}
+.variant-choice-group{display:grid;gap:7px;margin:15px 0}.variant-choice-group>small{font-size:9px;color:var(--muted)}.exclusive-choice label{display:flex!important;align-items:center;gap:8px}.exclusive-choice label i{width:16px;height:16px;border:1.5px solid #aab5c5;border-radius:4px;background:#fff;position:relative}.exclusive-choice input:checked+label i{border-color:var(--blue);background:var(--blue)}.exclusive-choice input:checked+label i:after{content:"✓";position:absolute;inset:-3px 0 0;color:#fff;font-size:13px;font-style:normal;text-align:center;font-weight:900}
 
 /* Product-card, template, and finishing refinements */
 .choice-card label{transition:border-color .15s,box-shadow .15s,transform .15s}
