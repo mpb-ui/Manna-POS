@@ -1,5 +1,7 @@
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
+const projectDateFormat = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Makassar" });
+const projectTimeFormat = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Makassar" });
 function localDateTimeInput(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -491,6 +493,19 @@ function projectDeadlineState(order) {
 
 function isProjectDeadlineToday(order) { return Boolean(order.deadline) && witaDateKey(order.deadline) === witaDateKey(); }
 
+function formatProjectDeadline(order) {
+  if (!order.deadline) return "-";
+  const deadline = new Date(order.deadline);
+  if (Number.isNaN(deadline.getTime())) return "-";
+  const today = new Date(`${witaDateKey()}T00:00:00Z`);
+  const target = new Date(`${witaDateKey(deadline)}T00:00:00Z`);
+  const dayOffset = Math.round((target - today) / 86400000);
+  const time = projectTimeFormat.format(deadline);
+  if (dayOffset === 0) return `Hari ini, ${time}`;
+  if (dayOffset === 1) return `Besok, ${time}`;
+  return `${projectDateFormat.format(deadline)}, ${time}`;
+}
+
 function filteredProjectOrders() {
   const query = state.projectSearch.trim().toLowerCase();
   const categoryStatuses = state.projectCategory === "waiting" ? ["MENUNGGU_PEMBAYARAN"] : ["DESAIN", "CETAK", "FINISHING", "SELESAI"];
@@ -515,6 +530,18 @@ function renderProjectContent(statuses) {
     ? `<div class="kanban-wrap"><div class="kanban">${statuses.map((status) => projectColumn(status, orders)).join("")}</div></div>`
     : projectListHtml(statuses, orders);
   content.querySelectorAll("[data-order]").forEach((button) => button.onclick = () => openOrder(button.dataset.order));
+  content.querySelectorAll("[data-project-row-order]").forEach((row) => {
+    const openRow = (event) => {
+      if (event.target.closest("button, select, input, a")) return;
+      openOrder(row.dataset.projectRowOrder);
+    };
+    row.addEventListener("click", openRow);
+    row.addEventListener("keydown", (event) => {
+      if (["Enter", " "].includes(event.key) && !event.target.closest("button, select, input, a")) {
+        event.preventDefault(); openOrder(row.dataset.projectRowOrder);
+      }
+    });
+  });
   content.querySelectorAll("[data-project-pic-order]").forEach((select) => select.addEventListener("change", async () => {
     const order = state.orders.find((item) => item.id === select.dataset.projectPicOrder);
     const previousPic = order?.designPic || "";
@@ -555,11 +582,10 @@ function projectListRow(order) {
   const deadlineState = projectDeadlineState(order);
   const products = (order.items || []).map((item) => item.productName);
   const firstProduct = products[0] || "—";
-  const extraProducts = products.length > 1 ? ` +${products.length - 1} item` : "";
+  const extraProducts = products.length > 1 ? `<b class="project-extra-items">+${products.length - 1} item lainnya</b>` : "";
   const waiting = state.projectCategory === "waiting";
-  const invoiceMeta = `${order.phone || "Walk-in"} - ${order.code}`;
   const picOptions = ["Gema", "Qori", "Cc/Ko"].map((name) => `<option value="${name}" ${order.designPic === name ? "selected" : ""}>${name}</option>`).join("");
-  return `<tr class="project-order-row"><td class="project-order-identity"><strong>${escapeHtml(order.customerName)}</strong><small>${escapeHtml(invoiceMeta)}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</td>${waiting ? "" : `<td><select class="project-pic-select ${order.designPic ? "" : "unassigned"}" data-project-pic-order="${order.id}" aria-label="Pilih PIC untuk ${escapeHtml(order.customerName)}"><option value="" disabled ${order.designPic ? "" : "selected"}>Belum ada</option>${picOptions}</select></td>`}<td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
+  return `<tr class="project-order-row" data-project-row-order="${order.id}" tabindex="0" aria-label="Buka detail pesanan ${escapeHtml(order.customerName)}"><td class="project-order-identity"><strong>${escapeHtml(order.customerName)}</strong><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b> - ${escapeHtml(order.code)}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${formatProjectDeadline(order)}</td>${waiting ? "" : `<td><select class="project-pic-select ${order.designPic ? "" : "unassigned"}" data-project-pic-order="${order.id}" aria-label="Pilih PIC untuk ${escapeHtml(order.customerName)}"><option value="" disabled ${order.designPic ? "" : "selected"}>-</option>${picOptions}</select></td>`}<td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
 }
 
 function projectColumn(status, source = state.orders) {
