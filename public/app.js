@@ -956,16 +956,14 @@ function openMaterialForm(material = null) {
 
 function openFinishingForm(finishing = null) {
   const categories = productCategories().filter(([id]) => id !== "all").map(([, label]) => label);
-  const saleUnits = state.catalogOptions.saleUnits?.length ? state.catalogOptions.saleUnits : ["pcs", "lbr", "m²", "m lari", "pack", "rim", "set"];
-  const priceBases = state.catalogOptions.priceBases?.length ? state.catalogOptions.priceBases : [{ id: "unit", label: "Per unit", mode: "unit" }, { id: "sqm", label: "Luas m²", mode: "sqm" }, { id: "linear_m", label: "Meter lari", mode: "linear_m" }];
-  const selectedBasis = priceBases.find((item) => item.label === product?.priceBasisLabel) || priceBases.find((item) => item.mode === product?.priceBasis) || priceBases[0];
   const rules = [["free", "Per unit"], ["area", "Per m²"], ["point", "Per titik"], ["perimeter", "Keliling"], ["top_bottom", "Atas–bawah"], ["left_right", "Kanan–kiri"], ["length", "Meter lari"]];
   const detail = showMasterDialog(finishing ? "Edit Finishing" : "Tambah Finishing", `<form id="finishing-form" class="master-form"><div class="form-grid">
     <label class="field"><span>Nama finishing *</span><input name="name" value="${escapeHtml(finishing?.name || "")}" required></label><label class="field"><span>Kode finishing *</span><input name="code" value="${escapeHtml(finishing?.code || "")}" required></label>
-    <label class="field"><span>Harga / unit</span><input name="price" type="number" min="0" value="${finishing?.price || 0}"></label><label class="field"><span>Dasar perhitungan</span><select name="rule">${rules.map(([value, label]) => `<option value="${value}" ${finishing?.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+    <label class="field"><span>Harga / unit</span>${moneyField("price", finishing?.price || 0)}</label><label class="field"><span>Dasar perhitungan</span><select name="rule">${rules.map(([value, label]) => `<option value="${value}" ${finishing?.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
     <div class="field full"><span>Kategori yang sesuai *</span><div class="category-checks">${categories.map((category) => `<label><input type="checkbox" name="category" value="${category}" ${(finishing?.categories || []).includes(category) ? "checked" : ""}><span>${category}</span></label>`).join("")}</div><small>Finishing hanya akan muncul saat menambahkan produk dalam kategori yang dipilih.</small></div>
   </div><div class="form-footer">${switchHtml("active", finishing?.active !== false)}<button class="primary" type="submit">Simpan Finishing</button></div></form>`);
-  detail.querySelector("#finishing-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); const payload = { ...values, active: event.target.elements.active.checked, categories: [...event.target.querySelectorAll('input[name="category"]:checked')].map((input) => input.value) }; try { await api(finishing ? `/api/finishings/${finishing.id}` : "/api/finishings", { method: finishing ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "finishings"; render(); toast("Finishing berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+  bindMoneyInputs(detail);
+  detail.querySelector("#finishing-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); const payload = { ...values, price: parseMoney(values.price), active: event.target.elements.active.checked, categories: [...event.target.querySelectorAll('input[name="category"]:checked')].map((input) => input.value) }; try { await api(finishing ? `/api/finishings/${finishing.id}` : "/api/finishings", { method: finishing ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "finishings"; render(); toast("Finishing berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
 function openMachineForm(machine = null) {
@@ -1017,6 +1015,9 @@ function openProductForm(product = null) {
   const defaultTiers = product?.priceTiers?.length ? product.priceTiers : [{ min: 1, max: 1, price: product?.price || 10000 }, { min: 2, max: 10, price: product?.price ? Math.round(product.price * .9) : 9000 }, { min: 11, max: 50, price: product?.price ? Math.round(product.price * .8) : 8000 }];
   const sources = product?.materialSources?.length ? product.materialSources : [{}];
   const categories = productCategories().filter(([id]) => id !== "all").map(([, label]) => label);
+  const saleUnits = state.catalogOptions.saleUnits?.length ? state.catalogOptions.saleUnits : ["pcs", "lbr", "m²", "m lari", "pack", "rim", "set"];
+  const priceBases = state.catalogOptions.priceBases?.length ? state.catalogOptions.priceBases : [{ id: "unit", label: "Per unit", mode: "unit" }, { id: "sqm", label: "Luas m²", mode: "sqm" }, { id: "linear_m", label: "Meter lari", mode: "linear_m" }];
+  const selectedBasis = priceBases.find((item) => item.label === product?.priceBasisLabel) || priceBases.find((item) => item.mode === product?.priceBasis) || priceBases[0];
   const initialCategory = product?.category || categories[0];
   const selectedFinishingIds = product?.finishingIds || [];
   const discount = product?.discount || { enabled: false, type: "percent", value: 0, startsAt: "", endsAt: "" };
