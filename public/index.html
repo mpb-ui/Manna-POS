@@ -13,7 +13,8 @@
     <form id="login-form" class="login-card">
       <img src="/manna-print-logo.jpg" alt="Manna Print" />
       <h1>Masuk ke Manna POS</h1>
-      <p>Masukkan PIN operasional untuk melanjutkan.</p>
+      <p>Masuk menggunakan akun operasional Anda.</p>
+      <label>Username<input id="login-username" autocomplete="username" value="admin" required /></label>
       <label>PIN<input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" required /></label>
       <button class="primary full" type="submit">Masuk</button>
     </form>
@@ -34,9 +35,11 @@
         <button class="nav-item active" data-view="pos"><span>▦</span><b>POS</b></button>
         <button class="nav-item" data-view="projects"><span>▤</span><b>Project Management</b><em id="active-count">0</em></button>
         <button class="nav-item" data-view="stock"><span>◫</span><b>Stok Bahan</b></button>
+        <button class="nav-item" data-view="reports"><span>▥</span><b>Laporan</b></button>
         <button class="nav-item" data-view="master"><span>⚙</span><b>Master Data</b></button>
       </nav>
       <div class="sidebar-foot">
+        <div class="sidebar-user"><strong id="current-user-name">—</strong><small id="current-user-role">—</small><button id="logout-btn" type="button">Keluar</button></div>
         <span id="today"></span>
         <div><span class="online-dot"></span> Sistem aktif <button id="refresh-btn" class="sidebar-refresh" title="Muat ulang">↻</button></div>
       </div>

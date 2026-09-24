@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
+import { PERMISSIONS, ROLE_PRESETS, allowedStatusForRole, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -11,8 +12,20 @@ const store = new Store(process.env.DATABASE_URL);
 
 app.use(express.json({ limit: "1mb" }));
 
-function signature() {
-  return crypto.createHmac("sha256", sessionSecret).update("manna-pos-authenticated").digest("hex");
+function hashPin(pin, salt) {
+  return crypto.scryptSync(String(pin), salt, 32).toString("hex");
+}
+
+function secureEqual(left, right) {
+  const a = Buffer.from(String(left)); const b = Buffer.from(String(right));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function sessionToken(user) {
+  const expires = Date.now() + 12 * 60 * 60 * 1000;
+  const body = `${user.id}.${Number(user.sessionVersion || 1)}.${expires}`;
+  const signature = crypto.createHmac("sha256", sessionSecret).update(body).digest("hex");
+  return `${body}.${signature}`;
 }
 
 function parseCookies(header = "") {
@@ -22,22 +35,58 @@ function parseCookies(header = "") {
   }));
 }
 
-function isAuthenticated(req) {
-  if (!appPin) return true;
-  return parseCookies(req.headers.cookie).manna_session === signature();
+function readToken(req) {
+  const token = parseCookies(req.headers.cookie).manna_session || "";
+  const parts = token.split(".");
+  if (parts.length !== 4) return null;
+  const [userId, version, expires, supplied] = parts;
+  const body = `${userId}.${version}.${expires}`;
+  const expected = crypto.createHmac("sha256", sessionSecret).update(body).digest("hex");
+  if (!secureEqual(supplied, expected) || Number(expires) < Date.now()) return null;
+  return { userId, version: Number(version) };
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory" }));
-app.get("/api/session", (req, res) => res.json({ authenticated: isAuthenticated(req), pinRequired: Boolean(appPin) }));
-app.post("/api/login", (req, res) => {
-  if (!appPin || String(req.body.pin || "") === appPin) {
-    res.setHeader("Set-Cookie", `manna_session=${signature()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
-    return res.json({ ok: true });
-  }
-  res.status(401).json({ error: "PIN tidak sesuai" });
+app.get("/api/session", async (req, res, next) => {
+  try {
+    const token = readToken(req); const state = await store.read();
+    const user = token ? state.users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version) : null;
+    res.json({ authenticated: Boolean(user), user: publicUser(user), pinRequired: true });
+  } catch (error) { next(error); }
+});
+app.post("/api/login", async (req, res, next) => {
+  try {
+    const username = text(req.body.username).toLowerCase(); const pin = String(req.body.pin || "");
+    const result = await store.mutate((state) => {
+      const user = state.users.find((item) => item.username.toLowerCase() === username && item.active !== false);
+      if (!user || !secureEqual(hashPin(pin, user.pinSalt), user.pinHash)) throw new Error("Username atau PIN tidak sesuai");
+      user.lastLoginAt = now();
+      audit(state, user, "LOGIN", "User masuk ke sistem");
+      return publicUser(user);
+    });
+    const state = await store.read(); const user = state.users.find((item) => item.id === result.id);
+    res.setHeader("Set-Cookie", `manna_session=${sessionToken(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+    res.json({ ok: true, user: result });
+  } catch (error) { res.status(401).json({ error: error.message || "Login gagal" }); }
+});
+app.post("/api/logout", (_req, res) => {
+  res.setHeader("Set-Cookie", `manna_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+  res.json({ ok: true });
 });
 
-app.use("/api", (req, res, next) => isAuthenticated(req) ? next() : res.status(401).json({ error: "Sesi berakhir" }));
+app.use("/api", async (req, res, next) => {
+  try {
+    const token = readToken(req); if (!token) return res.status(401).json({ error: "Sesi berakhir" });
+    const state = await store.read();
+    const user = state.users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version);
+    if (!user) return res.status(401).json({ error: "Sesi berakhir" });
+    req.user = user; next();
+  } catch (error) { next(error); }
+});
+
+function requirePermission(permission) {
+  return (req, res, next) => hasPermission(req.user, permission) ? next() : res.status(403).json({ error: "Anda tidak memiliki akses untuk tindakan ini" });
+}
 
 function now() { return new Date().toISOString(); }
 function orderCode(number) {
@@ -48,6 +97,35 @@ function activity(state, order, message, actor = "Kasir") {
   const entry = { id: crypto.randomUUID(), orderId: order.id, orderCode: order.code, message, actor, createdAt: now() };
   order.timeline.unshift(entry);
   state.activities.unshift(entry);
+}
+
+function audit(state, user, action, description, metadata = {}) {
+  state.auditLogs ||= [];
+  state.auditLogs.unshift({ id: crypto.randomUUID(), userId: user?.id || null, userName: user?.name || "Sistem", action, description, metadata, createdAt: now() });
+  state.auditLogs = state.auditLogs.slice(0, 2000);
+}
+
+function sanitizeProduct(product, user) {
+  const copy = structuredClone(product);
+  if (!hasPermission(user, "reports.cost") && !hasPermission(user, "master.products")) delete copy.baseCost;
+  if (!hasPermission(user, "stock.value") && !hasPermission(user, "master.materials")) {
+    (copy.materialSources || []).forEach((item) => delete item.cost);
+  }
+  return copy;
+}
+
+function sanitizeOrder(order, user) {
+  const copy = structuredClone(order);
+  const canSeeMoney = hasPermission(user, "projects.money");
+  if (!canSeeMoney) {
+    delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
+    copy.items.forEach((item) => {
+      ["unitPrice", "originalUnitPrice", "baseTotal", "finishingTotal", "fileServiceTotal", "templateDesignTotal", "subtotal"].forEach((key) => delete item[key]);
+      (item.finishing || []).forEach((finish) => { delete finish.unitPrice; delete finish.subtotal; });
+      if (item.fileService) delete item.fileService.price;
+    });
+  }
+  return copy;
 }
 
 function text(value) { return String(value || "").trim(); }
@@ -106,15 +184,31 @@ function normalizeOrder(order) {
   return order;
 }
 
-app.get("/api/bootstrap", async (_req, res, next) => {
+app.get("/api/bootstrap", async (req, res, next) => {
   try {
     const state = await store.read();
     state.orders.forEach(normalizeOrder);
-    res.json({ products: state.products.filter((item) => item.active !== false), allProducts: state.products, materials: state.materials, finishings: state.finishings, machines: state.machines, orders: state.orders, inventory: state.inventory, stockMovements: state.stockMovements.slice(0, 50), statusLabels: STATUS_LABEL });
+    const permissions = effectivePermissions(req.user);
+    const canCatalog = permissions.includes("pos.view") || permissions.includes("master.view");
+    const canStock = permissions.includes("stock.view") || permissions.includes("master.view");
+    const canMaster = permissions.includes("master.view");
+    const materials = canStock ? structuredClone(state.materials) : [];
+    if (!permissions.includes("stock.value") && !permissions.includes("master.materials")) materials.forEach((item) => { delete item.cost; delete item.supplier; });
+    res.json({
+      currentUser: publicUser(req.user), permissions,
+      permissionCatalog: permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: permissions.includes("users.manage") ? ROLE_PRESETS : {},
+      products: canCatalog ? state.products.filter((item) => item.active !== false).map((item) => sanitizeProduct(item, req.user)) : [],
+      allProducts: canMaster ? state.products.map((item) => sanitizeProduct(item, req.user)) : [],
+      materials, finishings: canCatalog || canMaster ? state.finishings : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines : [],
+      orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => sanitizeOrder(order, req.user)),
+      inventory: canStock ? state.inventory : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
+      users: permissions.includes("users.manage") ? state.users.map(publicUser) : [],
+      auditLogs: permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
+    });
   } catch (error) { next(error); }
 });
 
-app.post("/api/materials", async (req, res, next) => {
+app.post("/api/materials", requirePermission("master.materials"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase();
@@ -123,13 +217,14 @@ app.post("/api/materials", async (req, res, next) => {
       const material = { id: identifier("mat", sku), sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
       state.materials.push(material);
       state.inventory.push({ sku, materialId: material.id, productName: name, width: null, quantity: material.stock, minStock: material.minStock, unit: material.unit, updatedAt: now() });
+      audit(state, req.user, "MATERIAL_CREATE", `Menambahkan bahan ${name}`, { materialId: material.id, sku });
       return material;
     });
     res.status(201).json(result);
   } catch (error) { next(error); }
 });
 
-app.put("/api/materials/:id", async (req, res, next) => {
+app.put("/api/materials/:id", requirePermission("master.materials"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const material = state.materials.find((item) => item.id === req.params.id);
@@ -141,13 +236,14 @@ app.put("/api/materials/:id", async (req, res, next) => {
       Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", unit, minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false });
       const stock = state.inventory.find((item) => item.sku === oldSku || item.materialId === material.id);
       if (stock) Object.assign(stock, { sku, materialId: material.id, productName: name, minStock: material.minStock, unit, updatedAt: now() });
+      audit(state, req.user, "MATERIAL_UPDATE", `Memperbarui bahan ${name}`, { materialId: material.id, sku });
       return material;
     });
     res.json(result);
   } catch (error) { next(error); }
 });
 
-app.post("/api/finishings", async (req, res, next) => {
+app.post("/api/finishings", requirePermission("master.finishings"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
@@ -155,13 +251,13 @@ app.post("/api/finishings", async (req, res, next) => {
       if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
       unique(state, "finishings", "code", code); unique(state, "finishings", "name", name);
       const finishing = { id: identifier("fin", code), code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false };
-      state.finishings.push(finishing); return finishing;
+      state.finishings.push(finishing); audit(state, req.user, "FINISHING_CREATE", `Menambahkan finishing ${name}`, { finishingId: finishing.id }); return finishing;
     });
     res.status(201).json(result);
   } catch (error) { next(error); }
 });
 
-app.put("/api/finishings/:id", async (req, res, next) => {
+app.put("/api/finishings/:id", requirePermission("master.finishings"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const finishing = state.finishings.find((item) => item.id === req.params.id);
@@ -171,26 +267,27 @@ app.put("/api/finishings/:id", async (req, res, next) => {
       if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
       unique(state, "finishings", "code", code, finishing.id); unique(state, "finishings", "name", name, finishing.id);
       Object.assign(finishing, { code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false });
+      audit(state, req.user, "FINISHING_UPDATE", `Memperbarui finishing ${name}`, { finishingId: finishing.id });
       return finishing;
     });
     res.json(result);
   } catch (error) { next(error); }
 });
 
-app.post("/api/machines", async (req, res, next) => {
+app.post("/api/machines", requirePermission("master.machines"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
       unique(state, "machines", "name", name);
       const machine = { id: identifier("mach", code), code, name, type: text(req.body.type) || "Produksi", status: text(req.body.status) || "AKTIF", costPerHour: Math.max(0, Number(req.body.costPerHour || 0)), capacity: text(req.body.capacity), active: req.body.active !== false };
-      state.machines.push(machine); return machine;
+      state.machines.push(machine); audit(state, req.user, "MACHINE_CREATE", `Menambahkan mesin ${name}`, { machineId: machine.id }); return machine;
     });
     res.status(201).json(result);
   } catch (error) { next(error); }
 });
 
-app.put("/api/machines/:id", async (req, res, next) => {
+app.put("/api/machines/:id", requirePermission("master.machines"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const machine = state.machines.find((item) => item.id === req.params.id);
@@ -199,6 +296,7 @@ app.put("/api/machines/:id", async (req, res, next) => {
       if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
       unique(state, "machines", "name", name, machine.id);
       Object.assign(machine, { code, name, type: text(req.body.type) || "Produksi", status: text(req.body.status) || "AKTIF", costPerHour: Math.max(0, Number(req.body.costPerHour || 0)), capacity: text(req.body.capacity), active: req.body.active !== false });
+      audit(state, req.user, "MACHINE_UPDATE", `Memperbarui mesin ${name}`, { machineId: machine.id });
       return machine;
     });
     res.json(result);
@@ -233,14 +331,14 @@ function saveProduct(state, body, current = null) {
   return product;
 }
 
-app.post("/api/products", async (req, res, next) => {
-  try { const result = await store.mutate((state) => saveProduct(state, req.body)); res.status(201).json(result); } catch (error) { next(error); }
+app.post("/api/products", requirePermission("master.products"), async (req, res, next) => {
+  try { const result = await store.mutate((state) => { const product = saveProduct(state, req.body); audit(state, req.user, "PRODUCT_CREATE", `Menambahkan produk ${product.name}`, { productId: product.id, price: product.price }); return product; }); res.status(201).json(result); } catch (error) { next(error); }
 });
-app.put("/api/products/:id", async (req, res, next) => {
-  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id); if (!product) throw new Error("Produk tidak ditemukan"); return saveProduct(state, req.body, product); }); res.json(result); } catch (error) { next(error); }
+app.put("/api/products/:id", requirePermission("master.products"), async (req, res, next) => {
+  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id); if (!product) throw new Error("Produk tidak ditemukan"); const beforePrice = product.price; const saved = saveProduct(state, req.body, product); audit(state, req.user, "PRODUCT_UPDATE", `Memperbarui produk ${saved.name}`, { productId: saved.id, beforePrice, price: saved.price }); return saved; }); res.json(result); } catch (error) { next(error); }
 });
 
-app.post("/api/orders", async (req, res, next) => {
+app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const priced = calculateOrder(state.products, req.body.items || []);
@@ -259,6 +357,8 @@ app.post("/api/orders", async (req, res, next) => {
         paymentConfirmed: false,
         paymentStatus: "BELUM_BAYAR",
         status: STATUS.WAITING_PAYMENT,
+        createdById: req.user.id,
+        createdByName: req.user.name,
         stockCommitted: false,
         items: priced.items,
         total: priced.total,
@@ -266,7 +366,8 @@ app.post("/api/orders", async (req, res, next) => {
         updatedAt: now(),
         timeline: []
       };
-      activity(state, order, "Pesanan dibuat di POS");
+      activity(state, order, "Pesanan dibuat di POS", req.user.name);
+      audit(state, req.user, "ORDER_CREATE", `Membuat pesanan ${order.code}`, { orderId: order.id, total: order.total });
       state.orders.unshift(order);
       return order;
     });
@@ -274,7 +375,7 @@ app.post("/api/orders", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.put("/api/orders/:id", async (req, res, next) => {
+app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
@@ -291,14 +392,15 @@ app.put("/api/orders/:id", async (req, res, next) => {
       order.items = priced.items;
       order.total = priced.total;
       order.updatedAt = now();
-      activity(state, order, "Draft pesanan diperbarui", "Kasir");
+      activity(state, order, "Draft pesanan diperbarui", req.user.name);
+      audit(state, req.user, "ORDER_UPDATE", `Memperbarui draft ${order.code}`, { orderId: order.id });
       return order;
     });
     res.json(result);
   } catch (error) { next(error); }
 });
 
-app.post("/api/orders/:id/payments", async (req, res, next) => {
+app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
@@ -319,14 +421,15 @@ app.post("/api/orders/:id/payments", async (req, res, next) => {
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
       if (order.status === STATUS.WAITING_PAYMENT) order.status = STATUS.DESIGN;
       order.updatedAt = now();
-      activity(state, order, `${type === "LUNAS" ? "Pelunasan" : "Pembayaran sebagian"} ${method} dicatat`, "Kasir");
+      activity(state, order, `${type === "LUNAS" ? "Pelunasan" : "Pembayaran sebagian"} ${method} dicatat`, req.user.name);
+      audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount });
       return order;
     });
     res.json(result);
   } catch (error) { next(error); }
 });
 
-app.patch("/api/orders/:id/design-pic", async (req, res, next) => {
+app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
@@ -345,7 +448,7 @@ app.patch("/api/orders/:id/design-pic", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.patch("/api/orders/:id/status", async (req, res, next) => {
+app.patch("/api/orders/:id/status", requirePermission("projects.status"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
@@ -353,6 +456,7 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
       normalizeOrder(order);
       const target = req.body.status;
       if (target !== allowedNextStatus(order.status)) throw new Error("Perpindahan status tidak valid");
+      if (!allowedStatusForRole(req.user.role, order.status, target)) throw new Error("Role Anda tidak dapat memindahkan status ini");
       if (order.status === STATUS.DESIGN && !order.designPic) throw new Error("Nama PIC Operator Design wajib diisi");
       order.status = target;
       order.updatedAt = now();
@@ -373,14 +477,15 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
         }
         order.stockCommitted = true;
       }
-      activity(state, order, `Status berubah menjadi ${STATUS_LABEL[target]}`, String(req.body.actor || "Tim Produksi"));
+      activity(state, order, `Status berubah menjadi ${STATUS_LABEL[target]}`, req.user.name);
+      audit(state, req.user, "ORDER_STATUS", `Mengubah ${order.code} menjadi ${STATUS_LABEL[target]}`, { orderId: order.id, status: target });
       return order;
     });
     res.json(result);
   } catch (error) { next(error); }
 });
 
-app.patch("/api/inventory/:sku", async (req, res, next) => {
+app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const stock = state.inventory.find((item) => item.sku === req.params.sku);
@@ -391,10 +496,135 @@ app.patch("/api/inventory/:sku", async (req, res, next) => {
       stock.updatedAt = now();
       const movement = { id: crypto.randomUUID(), sku: stock.sku, productName: stock.productName, change, balance: stock.quantity, orderCode: null, reason: String(req.body.reason || "Penyesuaian stok"), createdAt: now() };
       state.stockMovements.unshift(movement);
+      audit(state, req.user, "STOCK_ADJUST", `Menyesuaikan stok ${stock.productName}`, { sku: stock.sku, change, balance: stock.quantity, reason: movement.reason });
       return { stock, movement };
     });
     res.json(result);
   } catch (error) { next(error); }
+});
+
+function normalizePermissions(values) {
+  const valid = new Set(PERMISSIONS.map((item) => item.id));
+  return [...new Set(Array.isArray(values) ? values : [])].filter((item) => valid.has(item));
+}
+
+app.post("/api/users", requirePermission("users.manage"), async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const name = text(req.body.name); const username = text(req.body.username).toLowerCase(); const pin = String(req.body.pin || "");
+      const role = ROLE_PRESETS[req.body.role] ? req.body.role : "CASHIER";
+      if (!name || !username || pin.length < 4) throw new Error("Nama, username, dan PIN minimal 4 digit wajib diisi");
+      if (state.users.some((item) => item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
+      const pinSalt = crypto.randomBytes(16).toString("hex");
+      const user = { id: crypto.randomUUID(), name, username, role, permissions: normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions), reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, pinSalt, pinHash: hashPin(pin, pinSalt), active: req.body.active !== false, sessionVersion: 1, createdAt: now(), lastLoginAt: null };
+      state.users.push(user); audit(state, req.user, "USER_CREATE", `Membuat user ${name}`, { targetUserId: user.id, role });
+      return publicUser(user);
+    });
+    res.status(201).json(result);
+  } catch (error) { next(error); }
+});
+
+app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const user = state.users.find((item) => item.id === req.params.id); if (!user) throw new Error("User tidak ditemukan");
+      const name = text(req.body.name); const username = text(req.body.username).toLowerCase();
+      const role = ROLE_PRESETS[req.body.role] ? req.body.role : user.role;
+      if (!name || !username) throw new Error("Nama dan username wajib diisi");
+      if (state.users.some((item) => item.id !== user.id && item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
+      if (user.id === req.user.id && req.body.active === false) throw new Error("Anda tidak dapat menonaktifkan akun sendiri");
+      if (user.role === "OWNER" && role !== "OWNER" && state.users.filter((item) => item.role === "OWNER" && item.active !== false).length <= 1) throw new Error("Minimal satu Owner aktif harus tersedia");
+      const permissions = normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions);
+      if (user.id === req.user.id && !permissions.includes("users.manage")) throw new Error("Akses kelola user tidak dapat dicabut dari akun yang sedang digunakan");
+      Object.assign(user, { name, username, role, permissions, reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, active: req.body.active !== false });
+      const pin = String(req.body.pin || "");
+      if (pin) { if (pin.length < 4) throw new Error("PIN minimal 4 digit"); user.pinSalt = crypto.randomBytes(16).toString("hex"); user.pinHash = hashPin(pin, user.pinSalt); user.sessionVersion = Number(user.sessionVersion || 1) + 1; }
+      audit(state, req.user, "USER_UPDATE", `Memperbarui user ${name}`, { targetUserId: user.id, role, pinChanged: Boolean(pin) });
+      return publicUser(user);
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
+function reportRange(query, user) {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+  const scope = user.reportScope || ROLE_PRESETS[user.role]?.reportScope || "all";
+  const fromText = scope === "today" ? today : String(query.from || "");
+  const toText = scope === "today" ? today : String(query.to || "");
+  const defaultFrom = new Date(); defaultFrom.setUTCDate(defaultFrom.getUTCDate() - 29);
+  const fallbackFrom = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(defaultFrom);
+  const from = new Date(`${fromText || fallbackFrom}T00:00:00+08:00`);
+  const to = new Date(`${toText || today}T23:59:59.999+08:00`);
+  return { from, to, fromText: fromText || fallbackFrom, toText: toText || today, locked: scope === "today", scope };
+}
+
+function estimateItemCost(item, state) {
+  const materialCost = (item.materials || []).reduce((sum, usage) => {
+    const material = state.materials.find((row) => row.id === usage.materialId || row.sku === usage.sku);
+    return sum + Number(usage.units || 0) * Number(usage.unitCost ?? material?.cost ?? 0);
+  }, 0);
+  if (materialCost > 0) return materialCost;
+  const product = state.products.find((row) => row.id === item.productId);
+  if (!product?.baseCost) return 0;
+  const units = item.priceBasis === "sqm" ? Number(item.width || 0) * Number(item.billedLength || 0) * Number(item.quantity || 1) : item.priceBasis === "linear_m" ? Number(item.billedLength || 0) * Number(item.quantity || 1) : Number(item.quantity || 1);
+  return Number(product.baseCost) * units;
+}
+
+function aggregateReport(state, user, query) {
+  const range = reportRange(query, user); const money = hasPermission(user, "reports.money"); const cost = hasPermission(user, "reports.cost");
+  const category = text(query.category); const machineId = text(query.machineId); const paymentStatus = text(query.paymentStatus);
+  const selectedItems = (order) => order.items.filter((item) => { const product = state.products.find((row) => row.id === item.productId); return (!category || product?.category === category) && (!machineId || (product?.machineIds || []).includes(machineId)); });
+  const inUserScope = (order) => range.scope !== "own" || order.createdById === user.id || order.designPic === user.name;
+  const orders = state.orders.map(normalizeOrder).filter((order) => {
+    const date = new Date(order.createdAt); if (date < range.from || date > range.to) return false;
+    if (!inUserScope(order)) return false;
+    if (paymentStatus && order.paymentStatus !== paymentStatus) return false;
+    return selectedItems(order).length > 0;
+  });
+  const previousMs = range.to.getTime() - range.from.getTime() + 1;
+  const previousFrom = new Date(range.from.getTime() - previousMs); const previousTo = new Date(range.from.getTime() - 1);
+  const previousOrders = state.orders.map(normalizeOrder).filter((order) => new Date(order.createdAt) >= previousFrom && new Date(order.createdAt) <= previousTo && inUserScope(order) && (!paymentStatus || order.paymentStatus === paymentStatus) && selectedItems(order).length > 0);
+  const selectedSales = (order) => selectedItems(order).reduce((sum, item) => sum + Number(item.subtotal || 0), 0);
+  const selectedPaid = (order) => Number(order.total || 0) ? Number(order.paidAmount || 0) * selectedSales(order) / Number(order.total) : 0;
+  const sales = orders.reduce((sum, order) => sum + selectedSales(order), 0);
+  const paid = orders.reduce((sum, order) => sum + selectedPaid(order), 0);
+  const hpp = orders.reduce((sum, order) => sum + selectedItems(order).reduce((lineSum, item) => lineSum + estimateItemCost(item, state), 0), 0);
+  const previousSales = previousOrders.reduce((sum, order) => sum + selectedSales(order), 0);
+  const dayKey = (value) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date(value));
+  const maps = { days: new Map(), categories: new Map(), products: new Map(), machines: new Map(), customers: new Map(), statuses: new Map() };
+  for (const order of orders) {
+    const day = dayKey(order.createdAt); const dayRow = maps.days.get(day) || { label: day, orders: 0, quantity: 0, sales: 0 }; dayRow.orders += 1; dayRow.sales += selectedSales(order);
+    const customerKey = `${order.customerName}|${order.phone || ""}`.toLowerCase(); const customer = maps.customers.get(customerKey) || { label: order.customerName, phone: order.phone || "", orders: 0, items: 0, sales: 0, paid: 0, lastOrderAt: order.createdAt }; customer.orders += 1; customer.sales += selectedSales(order); customer.paid += selectedPaid(order); customer.lastOrderAt = new Date(order.createdAt) > new Date(customer.lastOrderAt) ? order.createdAt : customer.lastOrderAt;
+    const status = maps.statuses.get(order.status) || { id: order.status, label: STATUS_LABEL[order.status] || order.status, orders: 0, items: 0 }; status.orders += 1;
+    for (const item of selectedItems(order)) {
+      const product = state.products.find((row) => row.id === item.productId); const itemCost = estimateItemCost(item, state); const itemSales = Number(item.subtotal || 0); const quantity = Number(item.quantity || 1); dayRow.quantity += quantity;
+      customer.items += quantity; status.items += quantity;
+      const categoryName = product?.category || "Tanpa kategori"; const cat = maps.categories.get(categoryName) || { label: categoryName, orders: 0, quantity: 0, sales: 0, cost: 0 }; cat.orders += 1; cat.quantity += quantity; cat.sales += itemSales; cat.cost += itemCost; maps.categories.set(categoryName, cat);
+      const prod = maps.products.get(item.productId) || { id: item.productId, label: item.productName, category: categoryName, orders: 0, quantity: 0, sales: 0, cost: 0 }; prod.orders += 1; prod.quantity += quantity; prod.sales += itemSales; prod.cost += itemCost; maps.products.set(item.productId, prod);
+      for (const id of product?.machineIds || []) { const machine = state.machines.find((row) => row.id === id); const row = maps.machines.get(id) || { id, label: machine?.name || id, jobs: 0, quantity: 0, sales: 0 }; row.jobs += 1; row.quantity += quantity; row.sales += itemSales; maps.machines.set(id, row); }
+    }
+    maps.days.set(day, dayRow); maps.customers.set(customerKey, customer); maps.statuses.set(order.status, status);
+  }
+  const mask = (row) => {
+    const copy = { ...row }; if (!money) { delete copy.sales; delete copy.paid; delete copy.outstanding; delete copy.previousSales; delete copy.change; delete copy.forecast30; } if (!cost) { delete copy.cost; delete copy.value; delete copy.profit; delete copy.margin; } return copy;
+  };
+  const enrich = (row) => mask({ ...row, profit: row.sales - row.cost, margin: row.sales ? (row.sales - row.cost) / row.sales * 100 : 0 });
+  const rows = orders.map((order) => {
+    const items = selectedItems(order); const rowSales = selectedSales(order); const rowPaid = selectedPaid(order); const row = { id: order.id, date: order.createdAt, code: order.code, customer: order.customerName, products: items.map((item) => item.productName).join(", "), itemCount: items.reduce((sum, item) => sum + Number(item.quantity || 1), 0), status: STATUS_LABEL[order.status], paymentStatus: order.paymentStatus, sales: rowSales, paid: rowPaid, outstanding: Math.max(0, rowSales - rowPaid), cost: items.reduce((sum, item) => sum + estimateItemCost(item, state), 0) }; row.profit = row.sales - row.cost; row.margin = row.sales ? row.profit / row.sales * 100 : 0; return mask(row);
+  });
+  const topProduct = [...maps.products.values()].sort((a, b) => (money ? b.sales - a.sales : b.quantity - a.quantity))[0];
+  const lowStock = state.inventory.filter((item) => Number(item.quantity) <= Number(item.minStock || 0)).length;
+  const change = previousSales ? (sales - previousSales) / previousSales * 100 : null;
+  const insights = [topProduct ? `${topProduct.label} menjadi produk teratas dengan ${topProduct.quantity.toLocaleString("id-ID")} unit pada periode ini.` : "Belum cukup transaksi untuk membaca tren produk.", lowStock ? `${lowStock} bahan berada pada atau di bawah stok minimum dan perlu diperiksa.` : "Tidak ada bahan yang berada di bawah stok minimum."];
+  if (money && change != null) insights.unshift(`Omzet ${change >= 0 ? "naik" : "turun"} ${Math.abs(change).toFixed(1)}% dibanding periode sebelumnya.`);
+  const elapsedDays = Math.max(1, Math.ceil((range.to - range.from) / 86400000)); const forecast30 = sales / elapsedDays * 30;
+  if (money && sales > 0) insights.push(`Estimasi penjualan 30 hari berikutnya ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(forecast30 * .9)}–${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(forecast30 * 1.1)}, berdasarkan rata-rata periode terpilih.`);
+  const inventory = state.inventory.map((item) => { const material = state.materials.find((row) => row.id === item.materialId || row.sku === item.sku); return mask({ id: item.materialId, label: item.productName, sku: item.sku, quantity: Number(item.quantity || 0), minStock: Number(item.minStock || 0), unit: item.unit, low: Number(item.quantity || 0) <= Number(item.minStock || 0), cost: Number(material?.cost || 0), value: Number(item.quantity || 0) * Number(material?.cost || 0) }); });
+  return { range: { from: range.fromText, to: range.toText, locked: range.locked, scope: range.scope }, capabilities: { money, cost, export: hasPermission(user, "reports.export"), print: hasPermission(user, "reports.print") }, summary: mask({ orders: orders.length, items: rows.reduce((sum, row) => sum + row.itemCount, 0), sales, paid, outstanding: sales - paid, cost: hpp, profit: sales - hpp, margin: sales ? (sales - hpp) / sales * 100 : 0, previousSales, change, forecast30 }), days: [...maps.days.values()].sort((a, b) => a.label.localeCompare(b.label)).map(mask), categories: [...maps.categories.values()].sort((a, b) => b.quantity - a.quantity).map(enrich), products: [...maps.products.values()].sort((a, b) => b.quantity - a.quantity).map(enrich), machines: [...maps.machines.values()].sort((a, b) => b.jobs - a.jobs).map(mask), customers: [...maps.customers.values()].sort((a, b) => b.orders - a.orders).map(mask), statuses: [...maps.statuses.values()].sort((a, b) => b.orders - a.orders), inventory, paymentSummary: mask({ unpaid: orders.filter((order) => order.paymentStatus === "BELUM_BAYAR").length, partial: orders.filter((order) => order.paymentStatus === "BELUM_LUNAS").length, paidOrders: orders.filter((order) => order.paymentStatus === "LUNAS").length, sales, paid, outstanding: sales - paid }), rows, insights };
+}
+
+app.get("/api/reports", requirePermission("reports.view"), async (req, res, next) => {
+  try { const state = await store.read(); res.json(aggregateReport(state, req.user, req.query)); } catch (error) { next(error); }
 });
 
 app.use(express.static("public"));
@@ -405,4 +635,14 @@ app.use((error, _req, res, _next) => {
 });
 
 await store.init();
+await store.mutate((state) => {
+  if (state.users.length) return;
+  const pinSalt = crypto.randomBytes(16).toString("hex");
+  state.users.push({
+    id: crypto.randomUUID(), name: "Owner Manna", username: "admin", role: "OWNER",
+    permissions: ROLE_PRESETS.OWNER.permissions, reportScope: "all", pinSalt,
+    pinHash: hashPin(appPin || "1234", pinSalt), active: true, sessionVersion: 1,
+    createdAt: now(), lastLoginAt: null
+  });
+});
 app.listen(port, "0.0.0.0", () => console.log(`Manna POS berjalan di port ${port}`));

@@ -36,6 +36,15 @@ npm test
 npm start
 ```
 
+### Login awal
+
+- Username: `admin`
+- PIN: nilai `APP_PIN`, atau `1234` jika `APP_PIN` tidak diatur pada lingkungan lokal.
+
+Setelah login sebagai Owner, buka **Master Data → User & Akses** untuk membuat akun Admin, Kasir, Operator Design, Operator Cetak, dan Staff Gudang. Setiap user dapat memakai permission khusus di luar template role-nya.
+
+Menu **Laporan** mengikuti permission server-side. User tanpa akses nilai uang tidak menerima field omzet, pembayaran, HPP, laba, atau margin dari API maupun file CSV.
+
 Tanpa `DATABASE_URL`, aplikasi memakai penyimpanan memory untuk development. Untuk production gunakan PostgreSQL.
 
 ## Environment variables

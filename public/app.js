@@ -25,8 +25,9 @@ const fileServices = [
 ];
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], stockMovements: [], statusLabels: {},
+  currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [], report: null,
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", editingOrderId: null,
-  masterTab: "products", projectCategory: "orders", projectView: "list", projectSearch: "", projectDeadline: "all", projectPic: "all", projectPayment: "all", projectStatus: "all",
+  masterTab: "products", reportTab: "overview", reportSort: { key: "date", direction: "desc" }, reportFilters: { from: "", to: "", category: "", machineId: "", paymentStatus: "" }, projectCategory: "orders", projectView: "list", projectSearch: "", projectDeadline: "all", projectPic: "all", projectPayment: "all", projectStatus: "all",
   projectCollapsed: new Set(["DIAMBIL"]),
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" }
 };
@@ -64,19 +65,29 @@ function showApp() {
   document.querySelector("#app-shell").classList.remove("hidden");
 }
 
+function can(permission) { return state.permissions.includes(permission); }
+const viewPermissions = { pos: "pos.view", projects: "projects.orders", stock: "stock.view", reports: "reports.view", master: "master.view" };
+function firstAllowedView() { return Object.keys(viewPermissions).find((view) => can(viewPermissions[view])) || "none"; }
+
 async function load() {
   const data = await api("/api/bootstrap");
   Object.assign(state, data);
+  document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("hidden", !can(viewPermissions[button.dataset.view])));
+  if (!can(viewPermissions[state.view])) state.view = firstAllowedView();
+  document.querySelector("#current-user-name").textContent = state.currentUser?.name || "—";
+  document.querySelector("#current-user-role").textContent = state.currentUser?.roleLabel || "—";
   document.querySelector("#active-count").textContent = state.orders.filter((o) => !["SELESAI", "DIAMBIL"].includes(o.status)).length;
   render();
 }
 
 function render() {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  document.querySelector("#page-title").textContent = { pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan", master: "Master Data" }[state.view];
+  document.querySelector("#page-title").textContent = { pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan", reports: "Laporan", master: "Master Data", none: "Akses Terbatas" }[state.view];
+  if (state.view === "none") root.innerHTML = '<div class="category-empty"><strong>Belum ada menu yang dapat diakses</strong><p>Hubungi Admin atau Owner untuk mengatur permission akun ini.</p></div>';
   if (state.view === "pos") renderPos();
   if (state.view === "projects") renderProjects();
   if (state.view === "stock") renderStock();
+  if (state.view === "reports") renderReports();
   if (state.view === "master") renderMaster();
 }
 
@@ -498,17 +509,18 @@ function paymentStatus(order) {
 }
 
 function renderProjects() {
+  if (!can("projects.waiting") && state.projectCategory === "waiting") state.projectCategory = "orders";
   const orderStatuses = ["DESAIN", "CETAK", "FINISHING", "SELESAI"];
   const waitingStatuses = ["MENUNGGU_PEMBAYARAN"];
   const statuses = state.projectCategory === "waiting" ? waitingStatuses : orderStatuses;
   const orderCount = state.orders.filter((order) => orderStatuses.includes(order.status)).length;
   const waitingCount = state.orders.filter((order) => waitingStatuses.includes(order.status)).length;
-  root.innerHTML = `<div class="project-category-tabs"><button type="button" data-project-category="orders" class="${state.projectCategory === "orders" ? "active" : ""}">Order <b>${orderCount}</b></button><button type="button" data-project-category="waiting" class="${state.projectCategory === "waiting" ? "active" : ""}">Menunggu Pembayaran <b>${waitingCount}</b></button></div>
+  root.innerHTML = `<div class="project-category-tabs"><button type="button" data-project-category="orders" class="${state.projectCategory === "orders" ? "active" : ""}">Order <b>${orderCount}</b></button>${can("projects.waiting") ? `<button type="button" data-project-category="waiting" class="${state.projectCategory === "waiting" ? "active" : ""}">Menunggu Pembayaran <b>${waitingCount}</b></button>` : ""}</div>
     <section class="panel project-panel"><div class="project-toolbar">
       ${state.projectCategory === "orders" ? `<div class="project-view-toggle"><button type="button" data-project-view="list" class="${state.projectView === "list" ? "active" : ""}">☷ List</button><button type="button" data-project-view="kanban" class="${state.projectView === "kanban" ? "active" : ""}">▥ Kanban</button></div>` : ""}
       <input id="project-search" class="search" value="${escapeHtml(state.projectSearch)}" placeholder="Cari kode, pelanggan, atau produk…">
       <select id="project-deadline" class="project-filter"><option value="all">Semua deadline</option><option value="today">Hari ini</option><option value="late">Terlambat</option><option value="none">Tanpa deadline</option></select>
-      ${state.projectCategory === "orders" ? `<select id="project-pic" class="project-filter"><option value="all">Semua PIC</option><option value="unassigned">Belum ada PIC</option><option value="Gema">Gema</option><option value="Qori">Qori</option><option value="Cc/Ko">Cc/Ko</option></select>` : ""}
+      ${state.projectCategory === "orders" && can("projects.assign") ? `<select id="project-pic" class="project-filter"><option value="all">Semua PIC</option><option value="unassigned">Belum ada PIC</option><option value="Gema">Gema</option><option value="Qori">Qori</option><option value="Cc/Ko">Cc/Ko</option></select>` : ""}
       <button id="reload-projects" class="secondary">Muat ulang</button>
     </div>${state.projectCategory === "orders" ? `<div class="project-status-filters"><button data-project-status="all" class="${state.projectStatus === "all" ? "active" : ""}">Semua <b>${orderCount}</b></button>${statuses.map((status) => `<button data-project-status="${status}" class="${state.projectStatus === status ? "active" : ""}">${state.statusLabels[status]} <b>${state.orders.filter((order) => order.status === status).length}</b></button>`).join("")}</div>` : ""}<div id="project-content"></div></section>`;
   document.querySelector("#project-deadline").value = state.projectDeadline;
@@ -630,7 +642,7 @@ function projectListRow(order) {
   const extraProducts = products.length > 1 ? `<b class="project-extra-items">+${products.length - 1} item lainnya</b>` : "";
   const waiting = state.projectCategory === "waiting";
   const picOptions = ["Gema", "Qori", "Cc/Ko"].map((name) => `<option value="${name}" ${order.designPic === name ? "selected" : ""}>${name}</option>`).join("");
-  return `<tr class="project-order-row" data-project-row-order="${order.id}" tabindex="0" aria-label="Buka detail pesanan ${escapeHtml(order.customerName)}"><td class="project-order-identity"><strong>${escapeHtml(order.customerName)}</strong><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b> - ${escapeHtml(order.code)}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${formatProjectDeadline(order)}</td>${waiting ? "" : `<td><select class="project-pic-select ${order.designPic ? "" : "unassigned"}" data-project-pic-order="${order.id}" aria-label="Pilih PIC untuk ${escapeHtml(order.customerName)}"><option value="" disabled ${order.designPic ? "" : "selected"}>-</option>${picOptions}</select></td>`}<td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
+  return `<tr class="project-order-row" data-project-row-order="${order.id}" tabindex="0" aria-label="Buka detail pesanan ${escapeHtml(order.customerName)}"><td class="project-order-identity"><strong>${escapeHtml(order.customerName)}</strong><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b> - ${escapeHtml(order.code)}</small></td><td><strong>${escapeHtml(firstProduct)}</strong><small>${escapeHtml(order.items?.[0]?.displaySize || "")}${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${formatProjectDeadline(order)}</td>${waiting ? "" : `<td>${can("projects.assign") ? `<select class="project-pic-select ${order.designPic ? "" : "unassigned"}" data-project-pic-order="${order.id}" aria-label="Pilih PIC untuk ${escapeHtml(order.customerName)}"><option value="" disabled ${order.designPic ? "" : "selected"}>-</option>${picOptions}</select>` : `<span class="project-pic-static">${escapeHtml(order.designPic || "-")}</span>`}</td>`}<td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
 }
 
 function projectColumn(status, source = state.orders) {
@@ -642,7 +654,7 @@ function projectColumn(status, source = state.orders) {
     const cardBadge = hidePrice
       ? `<span class="badge info">${order.designPic ? "PIC: " + escapeHtml(order.designPic) : "Menunggu PIC"}</span>`
       : `<span class="badge ${paymentClass}">${payment.replaceAll("_", " ")}</span>`;
-    return `<article class="order-card" data-order="${order.id}"><div class="order-card-head"><span class="order-code">${order.code}</span>${cardBadge}</div><h4>${escapeHtml(order.customerName)}</h4><p>${order.items.map((i) => i.productName).join(", ")}</p>${status !== "MENUNGGU_PEMBAYARAN" && !hidePrice ? `<p class="pic-label">${order.designPic ? "PIC: " + escapeHtml(order.designPic) : "Belum ada PIC"}</p>` : ""}${hidePrice ? "" : `<p style="margin-top:7px"><strong>${rupiah.format(order.total)}</strong></p>`}</article>`;
+    return `<article class="order-card" data-order="${order.id}"><div class="order-card-head"><span class="order-code">${order.code}</span>${cardBadge}</div><h4>${escapeHtml(order.customerName)}</h4><p>${order.items.map((i) => i.productName).join(", ")}</p>${status !== "MENUNGGU_PEMBAYARAN" && !hidePrice ? `<p class="pic-label">${order.designPic ? "PIC: " + escapeHtml(order.designPic) : "Belum ada PIC"}</p>` : ""}${hidePrice || !can("projects.money") ? "" : `<p style="margin-top:7px"><strong>${rupiah.format(order.total)}</strong></p>`}</article>`;
   }).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
 }
 
@@ -652,30 +664,31 @@ function nextAction(order) {
 
 function itemDetail(item) {
   const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}${finish.note ? ` — ${escapeHtml(finish.note)}` : ""}`).join(", ");
-  const templateParts = item.templateDesign ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : "";
+  const templateParts = item.templateDesign ? (can("projects.money") ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : `<small>Template: ${escapeHtml(item.templateDesign)}</small>`) : "";
   return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
 }
 
 function openOrder(id, showPayment = false) {
   const order = state.orders.find((item) => item.id === id);
+  const showMoney = can("projects.money");
   const isDesign = order.status === "DESAIN";
   const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
-  const outstanding = Math.max(0, order.total - Number(order.paidAmount || 0));
+  const outstanding = showMoney ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
   const detail = document.querySelector("#order-detail");
   detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${order.code}</span><h2 style="margin:5px 0 0">${escapeHtml(order.customerName)}</h2></div><button class="detail-close">×</button></div><div class="detail-body">
-    <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${isDesign ? "" : `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>`}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
-    <div class="order-items-detail">${order.items.map((item, index) => `<div class="detail-item"><span class="item-number">${index + 1}</span><div>${itemDetail(item)}</div>${isDesign ? "" : `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>`}</div>`).join("")}</div>
-    ${isDesign ? "" : `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>`}
+    <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
+    <div class="order-items-detail">${order.items.map((item, index) => `<div class="detail-item"><span class="item-number">${index + 1}</span><div>${itemDetail(item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
+    ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
     <p class="note" style="margin-top:12px"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</p>
-    ${isDesign ? `<div class="operator-box"><div class="field"><span>Nama Operator Design</span><div class="operator-choices">${[["gema", "Gema"], ["qori", "Qori"], ["cc-ko", "Cc/Ko"]].map(([id, name]) => `<div class="chip"><input type="radio" name="design-pic" id="operator-${id}" value="${name}" ${order.designPic === name ? "checked" : ""}><label for="operator-${id}">${name}</label></div>`).join("")}</div></div><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
-    <div id="payment-form-wrap" class="payment-form-wrap hidden">${paymentFormHtml(order, outstanding)}</div>
+    ${isDesign && can("projects.assign") ? `<div class="operator-box"><div class="field"><span>Nama Operator Design</span><div class="operator-choices">${[["gema", "Gema"], ["qori", "Qori"], ["cc-ko", "Cc/Ko"]].map(([id, name]) => `<div class="chip"><input type="radio" name="design-pic" id="operator-${id}" value="${name}" ${order.designPic === name ? "checked" : ""}><label for="operator-${id}">${name}</label></div>`).join("")}</div></div><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
+    ${can("pos.payment") ? `<div id="payment-form-wrap" class="payment-form-wrap hidden">${paymentFormHtml(order, outstanding)}</div>` : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
     <div class="detail-actions">
-      ${isWaiting ? '<button id="edit-order" class="secondary">Edit Pesanan</button><button id="show-payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
-      ${!isWaiting && paymentStatus(order) !== "LUNAS" ? '<button id="show-payment-form" class="secondary">Catat Pembayaran</button>' : ""}
-      ${nextAction(order) ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
+      ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}${isWaiting && can("pos.payment") ? '<button id="show-payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
+      ${!isWaiting && can("pos.payment") && paymentStatus(order) !== "LUNAS" ? '<button id="show-payment-form" class="secondary">Catat Pembayaran</button>' : ""}
+      ${can("projects.status") && nextAction(order) ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
       ${!isWaiting ? '<button id="print-spk" class="secondary">Cetak SPK</button>' : ""}
-      ${["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
+      ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
     </div>
   </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
@@ -770,15 +783,83 @@ function printOrder(order, type) {
   window.print();
 }
 
+function reportMoney(value) { return value == null ? "—" : rupiah.format(Number(value || 0)); }
+function reportPercent(value) { return value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(1)}%`; }
+function reportMetric(label, value, meta = "", tone = "") { return `<article class="report-metric ${tone}"><span>${label}</span><strong>${value}</strong>${meta ? `<small>${meta}</small>` : ""}</article>`; }
+function reportBars(rows, money) {
+  const maximum = Math.max(1, ...rows.map((row) => Number(money ? row.sales : row.quantity || row.orders || 0)));
+  return rows.slice(-14).map((row) => { const value = Number(money ? row.sales : row.quantity || row.orders || 0); return `<div class="report-bar-item" title="${escapeHtml(row.label)} · ${money ? reportMoney(value) : value}"><span style="height:${Math.max(4, value / maximum * 100)}%"></span><small>${escapeHtml(row.label.slice(5))}</small></div>`; }).join("");
+}
+function reportRankingRows(rows, capabilities) {
+  return rows.slice(0, 12).map((row, index) => `<tr><td><b>${index + 1}</b></td><td><strong>${escapeHtml(row.label)}</strong>${row.category ? `<small>${escapeHtml(row.category)}</small>` : ""}</td><td>${Number(row.orders || row.jobs || 0).toLocaleString("id-ID")}</td><td>${Number(row.quantity || 0).toLocaleString("id-ID")}</td>${capabilities.money ? `<td>${reportMoney(row.sales)}</td>` : ""}${capabilities.cost ? `<td>${reportMoney(row.profit)}</td><td>${reportPercent(row.margin)}</td>` : ""}</tr>`).join("");
+}
+
+async function renderReports() {
+  root.innerHTML = `<div class="report-page"><div class="report-top"><div><h1>Laporan</h1><p>Analisa penjualan, produk, mesin, dan perkembangan bisnis.</p></div></div><section class="panel"><div class="report-loading">Memuat laporan…</div></section></div>`;
+  try {
+    const params = new URLSearchParams(Object.entries(state.reportFilters).filter(([, value]) => value));
+    const report = await api(`/api/reports?${params}`); state.report = report;
+    if (!state.reportFilters.from) state.reportFilters.from = report.range.from;
+    if (!state.reportFilters.to) state.reportFilters.to = report.range.to;
+    if (state.view === "reports") drawReports();
+  } catch (error) { root.innerHTML = `<div class="category-empty"><strong>Laporan tidak dapat dimuat</strong><p>${escapeHtml(error.message)}</p></div>`; }
+}
+
+function drawReports() {
+  const report = state.report; if (!report) return;
+  const capabilities = report.capabilities; const summary = report.summary;
+  const changeMeta = summary.change == null ? "Belum ada periode pembanding" : `${summary.change >= 0 ? "Naik" : "Turun"} ${Math.abs(summary.change).toFixed(1)}% dari periode sebelumnya`;
+  const tabs = [["overview", "Ringkasan"], ["sales", "Penjualan"], ["products", "Produk & Kategori"], ["customers", "Pelanggan"], ["payments", "Pembayaran"], ["operations", "Operasional"], ["machines", "Mesin"], ["inventory", "Persediaan"]];
+  const kpis = [reportMetric("Jumlah Pesanan", Number(summary.orders).toLocaleString("id-ID"), `${summary.items} item`), capabilities.money ? reportMetric("Penjualan Bersih", reportMoney(summary.sales), changeMeta, summary.change >= 0 ? "positive" : "negative") : reportMetric("Produk Terjual", Number(summary.items).toLocaleString("id-ID"), "Nilai uang disembunyikan"), capabilities.money ? reportMetric("Uang Diterima", reportMoney(summary.paid), `Sisa ${reportMoney(summary.outstanding)}`) : "", capabilities.cost ? reportMetric("Laba Kotor Estimasi", reportMoney(summary.profit), `Margin ${reportPercent(summary.margin)}`) : ""].join("");
+  root.innerHTML = `<div class="report-page"><div class="report-top"><div><h1>Laporan</h1><p>Analisa penjualan, produk, mesin, dan perkembangan bisnis.</p></div><div class="report-actions">${capabilities.export ? '<button id="report-export" class="secondary">↓ Download CSV</button>' : ""}${capabilities.print ? '<button id="report-print" class="primary">Print / PDF</button>' : ""}</div></div>
+    <section class="panel report-filter-card"><div class="report-filters"><label><span>Dari tanggal</span><input id="report-from" type="date" value="${report.range.from}" ${report.range.locked ? "disabled" : ""}></label><label><span>Sampai tanggal</span><input id="report-to" type="date" value="${report.range.to}" ${report.range.locked ? "disabled" : ""}></label><label><span>Kategori</span><select id="report-category"><option value="">Semua kategori</option>${productCategories.filter(([id]) => id !== "all").map(([, label]) => `<option ${state.reportFilters.category === label ? "selected" : ""}>${label}</option>`).join("")}</select></label><label><span>Mesin</span><select id="report-machine"><option value="">Semua mesin</option>${state.machines.map((machine) => `<option value="${machine.id}" ${state.reportFilters.machineId === machine.id ? "selected" : ""}>${escapeHtml(machine.name)}</option>`).join("")}</select></label><label><span>Pembayaran</span><select id="report-payment"><option value="">Semua pembayaran</option>${["BELUM_BAYAR", "BELUM_LUNAS", "LUNAS"].map((value) => `<option value="${value}" ${state.reportFilters.paymentStatus === value ? "selected" : ""}>${value.replaceAll("_", " ")}</option>`).join("")}</select></label><button id="apply-report" class="primary">Terapkan</button></div>${report.range.locked ? '<p class="report-scope-note">Akses role ini dibatasi pada data hari ini.</p>' : report.range.scope === "own" ? '<p class="report-scope-note">Laporan hanya menampilkan pekerjaan yang dibuat atau ditugaskan kepada Anda.</p>' : ""}</section>
+    <div class="report-tabs">${tabs.map(([id, label]) => `<button data-report-tab="${id}" class="${state.reportTab === id ? "active" : ""}">${label}</button>`).join("")}</div><div class="report-kpis">${kpis}</div><div id="report-content"></div></div>`;
+  const content = document.querySelector("#report-content");
+  if (state.reportTab === "overview") content.innerHTML = `<div class="report-grid"><section class="panel report-chart-card"><div class="panel-head"><h2>Tren ${capabilities.money ? "Penjualan" : "Jumlah Produk"}</h2><span>${report.range.from} — ${report.range.to}</span></div><div class="report-bars">${reportBars(report.days, capabilities.money)}</div></section><section class="panel report-insights"><div class="panel-head"><h2>Insight & Rekomendasi</h2></div><div class="panel-body">${report.insights.map((item) => `<div class="report-insight"><span>✦</span><p>${escapeHtml(item)}</p></div>`).join("")}</div></section></div><section class="panel report-ranking"><div class="panel-head"><h2>Kategori Teratas</h2></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Kategori</th><th>Order</th><th>Qty</th>${capabilities.money ? "<th>Penjualan</th>" : ""}${capabilities.cost ? "<th>Laba</th><th>Margin</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.categories, capabilities)}</tbody></table></div></section>`;
+  if (state.reportTab === "sales") content.innerHTML = reportSalesTable(report);
+  if (state.reportTab === "products") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Produk</h2><span>${report.products.length} produk</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Produk</th><th>Order</th><th>Qty</th>${capabilities.money ? "<th>Penjualan</th>" : ""}${capabilities.cost ? "<th>Laba</th><th>Margin</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.products, capabilities)}</tbody></table></div></section>`;
+  if (state.reportTab === "machines") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Mesin</h2><span>Berdasarkan mesin yang terhubung ke produk</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Mesin</th><th>Pekerjaan</th><th>Qty</th>${capabilities.money ? "<th>Penjualan terkait</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.machines, capabilities)}</tbody></table></div></section>`;
+  if (state.reportTab === "customers") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Pelanggan</h2><span>${report.customers.length} pelanggan</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Pelanggan</th><th>Order</th><th>Item</th><th>Pesanan Terakhir</th>${capabilities.money ? "<th>Penjualan</th><th>Dibayar</th>" : ""}</tr></thead><tbody>${report.customers.map((row, index) => `<tr><td><b>${index + 1}</b></td><td><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.phone || "Walk-in")}</small></td><td>${row.orders}</td><td>${row.items}</td><td>${projectDateFormat.format(new Date(row.lastOrderAt))}</td>${capabilities.money ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td>` : ""}</tr>`).join("") || '<tr><td colspan="7">Belum ada data pelanggan.</td></tr>'}</tbody></table></div></section>`;
+  if (state.reportTab === "payments") content.innerHTML = `<div class="report-kpis report-sub-kpis">${reportMetric("Belum Bayar", report.paymentSummary.unpaid, "pesanan")}${reportMetric("Pembayaran Sebagian", report.paymentSummary.partial, "pesanan")}${reportMetric("Lunas", report.paymentSummary.paidOrders, "pesanan")}${capabilities.money ? reportMetric("Sisa Pembayaran", reportMoney(report.paymentSummary.outstanding), "piutang pada periode") : ""}</div>${reportSalesTable(report)}`;
+  if (state.reportTab === "operations") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Beban Pekerjaan per Tahap</h2><span>Mempermudah identifikasi antrean produksi</span></div><div class="table-wrap"><table><thead><tr><th>Tahap</th><th>Pesanan</th><th>Item</th></tr></thead><tbody>${report.statuses.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${row.orders}</td><td>${row.items}</td></tr>`).join("") || '<tr><td colspan="3">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
+  if (state.reportTab === "inventory") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Persediaan & Stok Minimum</h2><span>${report.inventory.filter((row) => row.low).length} bahan perlu diperiksa</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Kondisi</th>${capabilities.cost ? "<th>Nilai Stok</th>" : ""}</tr></thead><tbody>${report.inventory.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${escapeHtml(row.sku)}</td><td>${row.quantity.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td>${row.minStock.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td><span class="badge ${row.low ? "warn" : "ok"}">${row.low ? "PERLU DIPERIKSA" : "AMAN"}</span></td>${capabilities.cost ? `<td>${reportMoney(row.value)}</td>` : ""}</tr>`).join("")}</tbody></table></div></section>`;
+  document.querySelectorAll("[data-report-tab]").forEach((button) => button.onclick = () => { state.reportTab = button.dataset.reportTab; drawReports(); });
+  document.querySelector("#apply-report").onclick = () => { state.reportFilters = { from: document.querySelector("#report-from").value, to: document.querySelector("#report-to").value, category: document.querySelector("#report-category").value, machineId: document.querySelector("#report-machine").value, paymentStatus: document.querySelector("#report-payment").value }; renderReports(); };
+  document.querySelector("#report-export")?.addEventListener("click", exportReportCsv);
+  document.querySelector("#report-print")?.addEventListener("click", printReport);
+  bindReportSorting();
+}
+
+function reportSalesTable(report) {
+  const rows = [...report.rows].sort((a, b) => { const key = state.reportSort.key; const direction = state.reportSort.direction === "asc" ? 1 : -1; return (typeof a[key] === "number" ? a[key] - b[key] : String(a[key] || "").localeCompare(String(b[key] || ""))) * direction; });
+  const head = (key, label) => `<button data-report-sort="${key}">${label}${state.reportSort.key === key ? state.reportSort.direction === "asc" ? " ↑" : " ↓" : ""}</button>`;
+  return `<section class="panel report-ranking"><div class="panel-head"><h2>Detail Penjualan</h2><span>${rows.length} transaksi</span></div><div class="table-wrap"><table class="report-detail-table"><thead><tr><th>${head("date", "Tanggal")}</th><th>${head("code", "Invoice")}</th><th>${head("customer", "Order")}</th><th>Produk</th><th>${head("itemCount", "Item")}</th><th>Status</th>${report.capabilities.money ? `<th>${head("sales", "Penjualan")}</th><th>${head("paid", "Dibayar")}</th>` : ""}${report.capabilities.cost ? `<th>${head("profit", "Laba")}</th><th>${head("margin", "Margin")}</th>` : ""}</tr></thead><tbody>${rows.map((row) => `<tr><td>${new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Makassar" }).format(new Date(row.date))}</td><td><strong>${escapeHtml(row.code)}</strong></td><td>${escapeHtml(row.customer)}</td><td>${escapeHtml(row.products)}</td><td>${row.itemCount}</td><td>${escapeHtml(row.status)}</td>${report.capabilities.money ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td>` : ""}${report.capabilities.cost ? `<td>${reportMoney(row.profit)}</td><td>${reportPercent(row.margin)}</td>` : ""}</tr>`).join("") || '<tr><td colspan="10">Belum ada transaksi pada periode ini.</td></tr>'}</tbody></table></div></section>`;
+}
+
+function bindReportSorting() { document.querySelectorAll("[data-report-sort]").forEach((button) => button.onclick = () => { const key = button.dataset.reportSort; state.reportSort = { key, direction: state.reportSort.key === key && state.reportSort.direction === "desc" ? "asc" : "desc" }; drawReports(); }); }
+function csvCell(value) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
+function exportReportCsv() {
+  const report = state.report; const headers = ["Tanggal", "Invoice", "Customer", "Produk", "Jumlah Item", "Status", "Status Pembayaran"];
+  if (report.capabilities.money) headers.push("Penjualan", "Dibayar", "Sisa"); if (report.capabilities.cost) headers.push("HPP Estimasi", "Laba", "Margin %");
+  const data = report.rows.map((row) => { const values = [row.date, row.code, row.customer, row.products, row.itemCount, row.status, row.paymentStatus]; if (report.capabilities.money) values.push(row.sales, row.paid, row.outstanding); if (report.capabilities.cost) values.push(row.cost, row.profit, Number(row.margin || 0).toFixed(2)); return values; });
+  const blob = new Blob(["\uFEFF" + [headers, ...data].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `laporan-manna-${report.range.from}-${report.range.to}.csv`; link.click(); URL.revokeObjectURL(link.href);
+}
+function printReport() {
+  const report = state.report; printDocument.className = "print-document report-print"; printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">LAPORAN BISNIS</div><p>Periode ${report.range.from} — ${report.range.to}</p><hr><div class="print-report-summary"><div>Pesanan <b>${report.summary.orders}</b></div><div>Item <b>${report.summary.items}</b></div>${report.capabilities.money ? `<div>Penjualan <b>${reportMoney(report.summary.sales)}</b></div><div>Dibayar <b>${reportMoney(report.summary.paid)}</b></div>` : ""}${report.capabilities.cost ? `<div>Laba Estimasi <b>${reportMoney(report.summary.profit)}</b></div><div>Margin <b>${reportPercent(report.summary.margin)}</b></div>` : ""}</div><h3>Insight</h3>${report.insights.map((item) => `<p>• ${escapeHtml(item)}</p>`).join("")}<h3>Produk Teratas</h3><table><thead><tr><th>Produk</th><th>Qty</th>${report.capabilities.money ? "<th>Penjualan</th>" : ""}</tr></thead><tbody>${report.products.slice(0, 10).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.quantity}</td>${report.capabilities.money ? `<td>${reportMoney(row.sales)}</td>` : ""}</tr>`).join("")}</tbody></table>`; document.body.classList.add("printing"); window.onafterprint = () => { document.body.classList.remove("printing"); printDocument.innerHTML = ""; }; window.print();
+}
+
 function masterHeader(title) {
-  const labels = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin" };
-  return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, dan harga jual POS.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
+  const labels = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin", users: "User & Akses" };
+  const allowed = { products: can("master.products"), materials: can("master.materials"), finishings: can("master.finishings"), machines: can("master.machines"), users: can("users.manage") };
+  return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
     <div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>
-    <div class="master-tabs">${Object.entries(labels).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
+    <div class="master-tabs">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
 }
 
 function renderMaster() {
-  const title = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin" }[state.masterTab];
+  const allowedTabs = [["products", "master.products"], ["materials", "master.materials"], ["finishings", "master.finishings"], ["machines", "master.machines"], ["users", "users.manage"]].filter(([, permission]) => can(permission)).map(([id]) => id);
+  if (!allowedTabs.includes(state.masterTab)) state.masterTab = allowedTabs[0] || "users";
+  const title = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin", users: "User" }[state.masterTab];
   const productRows = state.allProducts.map((product) => {
     const materials = (product.materialSources || []).map((source) => source.name).filter(Boolean).join(", ") || "—";
     const machines = (product.machineIds || []).map((id) => state.machines.find((item) => item.id === id)?.name).filter(Boolean).join(", ") || "—";
@@ -790,20 +871,24 @@ function renderMaster() {
   }).join("");
   const machineRows = state.machines.map((machine) => `<tr><td><strong>${escapeHtml(machine.name)}</strong><small>${escapeHtml(machine.code)}</small></td><td>${escapeHtml(machine.type)}</td><td>${escapeHtml(machine.capacity || "—")}</td><td>${rupiah.format(machine.costPerHour)}/jam</td><td><span class="badge ${machine.status === "AKTIF" ? "ok" : "warn"}">${escapeHtml(machine.status)}</span></td><td><button class="secondary" data-edit-machine="${machine.id}">Edit</button></td></tr>`).join("");
   const finishingRows = state.finishings.map((finishing) => `<tr><td><strong>${escapeHtml(finishing.name)}</strong><small>${escapeHtml(finishing.code)}</small></td><td class="compact-cell">${(finishing.categories || []).map((category) => `<span class="mini-chip">${escapeHtml(category)}</span>`).join(" ")}</td><td>${rupiah.format(finishing.price)}</td><td>${escapeHtml({ free: "Per unit", area: "Per m²", point: "Per titik", perimeter: "Keliling", top_bottom: "Atas–bawah", left_right: "Kanan–kiri", length: "Meter lari" }[finishing.rule] || finishing.rule)}</td><td><span class="badge ${finishing.active === false ? "warn" : "ok"}">${finishing.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-finishing="${finishing.id}">Edit</button></td></tr>`).join("");
+  const userRows = state.users.map((user) => `<tr><td><strong>${escapeHtml(user.name)}</strong><small>@${escapeHtml(user.username)}</small></td><td><span class="role-badge role-${user.role.toLowerCase()}">${escapeHtml(user.roleLabel)}</span></td><td>${user.permissions.length} permission</td><td>${escapeHtml({ all: "Semua periode", today: "Hari ini", own: "Pekerjaan sendiri" }[user.reportScope] || user.reportScope)}</td><td>${user.lastLoginAt ? dateFormat.format(new Date(user.lastLoginAt)) : "Belum pernah"}</td><td><span class="badge ${user.active === false ? "warn" : "ok"}">${user.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-user="${user.id}">Atur Akses</button></td></tr>`).join("");
   const tables = {
     products: `<table><thead><tr><th>Produk</th><th>Kategori</th><th>Satuan</th><th>Bahan terkait</th><th>Mesin</th><th>Harga jual</th><th>Status</th><th></th></tr></thead><tbody>${productRows}</tbody></table>`,
     materials: `<table><thead><tr><th>Bahan</th><th>Kategori</th><th>Satuan</th><th>Stok</th><th>Harga dasar</th><th>Supplier</th><th>Status</th><th></th></tr></thead><tbody>${materialRows}</tbody></table>`,
     finishings: `<table><thead><tr><th>Finishing</th><th>Kategori sesuai</th><th>Harga</th><th>Perhitungan</th><th>Status</th><th></th></tr></thead><tbody>${finishingRows}</tbody></table>`,
-    machines: `<table><thead><tr><th>Mesin</th><th>Jenis</th><th>Kapasitas</th><th>Biaya</th><th>Status</th><th></th></tr></thead><tbody>${machineRows}</tbody></table>`
+    machines: `<table><thead><tr><th>Mesin</th><th>Jenis</th><th>Kapasitas</th><th>Biaya</th><th>Status</th><th></th></tr></thead><tbody>${machineRows}</tbody></table>`,
+    users: `<table><thead><tr><th>User</th><th>Role</th><th>Akses</th><th>Scope Laporan</th><th>Login Terakhir</th><th>Status</th><th></th></tr></thead><tbody>${userRows}</tbody></table>`
   };
   const productFilters = state.masterTab === "products" ? `<select id="filter-category" class="filter-select"><option value="">Semua kategori</option>${productCategories.filter(([id]) => id !== "all").map(([, label]) => `<option>${label}</option>`).join("")}</select><select id="filter-machine" class="filter-select"><option value="">Semua mesin</option>${state.machines.map((machine) => `<option value="${machine.id}">${escapeHtml(machine.name)}</option>`).join("")}</select><button id="filter-promo" class="filter-chip" type="button">✦ Diskon</button>` : "";
-  root.innerHTML = `<div class="master-page">${masterHeader(title)}<section class="panel"><div class="panel-head master-list-head"><h2>Daftar ${title}</h2><div class="master-filters"><input id="master-search" class="search" placeholder="Cari ${title.toLowerCase()}…">${productFilters}</div></div><div class="table-wrap master-table">${tables[state.masterTab]}</div></section></div>`;
+  const audit = state.masterTab === "users" && can("audit.view") ? `<section class="panel audit-panel"><div class="panel-head"><h2>Audit Log Terakhir</h2><span>${state.auditLogs.length} aktivitas</span></div><div class="audit-list">${state.auditLogs.slice(0, 30).map((item) => `<div><span>${escapeHtml(item.action)}</span><p><strong>${escapeHtml(item.userName)}</strong> · ${escapeHtml(item.description)}</p><small>${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("") || '<p class="note">Belum ada aktivitas.</p>'}</div></section>` : "";
+  root.innerHTML = `<div class="master-page">${masterHeader(title)}<section class="panel"><div class="panel-head master-list-head"><h2>Daftar ${title}</h2><div class="master-filters"><input id="master-search" class="search" placeholder="Cari ${title.toLowerCase()}…">${productFilters}</div></div><div class="table-wrap master-table">${tables[state.masterTab]}</div></section>${audit}</div>`;
   document.querySelectorAll("[data-master-tab]").forEach((button) => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
-  document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : state.masterTab === "finishings" ? openFinishingForm() : openMachineForm();
+  document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : state.masterTab === "finishings" ? openFinishingForm() : state.masterTab === "machines" ? openMachineForm() : openUserForm();
   document.querySelectorAll("[data-edit-product]").forEach((button) => button.onclick = () => openProductForm(state.allProducts.find((item) => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-material]").forEach((button) => button.onclick = () => openMaterialForm(state.materials.find((item) => item.id === button.dataset.editMaterial)));
   document.querySelectorAll("[data-edit-finishing]").forEach((button) => button.onclick = () => openFinishingForm(state.finishings.find((item) => item.id === button.dataset.editFinishing)));
   document.querySelectorAll("[data-edit-machine]").forEach((button) => button.onclick = () => openMachineForm(state.machines.find((item) => item.id === button.dataset.editMachine)));
+  document.querySelectorAll("[data-edit-user]").forEach((button) => button.onclick = () => openUserForm(state.users.find((item) => item.id === button.dataset.editUser)));
   let promoOnly = false;
   const applyFilters = () => { const query = document.querySelector("#master-search").value.toLowerCase(); const category = document.querySelector("#filter-category")?.value || ""; const machine = document.querySelector("#filter-machine")?.value || ""; document.querySelectorAll(".master-table tbody tr").forEach((row) => { const matches = row.textContent.toLowerCase().includes(query) && (!category || row.dataset.category === category) && (!machine || (row.dataset.machines || "").split(",").includes(machine)) && (!promoOnly || row.dataset.promo === "true"); row.classList.toggle("hidden", !matches); }); };
   document.querySelector("#master-search").oninput = applyFilters;
@@ -853,6 +938,21 @@ function openMachineForm(machine = null) {
     <label class="field"><span>Biaya operasional / jam</span><input name="costPerHour" type="number" min="0" value="${machine?.costPerHour || 0}"></label><label class="field"><span>Kapasitas</span><input name="capacity" value="${escapeHtml(machine?.capacity || "")}" placeholder="Contoh: 12 m²/jam"></label>
   </div><div class="form-footer">${switchHtml("active", machine?.active !== false)}<button class="primary" type="submit">Simpan Mesin</button></div></form>`);
   detail.querySelector("#machine-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.active = event.target.elements.active.checked; try { await api(machine ? `/api/machines/${machine.id}` : "/api/machines", { method: machine ? "PUT" : "POST", body: JSON.stringify(values) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "machines"; render(); toast("Mesin berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+}
+
+function openUserForm(user = null) {
+  const role = user?.role || "CASHIER";
+  const selected = new Set(user?.permissions || state.rolePresets[role]?.permissions || []);
+  const groups = state.permissionCatalog.reduce((map, permission) => { (map[permission.group] ||= []).push(permission); return map; }, {});
+  const permissionHtml = Object.entries(groups).map(([group, permissions]) => `<section class="permission-group"><div><strong>${escapeHtml(group)}</strong><button type="button" data-check-group="${escapeHtml(group)}">Pilih semua</button></div>${permissions.map((permission) => `<label><input type="checkbox" name="permission" value="${permission.id}" ${selected.has(permission.id) ? "checked" : ""}><span><b>${escapeHtml(permission.label)}</b><small>${escapeHtml(permission.id)}</small></span></label>`).join("")}</section>`).join("");
+  const detail = showMasterDialog(user ? "Atur User & Permission" : "Tambah User", `<form id="user-form" class="master-form user-form"><div class="form-grid"><label class="field"><span>Nama lengkap *</span><input name="name" value="${escapeHtml(user?.name || "")}" required></label><label class="field"><span>Username *</span><input name="username" value="${escapeHtml(user?.username || "")}" required></label><label class="field"><span>Role *</span><select name="role">${Object.entries(state.rolePresets).map(([id, preset]) => `<option value="${id}" ${role === id ? "selected" : ""}>${escapeHtml(preset.label)}</option>`).join("")}</select></label><label class="field"><span>${user ? "PIN baru (kosongkan jika tetap)" : "PIN *"}</span><input name="pin" type="password" inputmode="numeric" minlength="4" ${user ? "" : "required"}></label><label class="field"><span>Scope laporan</span><select name="reportScope"><option value="all" ${user?.reportScope === "all" ? "selected" : ""}>Semua periode</option><option value="today" ${user?.reportScope === "today" ? "selected" : ""}>Hari ini saja</option><option value="own" ${user?.reportScope === "own" ? "selected" : ""}>Pekerjaan sendiri</option></select></label></div><div class="permission-heading"><div><h3>Permission Khusus</h3><p>Role memberikan template awal. Permission dapat disesuaikan untuk user ini.</p></div><button id="reset-role-permissions" class="secondary" type="button">Gunakan Template Role</button></div><div class="permission-grid">${permissionHtml}</div><div class="form-footer">${switchHtml("active", user?.active !== false)}<button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan User</button></div></form>`);
+  const form = detail.querySelector("#user-form");
+  const applyRole = () => { const preset = state.rolePresets[form.elements.role.value]; const allowed = new Set(preset?.permissions || []); form.querySelectorAll('input[name="permission"]').forEach((input) => input.checked = allowed.has(input.value)); form.elements.reportScope.value = preset?.reportScope || "all"; };
+  form.elements.role.onchange = applyRole;
+  detail.querySelector("#reset-role-permissions").onclick = applyRole;
+  detail.querySelectorAll("[data-check-group]").forEach((button) => button.onclick = () => { const section = button.closest(".permission-group"); const inputs = [...section.querySelectorAll('input[name="permission"]')]; const select = inputs.some((input) => !input.checked); inputs.forEach((input) => input.checked = select); button.textContent = select ? "Batalkan semua" : "Pilih semua"; });
+  detail.querySelector("#cancel-master").onclick = () => dialog.close();
+  form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const payload = { ...values, active: form.elements.active.checked, permissions: [...form.querySelectorAll('input[name="permission"]:checked')].map((input) => input.value) }; try { await api(user ? `/api/users/${user.id}` : "/api/users", { method: user ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "users"; render(); toast("User dan permission berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
 function tierRowHtml(tier = {}, index = 0) {
@@ -907,7 +1007,7 @@ function openProductForm(product = null) {
 }
 
 function renderStock() {
-  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head"><h2>Stok Bahan</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Update</th><th></th></tr></thead><tbody>${state.inventory.map((item) => `<tr><td><strong>${item.productName}</strong></td><td>${escapeHtml(item.sku)}</td><td class="${Number(item.quantity) <= Number(item.minStock || 0) ? "stock-negative" : ""}">${Number(item.quantity).toLocaleString("id-ID")} ${item.unit}</td><td>${Number(item.minStock || 0).toLocaleString("id-ID")} ${item.unit}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td><td><button class="secondary" data-adjust="${item.sku}">Sesuaikan</button></td></tr>`).join("")}</tbody></table></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${move.productName}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${move.orderCode}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
+  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head"><h2>Stok Bahan</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Update</th>${can("stock.adjust") ? "<th></th>" : ""}</tr></thead><tbody>${state.inventory.map((item) => `<tr><td><strong>${item.productName}</strong></td><td>${escapeHtml(item.sku)}</td><td class="${Number(item.quantity) <= Number(item.minStock || 0) ? "stock-negative" : ""}">${Number(item.quantity).toLocaleString("id-ID")} ${item.unit}</td><td>${Number(item.minStock || 0).toLocaleString("id-ID")} ${item.unit}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td>${can("stock.adjust") ? `<td><button class="secondary" data-adjust="${item.sku}">Sesuaikan</button></td>` : ""}</tr>`).join("")}</tbody></table></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${move.productName}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${move.orderCode}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
   document.querySelectorAll("[data-adjust]").forEach((button) => button.onclick = async () => {
     const change = window.prompt("Masukkan perubahan stok. Contoh: 50 atau -2.5");
     if (!change) return;
@@ -916,7 +1016,7 @@ function renderStock() {
   });
 }
 
-document.querySelectorAll(".nav-item").forEach((button) => button.onclick = () => { state.view = button.dataset.view; render(); });
+document.querySelectorAll(".nav-item").forEach((button) => button.onclick = () => { if (!can(viewPermissions[button.dataset.view])) return; state.view = button.dataset.view; render(); });
 const shell = document.querySelector("#app-shell");
 const sidebarToggle = document.querySelector("#sidebar-toggle");
 function setSidebarCollapsed(collapsed) {
@@ -942,8 +1042,9 @@ document.addEventListener("change", (event) => {
 }, true);
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  try { await api("/api/login", { method: "POST", body: JSON.stringify({ pin: document.querySelector("#login-pin").value }) }); showApp(); await load(); } catch (error) { toast(error.message, "error"); }
+  try { await api("/api/login", { method: "POST", body: JSON.stringify({ username: document.querySelector("#login-username").value, pin: document.querySelector("#login-pin").value }) }); showApp(); await load(); } catch (error) { toast(error.message, "error"); }
 });
+document.querySelector("#logout-btn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } finally { state.currentUser = null; showLogin(); document.querySelector("#login-pin").value = ""; } };
 
 const session = await api("/api/session");
 if (session.authenticated) { showApp(); await load(); } else showLogin();
