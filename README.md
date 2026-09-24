@@ -11,15 +11,18 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Pembulatan panjang tagihan per 50 cm, minimum 1 meter.
 - Alur kerja: Menunggu Pembayaran → Design → Cetak → Finishing → Selesai → Diambil.
 - Draft dapat diedit selama masih Menunggu Pembayaran.
-- Form pembayaran terpisah dengan riwayat DP/pelunasan.
+- Form **Pembayaran** tunggal untuk pelunasan/DP, shortcut 50%, serta format nominal Rupiah.
+- Tab **Pembayaran PO** dengan nomor PO dan unggahan gambar PO opsional yang dapat ditelusuri dari Laporan.
 - PIC Operator Design baru diisi setelah pembayaran dikonfirmasi.
 - Tampilan operator menyembunyikan harga dan fokus ke spesifikasi kerja.
 - SPK thermal 80 mm dan tanda terima.
 - Audit trail setiap pesanan.
 - Stok per material dan lebar roll dalam meter lari.
 - Stok baru berkurang satu kali ketika order masuk status **Selesai**.
-- Penyesuaian stok dan riwayat mutasi.
+- Pencarian dan filter kategori stok, pencatatan stok masuk per bahan beserta tanggal, serta riwayat mutasi.
 - Master Data mandiri untuk menambah dan mengedit bahan, produk, serta mesin.
+- Kategori produk, satuan jual, dan dasar perhitungan dapat ditambahkan langsung dari form produk; kategori baru otomatis menjadi tab POS setelah dipakai produk.
+- Input harga memakai prefix Rp dan pemisah ribuan; tombol Batal/Simpan tetap terlihat saat form produk digulir.
 - Master Finishing dengan relasi kategori agar pilihan finishing produk tidak perlu diketik ulang.
 - BOM multi-bahan dan relasi multi-mesin pada setiap produk.
 - Harga grosir bertingkat (3 tingkat awal, maksimum 10) dengan perhitungan otomatis di POS.

@@ -10,7 +10,7 @@ const appPin = process.env.APP_PIN || "";
 const sessionSecret = process.env.SESSION_SECRET || "manna-pos-local-development";
 const store = new Store(process.env.DATABASE_URL);
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "5mb" }));
 
 function hashPin(pin, salt) {
   return crypto.scryptSync(String(pin), salt, 32).toString("hex");
@@ -199,12 +199,41 @@ app.get("/api/bootstrap", async (req, res, next) => {
       permissionCatalog: permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: permissions.includes("users.manage") ? ROLE_PRESETS : {},
       products: canCatalog ? state.products.filter((item) => item.active !== false).map((item) => sanitizeProduct(item, req.user)) : [],
       allProducts: canMaster ? state.products.map((item) => sanitizeProduct(item, req.user)) : [],
+      catalogOptions: canCatalog || canMaster ? state.catalogOptions : { categories: [], saleUnits: [], priceBases: [] },
       materials, finishings: canCatalog || canMaster ? state.finishings : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines : [],
       orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => sanitizeOrder(order, req.user)),
       inventory: canStock ? state.inventory : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
       users: permissions.includes("users.manage") ? state.users.map(publicUser) : [],
       auditLogs: permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
     });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/catalog-options/:kind", requirePermission("master.products"), async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const kind = req.params.kind;
+      const label = text(req.body.label);
+      if (!label) throw new Error("Nama pilihan wajib diisi");
+      if (kind === "categories" || kind === "saleUnits") {
+        const items = state.catalogOptions[kind];
+        if (items.some((item) => item.toLowerCase() === label.toLowerCase())) throw new Error("Pilihan sudah tersedia");
+        items.push(label);
+        audit(state, req.user, "CATALOG_OPTION_CREATE", `Menambahkan ${kind === "categories" ? "kategori" : "satuan jual"} ${label}`);
+        return { kind, option: label, options: state.catalogOptions };
+      }
+      if (kind === "priceBases") {
+        const mode = ["unit", "sqm", "linear_m"].includes(req.body.mode) ? req.body.mode : "unit";
+        const id = identifier("basis", label);
+        if (state.catalogOptions.priceBases.some((item) => item.label.toLowerCase() === label.toLowerCase())) throw new Error("Dasar perhitungan sudah tersedia");
+        const option = { id, label, mode };
+        state.catalogOptions.priceBases.push(option);
+        audit(state, req.user, "CATALOG_OPTION_CREATE", `Menambahkan dasar perhitungan ${label}`, { mode });
+        return { kind, option, options: state.catalogOptions };
+      }
+      throw new Error("Jenis pilihan tidak valid");
+    });
+    res.status(201).json(result);
   } catch (error) { next(error); }
 });
 
@@ -216,7 +245,7 @@ app.post("/api/materials", requirePermission("master.materials"), async (req, re
       unique(state, "materials", "sku", sku); unique(state, "materials", "name", name);
       const material = { id: identifier("mat", sku), sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
       state.materials.push(material);
-      state.inventory.push({ sku, materialId: material.id, productName: name, width: null, quantity: material.stock, minStock: material.minStock, unit: material.unit, updatedAt: now() });
+      state.inventory.push({ sku, materialId: material.id, productName: name, category: material.category, width: null, quantity: material.stock, minStock: material.minStock, unit: material.unit, updatedAt: now() });
       audit(state, req.user, "MATERIAL_CREATE", `Menambahkan bahan ${name}`, { materialId: material.id, sku });
       return material;
     });
@@ -235,7 +264,7 @@ app.put("/api/materials/:id", requirePermission("master.materials"), async (req,
       const oldSku = material.sku;
       Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", unit, minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false });
       const stock = state.inventory.find((item) => item.sku === oldSku || item.materialId === material.id);
-      if (stock) Object.assign(stock, { sku, materialId: material.id, productName: name, minStock: material.minStock, unit, updatedAt: now() });
+      if (stock) Object.assign(stock, { sku, materialId: material.id, productName: name, category: material.category, minStock: material.minStock, unit, updatedAt: now() });
       audit(state, req.user, "MATERIAL_UPDATE", `Memperbarui bahan ${name}`, { materialId: material.id, sku });
       return material;
     });
@@ -308,7 +337,9 @@ function saveProduct(state, body, current = null) {
   const price = Math.max(0, Number(body.price || 0)); const baseCost = Math.max(0, Number(body.baseCost || 0));
   if (!name || !sku || !text(body.category) || !price) throw new Error("Nama, SKU, kategori, dan harga jual wajib diisi");
   unique(state, "products", "sku", sku, current?.id); unique(state, "products", "name", name, current?.id);
-  const priceBasis = ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : "unit";
+  const basisOption = state.catalogOptions.priceBases.find((item) => item.id === body.priceBasisId || item.label === body.priceBasisLabel);
+  const priceBasis = ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : basisOption?.mode || "unit";
+  const priceBasisLabel = basisOption?.label || text(body.priceBasisLabel) || ({ unit: "Per unit", sqm: "Luas m²", linear_m: "Meter lari" }[priceBasis]);
   const saleUnit = text(body.saleUnit) || "pcs";
   const sourceIds = new Set();
   const materialSources = (body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
@@ -325,7 +356,7 @@ function saveProduct(state, body, current = null) {
   const finishingIds = [...new Set(body.finishingIds || [])].filter((id) => state.finishings.some((item) => item.id === id && item.active !== false && item.categories.includes(text(body.category))));
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
   const category = text(body.category);
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, baseCost, price, priceBasis, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0) };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0) };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;
@@ -406,22 +437,29 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
-      const method = String(req.body.method || "").trim();
-      const type = req.body.type === "LUNAS" ? "LUNAS" : "DP";
+      const type = req.body.type === "PO" ? "PO" : "PAYMENT";
+      const method = type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim();
       const amount = Math.max(0, Number(req.body.amount || 0));
       const outstanding = Math.max(0, order.total - order.paidAmount);
       const poNumber = String(req.body.poNumber || "").trim();
-      if (!method) throw new Error("Metode pembayaran wajib dipilih");
-      if (type === "LUNAS" && amount < outstanding) throw new Error("Nominal pelunasan kurang dari sisa tagihan");
-      if (type === "DP" && amount <= 0 && !poNumber) throw new Error("Masukkan nominal DP atau nomor PO");
-      const payment = { id: crypto.randomUUID(), method, type, amount, poNumber, createdAt: now() };
+      const poAttachment = req.body.poAttachment || null;
+      if (type === "PAYMENT" && !method) throw new Error("Metode pembayaran wajib dipilih");
+      if (type === "PAYMENT" && amount <= 0) throw new Error("Nominal pembayaran wajib diisi");
+      if (amount > outstanding) throw new Error("Nominal diterima melebihi sisa tagihan");
+      if (type === "PO" && !poNumber) throw new Error("Nomor PO wajib diisi");
+      if (poAttachment) {
+        if (!/^image\/(png|jpe?g|webp)$/i.test(String(poAttachment.type || ""))) throw new Error("File PO harus berupa gambar JPG, PNG, atau WebP");
+        if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(String(poAttachment.dataUrl || ""))) throw new Error("Data gambar PO tidak valid");
+        if (String(poAttachment.dataUrl).length > 3_500_000) throw new Error("Ukuran gambar PO maksimal 2,5 MB");
+      }
+      const payment = { id: crypto.randomUUID(), method, type, amount, poNumber, poAttachment: poAttachment ? { name: text(poAttachment.name), type: text(poAttachment.type), dataUrl: poAttachment.dataUrl } : null, createdAt: now() };
       order.payments.push(payment);
       order.paidAmount += amount;
       order.paymentConfirmed = true;
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
       if (order.status === STATUS.WAITING_PAYMENT) order.status = STATUS.DESIGN;
       order.updatedAt = now();
-      activity(state, order, `${type === "LUNAS" ? "Pelunasan" : "Pembayaran sebagian"} ${method} dicatat`, req.user.name);
+      activity(state, order, `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
       audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount });
       return order;
     });
@@ -493,8 +531,11 @@ app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, 
       const change = Number(req.body.change);
       if (!Number.isFinite(change) || change === 0) throw new Error("Jumlah penyesuaian tidak valid");
       stock.quantity = Number(stock.quantity) + change;
+      const movementDate = text(req.body.movementDate);
+      const createdAt = movementDate ? new Date(`${movementDate}T12:00:00+08:00`).toISOString() : now();
+      if (Number.isNaN(new Date(createdAt).getTime())) throw new Error("Tanggal stok tidak valid");
       stock.updatedAt = now();
-      const movement = { id: crypto.randomUUID(), sku: stock.sku, productName: stock.productName, change, balance: stock.quantity, orderCode: null, reason: String(req.body.reason || "Penyesuaian stok"), createdAt: now() };
+      const movement = { id: crypto.randomUUID(), sku: stock.sku, productName: stock.productName, category: stock.category || "", change, balance: stock.quantity, orderCode: null, reason: String(req.body.reason || "Penyesuaian stok"), movementDate: movementDate || null, createdAt, recordedAt: now() };
       state.stockMovements.unshift(movement);
       audit(state, req.user, "STOCK_ADJUST", `Menyesuaikan stok ${stock.productName}`, { sku: stock.sku, change, balance: stock.quantity, reason: movement.reason });
       return { stock, movement };
@@ -606,12 +647,13 @@ function aggregateReport(state, user, query) {
     maps.days.set(day, dayRow); maps.customers.set(customerKey, customer); maps.statuses.set(order.status, status);
   }
   const mask = (row) => {
-    const copy = { ...row }; if (!money) { delete copy.sales; delete copy.paid; delete copy.outstanding; delete copy.previousSales; delete copy.change; delete copy.forecast30; } if (!cost) { delete copy.cost; delete copy.value; delete copy.profit; delete copy.margin; } return copy;
+    const copy = { ...row }; if (!money) { delete copy.sales; delete copy.paid; delete copy.outstanding; delete copy.previousSales; delete copy.change; delete copy.forecast30; delete copy.poNumbers; } if (!cost) { delete copy.cost; delete copy.value; delete copy.profit; delete copy.margin; } return copy;
   };
   const enrich = (row) => mask({ ...row, profit: row.sales - row.cost, margin: row.sales ? (row.sales - row.cost) / row.sales * 100 : 0 });
   const rows = orders.map((order) => {
-    const items = selectedItems(order); const rowSales = selectedSales(order); const rowPaid = selectedPaid(order); const row = { id: order.id, date: order.createdAt, code: order.code, customer: order.customerName, products: items.map((item) => item.productName).join(", "), itemCount: items.reduce((sum, item) => sum + Number(item.quantity || 1), 0), status: STATUS_LABEL[order.status], paymentStatus: order.paymentStatus, sales: rowSales, paid: rowPaid, outstanding: Math.max(0, rowSales - rowPaid), cost: items.reduce((sum, item) => sum + estimateItemCost(item, state), 0) }; row.profit = row.sales - row.cost; row.margin = row.sales ? row.profit / row.sales * 100 : 0; return mask(row);
+    const items = selectedItems(order); const rowSales = selectedSales(order); const rowPaid = selectedPaid(order); const poNumbers = (order.payments || []).filter((payment) => payment.type === "PO").map((payment) => payment.poNumber).filter(Boolean); const row = { id: order.id, date: order.createdAt, code: order.code, customer: order.customerName, products: items.map((item) => item.productName).join(", "), itemCount: items.reduce((sum, item) => sum + Number(item.quantity || 1), 0), status: STATUS_LABEL[order.status], paymentStatus: order.paymentStatus, poNumbers, sales: rowSales, paid: rowPaid, outstanding: Math.max(0, rowSales - rowPaid), cost: items.reduce((sum, item) => sum + estimateItemCost(item, state), 0) }; row.profit = row.sales - row.cost; row.margin = row.sales ? row.profit / row.sales * 100 : 0; return mask(row);
   });
+  const purchaseOrders = money ? orders.flatMap((order) => (order.payments || []).filter((payment) => payment.type === "PO").map((payment) => ({ orderId: order.id, code: order.code, customer: order.customerName, poNumber: payment.poNumber, createdAt: payment.createdAt, attachment: payment.poAttachment || null }))) : [];
   const topProduct = [...maps.products.values()].sort((a, b) => (money ? b.sales - a.sales : b.quantity - a.quantity))[0];
   const lowStock = state.inventory.filter((item) => Number(item.quantity) <= Number(item.minStock || 0)).length;
   const change = previousSales ? (sales - previousSales) / previousSales * 100 : null;
@@ -619,8 +661,8 @@ function aggregateReport(state, user, query) {
   if (money && change != null) insights.unshift(`Omzet ${change >= 0 ? "naik" : "turun"} ${Math.abs(change).toFixed(1)}% dibanding periode sebelumnya.`);
   const elapsedDays = Math.max(1, Math.ceil((range.to - range.from) / 86400000)); const forecast30 = sales / elapsedDays * 30;
   if (money && sales > 0) insights.push(`Estimasi penjualan 30 hari berikutnya ${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(forecast30 * .9)}–${new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(forecast30 * 1.1)}, berdasarkan rata-rata periode terpilih.`);
-  const inventory = state.inventory.map((item) => { const material = state.materials.find((row) => row.id === item.materialId || row.sku === item.sku); return mask({ id: item.materialId, label: item.productName, sku: item.sku, quantity: Number(item.quantity || 0), minStock: Number(item.minStock || 0), unit: item.unit, low: Number(item.quantity || 0) <= Number(item.minStock || 0), cost: Number(material?.cost || 0), value: Number(item.quantity || 0) * Number(material?.cost || 0) }); });
-  return { range: { from: range.fromText, to: range.toText, locked: range.locked, scope: range.scope }, capabilities: { money, cost, export: hasPermission(user, "reports.export"), print: hasPermission(user, "reports.print") }, summary: mask({ orders: orders.length, items: rows.reduce((sum, row) => sum + row.itemCount, 0), sales, paid, outstanding: sales - paid, cost: hpp, profit: sales - hpp, margin: sales ? (sales - hpp) / sales * 100 : 0, previousSales, change, forecast30 }), days: [...maps.days.values()].sort((a, b) => a.label.localeCompare(b.label)).map(mask), categories: [...maps.categories.values()].sort((a, b) => b.quantity - a.quantity).map(enrich), products: [...maps.products.values()].sort((a, b) => b.quantity - a.quantity).map(enrich), machines: [...maps.machines.values()].sort((a, b) => b.jobs - a.jobs).map(mask), customers: [...maps.customers.values()].sort((a, b) => b.orders - a.orders).map(mask), statuses: [...maps.statuses.values()].sort((a, b) => b.orders - a.orders), inventory, paymentSummary: mask({ unpaid: orders.filter((order) => order.paymentStatus === "BELUM_BAYAR").length, partial: orders.filter((order) => order.paymentStatus === "BELUM_LUNAS").length, paidOrders: orders.filter((order) => order.paymentStatus === "LUNAS").length, sales, paid, outstanding: sales - paid }), rows, insights };
+  const inventory = state.inventory.map((item) => { const material = state.materials.find((row) => row.id === item.materialId || row.sku === item.sku); return mask({ id: item.materialId, label: item.productName, sku: item.sku, category: material?.category || item.category || "Lainnya", quantity: Number(item.quantity || 0), minStock: Number(item.minStock || 0), unit: item.unit, low: Number(item.quantity || 0) <= Number(item.minStock || 0), cost: Number(material?.cost || 0), value: Number(item.quantity || 0) * Number(material?.cost || 0) }); });
+  return { range: { from: range.fromText, to: range.toText, locked: range.locked, scope: range.scope }, capabilities: { money, cost, export: hasPermission(user, "reports.export"), print: hasPermission(user, "reports.print") }, summary: mask({ orders: orders.length, items: rows.reduce((sum, row) => sum + row.itemCount, 0), sales, paid, outstanding: sales - paid, cost: hpp, profit: sales - hpp, margin: sales ? (sales - hpp) / sales * 100 : 0, previousSales, change, forecast30 }), days: [...maps.days.values()].sort((a, b) => a.label.localeCompare(b.label)).map(mask), categories: [...maps.categories.values()].sort((a, b) => b.quantity - a.quantity).map(enrich), products: [...maps.products.values()].sort((a, b) => b.quantity - a.quantity).map(enrich), machines: [...maps.machines.values()].sort((a, b) => b.jobs - a.jobs).map(mask), customers: [...maps.customers.values()].sort((a, b) => b.orders - a.orders).map(mask), statuses: [...maps.statuses.values()].sort((a, b) => b.orders - a.orders), inventory, purchaseOrders, paymentSummary: mask({ unpaid: orders.filter((order) => order.paymentStatus === "BELUM_BAYAR").length, partial: orders.filter((order) => order.paymentStatus === "BELUM_LUNAS").length, paidOrders: orders.filter((order) => order.paymentStatus === "LUNAS").length, sales, paid, outstanding: sales - paid }), rows, insights };
 }
 
 app.get("/api/reports", requirePermission("reports.view"), async (req, res, next) => {
