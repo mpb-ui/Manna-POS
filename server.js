@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
+import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
 import { PERMISSIONS, ROLE_PRESETS, allowedStatusForRole, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
 const app = express();
@@ -202,7 +203,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
       catalogOptions: canCatalog || canMaster ? state.catalogOptions : { categories: [], saleUnits: [], priceBases: [] },
       materials, finishings: canCatalog || canMaster ? state.finishings : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines : [],
       orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => sanitizeOrder(order, req.user)),
-      inventory: canStock ? state.inventory : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
+      inventory: canStock ? state.inventory : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
       users: permissions.includes("users.manage") ? state.users.map(publicUser) : [],
       auditLogs: permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
     });
@@ -333,6 +334,7 @@ app.put("/api/machines/:id", requirePermission("master.machines"), async (req, r
 });
 
 function saveProduct(state, body, current = null) {
+  if (current?.dtfShirt) throw new Error("Ubah harga Sablon Kaos melalui form paket sablon");
   const name = text(body.name); const sku = text(body.sku).toUpperCase();
   const price = Math.max(0, Number(body.price || 0)); const baseCost = Math.max(0, Number(body.baseCost || 0));
   if (!name || !sku || !text(body.category) || !price) throw new Error("Nama, SKU, kategori, dan harga jual wajib diisi");
@@ -363,7 +365,7 @@ function saveProduct(state, body, current = null) {
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
   const category = text(body.category);
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;
@@ -374,6 +376,26 @@ app.post("/api/products", requirePermission("master.products"), async (req, res,
 });
 app.put("/api/products/:id", requirePermission("master.products"), async (req, res, next) => {
   try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id); if (!product) throw new Error("Produk tidak ditemukan"); const beforePrice = product.price; const saved = saveProduct(state, req.body, product); audit(state, req.user, "PRODUCT_UPDATE", `Memperbarui produk ${saved.name}`, { productId: saved.id, beforePrice, price: saved.price }); return saved; }); res.json(result); } catch (error) { next(error); }
+});
+
+app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), async (req, res, next) => {
+  try {
+    const result = await store.mutate((state) => {
+      const product = state.products.find((item) => item.id === req.params.id && item.dtfShirt);
+      if (!product) throw new Error("Produk Sablon Kaos tidak ditemukan");
+      const submitted = req.body.packages;
+      if (!Array.isArray(submitted) || submitted.length !== product.dtfPackages.length) throw new Error("Semua paket sablon wajib diisi");
+      const byId = new Map(submitted.map((item) => [item.id, Number(item.price)]));
+      if (byId.size !== product.dtfPackages.length || product.dtfPackages.some((item) => !Number.isSafeInteger(byId.get(item.id)) || byId.get(item.id) <= 0)) throw new Error("Harga paket sablon tidak valid");
+      product.dtfPackages = product.dtfPackages.map((item) => ({ ...item, price: byId.get(item.id) }));
+      product.price = Math.min(...product.dtfPackages.map((item) => item.price));
+      product.active = req.body.active !== false;
+      product.featured = Boolean(req.body.featured);
+      audit(state, req.user, "PRODUCT_UPDATE", "Memperbarui harga paket Sablon Kaos", { productId: product.id });
+      return product;
+    });
+    res.json(result);
+  } catch (error) { next(error); }
 });
 
 app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) => {
@@ -454,6 +476,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       if (type === "PAYMENT" && amount <= 0) throw new Error("Nominal pembayaran wajib diisi");
       if (amount > outstanding) throw new Error("Nominal diterima melebihi sisa tagihan");
       if (type === "PO" && !poNumber) throw new Error("Nomor PO wajib diisi");
+      if (!order.paymentConfirmed) ensureShirtStock(state, order);
       if (poAttachment) {
         if (!/^image\/(png|jpe?g|webp)$/i.test(String(poAttachment.type || ""))) throw new Error("File PO harus berupa gambar JPG, PNG, atau WebP");
         if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(String(poAttachment.dataUrl || ""))) throw new Error("Data gambar PO tidak valid");
@@ -506,6 +529,7 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       order.status = target;
       order.updatedAt = now();
       if (target === STATUS.DONE && !order.stockCommitted) {
+        ensureShirtStock(state, order, { physical: true });
         for (const line of order.items) {
           const consumptions = line.materials?.length ? line.materials : [{ sku: line.stockSku, name: line.productName, units: line.stockConsumption }];
           for (const consumption of consumptions) {
@@ -537,6 +561,10 @@ app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, 
       if (!stock) throw new Error("Item stok tidak ditemukan");
       const change = Number(req.body.change);
       if (!Number.isFinite(change) || change === 0) throw new Error("Jumlah penyesuaian tidak valid");
+      if (stock.category === "Kaos Polos DTF") {
+        const reserved = shirtReservations(state).get(stock.materialId) || 0;
+        if (Number(stock.quantity) + change < reserved) throw new Error(`Stok ${stock.productName} tidak boleh kurang dari ${reserved} pcs yang sudah dipesan`);
+      }
       stock.quantity = Number(stock.quantity) + change;
       const movementDate = text(req.body.movementDate);
       const createdAt = movementDate ? new Date(`${movementDate}T12:00:00+08:00`).toISOString() : now();

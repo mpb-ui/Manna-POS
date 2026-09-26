@@ -14,7 +14,7 @@ function makassarInputToIso(value) { return value ? new Date(`${value}:00+08:00`
 const defaultProductCategories = [
   ["all", "Semua"], ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
   ["lf-sticker", "LF Sticker"], ["display-banner", "Display & Banner"],
-  ["merchandise", "Merchandise"], ["atk", "ATK"]
+  ["merchandise", "Merchandise"], ["sablon-dtf", "Sablon DTF"], ["atk", "ATK"]
 ];
 function slug(value) { return String(value || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 function productCategories() {
@@ -29,7 +29,7 @@ const fileServices = [
   { id: "DESIGN_D", name: "Biaya Design D", price: 80000 }
 ];
 const state = {
-  products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], saleUnits: [], priceBases: [] },
+  products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], saleUnits: [], priceBases: [] },
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [], report: null,
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", editingOrderId: null,
   masterTab: "products", reportTab: "overview", reportSort: { key: "date", direction: "desc" }, reportFilters: { from: "", to: "", category: "", machineId: "", paymentStatus: "" }, projectCategory: "orders", projectView: "list", projectSearch: "", projectDeadline: "all", projectPic: "all", projectPayment: "all", projectStatus: "all",
@@ -247,6 +247,7 @@ function allCatalogHtml() {
 }
 
 function productConfigurationHtml(product, popup = false) {
+  if (product.dtfShirt) return dtfShirtConfigurationHtml(product);
   const isUnit = product.priceBasis === "unit";
   const measurement = product.templateProduct ? templateOptionsHtml(product) : product.fixedSizeVariants?.length
     ? fixedSizeMeasurementHtml(product)
@@ -264,6 +265,25 @@ function productConfigurationHtml(product, popup = false) {
     <hr class="divider"><p class="section-label">${popup ? "Finishing" : `${finishStep} · Finishing`}</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
     <hr class="divider"><label class="field"><span class="section-label">${popup ? "Catatan" : `${noteStep} · Catatan`}</span><textarea id="production-note" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label>
     <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary">+ Tambah ke Pesanan</button></div>`;
+}
+
+function dtfShirtRowHtml(index) {
+  const colors = ["Hitam", "Putih"];
+  const sizes = ["S", "M", "L", "XL", "XXL"];
+  return `<div class="dtf-shirt-row" data-shirt-row>
+    <label class="field"><span>Warna</span><select data-shirt-color>${colors.map((color) => `<option value="${color}">${color}</option>`).join("")}</select></label>
+    <label class="field"><span>Ukuran</span><select data-shirt-size>${sizes.map((size) => `<option value="${size}" ${size === "M" ? "selected" : ""}>${size}</option>`).join("")}</select></label>
+    <label class="field"><span>Jumlah</span><input data-shirt-quantity type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+    <button type="button" class="secondary" data-remove-shirt aria-label="Hapus varian ${index + 1}" ${index ? "" : "disabled"}>×</button>
+    <small class="dtf-stock-note" data-shirt-stock></small>
+  </div>`;
+}
+
+function dtfShirtConfigurationHtml(product) {
+  return `<hr class="divider"><p class="section-label">2 · Pilih paket sablon</p><div class="dtf-packages" role="group" aria-label="Paket sablon">${product.dtfPackages.map((pack, index) => `<label class="dtf-package"><input type="radio" name="dtf-package" value="${escapeHtml(pack.id)}" ${index === 0 ? "checked" : ""}><span><strong>${escapeHtml(pack.label)}</strong><small>${rupiah.format(pack.price)} / kaos</small></span></label>`).join("")}</div>
+    <hr class="divider"><p class="section-label">3 · Warna, ukuran & jumlah kaos</p><div id="dtf-shirt-rows">${dtfShirtRowHtml(0)}</div><button id="add-shirt-row" type="button" class="secondary dtf-add-row">+ Tambah kombinasi warna/ukuran</button><p class="product-note">Ukuran XXL menambah Rp15.000 per kaos. Stok mengikuti kombinasi warna dan ukuran, bukan paket sablon.</p>
+    <hr class="divider"><label class="field"><span class="section-label">4 · Catatan produksi</span><textarea id="production-note" placeholder="Posisi desain, ukuran cetak, atau catatan khusus…"></textarea></label>
+    <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary" type="button">+ Tambah ke Pesanan</button></div>`;
 }
 
 function renderPos() {
@@ -303,6 +323,19 @@ function checkoutHtml() {
 
 function readCurrentLine() {
   const product = selectedProduct();
+  if (product?.dtfShirt) {
+    const pack = product.dtfPackages.find((item) => item.id === document.querySelector('input[name="dtf-package"]:checked')?.value) || product.dtfPackages[0];
+    const shirtVariants = [...document.querySelectorAll("[data-shirt-row]")].map((row) => ({
+      color: row.querySelector("[data-shirt-color]").value, size: row.querySelector("[data-shirt-size]").value,
+      quantity: Number(row.querySelector("[data-shirt-quantity]").value)
+    }));
+    const quantity = shirtVariants.reduce((sum, item) => sum + (Number.isFinite(item.quantity) ? item.quantity : 0), 0);
+    const previewTotal = shirtVariants.reduce((sum, item) => sum + item.quantity * (pack.price + (item.size === "XXL" ? 15000 : 0)), 0);
+    return { productId: product.id, productName: product.name, dtfPackageId: pack.id, shirtVariants,
+      quantity, previewTotal, baseTotal: previewTotal, fileServiceId: "READY", fileServiceName: "File Siap Cetak", fileServicePrice: 0,
+      displaySize: `${pack.label} · ${shirtVariants.map((item) => `${item.color} ${item.size} × ${item.quantity}`).join(", ")}`,
+      productionNote: document.querySelector("#production-note")?.value.trim() || "" };
+  }
   const sizeVariantId = document.querySelector('input[name="size-variant"]:checked')?.value || "";
   const fixedVariant = (product.fixedSizeVariants || []).find((item) => item.id === sizeVariantId) || null;
   const isFixedSize = Boolean(fixedVariant);
@@ -346,6 +379,15 @@ function readCurrentLine() {
 function updatePreview() {
   const line = readCurrentLine();
   const product = selectedProduct();
+  if (product?.dtfShirt) {
+    document.querySelector("#item-price").textContent = rupiah.format(Number.isFinite(line.previewTotal) ? line.previewTotal : 0);
+    document.querySelector("#formula-text").textContent = `${line.quantity} kaos · ${line.shirtVariants.filter((item) => item.size === "XXL").reduce((sum, item) => sum + item.quantity, 0)} XXL`;
+    document.querySelectorAll("[data-shirt-row]").forEach((row) => {
+      const stock = state.shirtStock.find((item) => item.color === row.querySelector("[data-shirt-color]").value && item.size === row.querySelector("[data-shirt-size]").value);
+      row.querySelector("[data-shirt-stock]").textContent = `Tersedia ${stock?.available ?? 0} pcs`;
+    });
+    return;
+  }
   const billedInput = document.querySelector("#billed-length");
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
@@ -448,6 +490,33 @@ function bindProductSearch() {
 }
 
 function bindProductConfiguration(onAdd) {
+  if (selectedProduct()?.dtfShirt) {
+    const rows = document.querySelector("#dtf-shirt-rows");
+    rows.addEventListener("input", updatePreview);
+    rows.addEventListener("change", updatePreview);
+    document.querySelectorAll('input[name="dtf-package"]').forEach((input) => input.addEventListener("change", updatePreview));
+    document.querySelector("#add-shirt-row").onclick = () => {
+      if (rows.querySelectorAll("[data-shirt-row]").length >= 10) return toast("Maksimal 10 kombinasi kaos", "error");
+      rows.insertAdjacentHTML("beforeend", dtfShirtRowHtml(rows.querySelectorAll("[data-shirt-row]").length));
+      rows.querySelector("[data-shirt-row] button:disabled")?.removeAttribute("disabled");
+      updatePreview();
+    };
+    rows.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-remove-shirt]");
+      if (!button) return;
+      button.closest("[data-shirt-row]").remove();
+      if (rows.querySelectorAll("[data-shirt-row]").length === 1) rows.querySelector("[data-remove-shirt]").disabled = true;
+      updatePreview();
+    });
+    document.querySelector("#add-item").onclick = () => {
+      const line = readCurrentLine();
+      const combinations = line.shirtVariants.map((item) => `${item.color}-${item.size}`);
+      if (line.shirtVariants.some((item) => !Number.isSafeInteger(item.quantity) || item.quantity < 1)) return toast("Jumlah setiap varian harus bilangan bulat positif", "error");
+      if (new Set(combinations).size !== combinations.length) return toast("Gabungkan jumlah kaos dengan warna dan ukuran yang sama", "error");
+      onAdd(line);
+    };
+    return;
+  }
   document.querySelectorAll('#length,#quantity,input[name="width"],input[name="size-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
@@ -839,6 +908,7 @@ function readPoAttachment(file) {
 function startEditOrder(order) {
   state.cart = order.items.map((item) => ({
     productId: item.productId, productName: item.productName, width: item.width,
+    dtfPackageId: item.dtfPackageId || "", shirtVariants: (item.shirtVariants || []).map((variant) => ({ ...variant })),
     length: item.actualLength, billedLength: item.billedLength, quantity: item.quantity,
     sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
     choices: (item.choices || []).map((choice) => ({ groupId: choice.groupId, optionId: choice.optionId })),
@@ -1077,6 +1147,7 @@ function finishingOptionsHtml(category, selectedIds = [], product = null) {
 }
 
 function openProductForm(product = null) {
+  if (product?.dtfShirt) return openDtfProductForm(product);
   const defaultTiers = product?.priceTiers?.length ? product.priceTiers : [{ min: 1, max: 1, price: product?.price || 10000 }, { min: 2, max: 10, price: product?.price ? Math.round(product.price * .9) : 9000 }, { min: 11, max: 50, price: product?.price ? Math.round(product.price * .8) : 8000 }];
   const sources = product?.materialSources?.length ? product.materialSources : [{}];
   const categories = productCategories().filter(([id]) => id !== "all").map(([, label]) => label);
@@ -1114,6 +1185,21 @@ function openProductForm(product = null) {
   detail.querySelectorAll("[data-cancel-reference]").forEach((button) => button.onclick = () => button.closest(".reference-editor").classList.add("hidden"));
   detail.querySelectorAll("[data-save-reference]").forEach((button) => button.onclick = async () => { const editor = button.closest(".reference-editor"); const field = editor.closest(".reference-field"); const kind = editor.dataset.referenceEditor; const label = editor.querySelector("[data-reference-label]").value.trim(); if (!label) return toast("Nama pilihan wajib diisi", "error"); try { const result = await api(`/api/catalog-options/${kind}`, { method: "POST", body: JSON.stringify({ label, mode: editor.querySelector("[data-reference-mode]")?.value }) }); state.catalogOptions = result.options; const select = field.querySelector("select[name]"); const option = result.option; select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(typeof option === "string" ? option : option.id)}" selected>${escapeHtml(typeof option === "string" ? option : option.label)}</option>`); editor.classList.add("hidden"); if (kind === "categories") { form.elements.category.dispatchEvent(new Event("change")); } toast("Pilihan baru ditambahkan"); } catch (error) { toast(error.message, "error"); } });
   form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const basis = state.catalogOptions.priceBases.find((item) => item.id === values.priceBasisId) || priceBases.find((item) => item.id === values.priceBasisId); const payload = { ...values, price: parseMoney(values.price), baseCost: parseMoney(values.baseCost), priceBasis: basis?.mode || "unit", priceBasisLabel: basis?.label || "Per unit", active: form.elements.active.checked, featured: form.elements.featured.checked, wholesaleEnabled: form.elements.wholesaleEnabled.checked, discount: { enabled: form.elements.discountEnabled.checked, type: values.discountType, value: Number(values.discountValue || 0), startsAt: makassarInputToIso(values.discountStartsAt), endsAt: makassarInputToIso(values.discountEndsAt) }, widths: values.widths.split(",").map((value) => value.trim()).filter(Boolean), machineIds: [...form.querySelectorAll('input[name="machineId"]:checked')].map((input) => input.value), materialSources: [...form.querySelectorAll("[data-material-row]")].map((row) => ({ materialId: row.querySelector("[data-material-id]").value, quantity: row.querySelector("[data-material-qty]").value, wastePercent: row.querySelector("[data-material-waste]").value })).filter((item) => item.materialId), finishingIds: [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value), priceTiers: [...form.querySelectorAll("[data-tier-row]")].map((row) => ({ min: row.querySelector("[data-tier-min]").value, max: row.querySelector("[data-tier-max]").value, price: parseMoney(row.querySelector("[data-tier-price]").value) })) }; try { await api(product ? `/api/products/${product.id}` : "/api/products", { method: product ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Produk berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+}
+
+function openDtfProductForm(product) {
+  const detail = showMasterDialog("Edit Sablon Kaos", `<form id="dtf-master-form" class="master-form"><p class="product-note">Satu produk di POS. Stok kaos Hitam/Putih per ukuran dikelola melalui Stok Bahan → Kaos Polos DTF.</p><p class="section-label">Harga paket sablon / kaos</p><div class="form-grid">${product.dtfPackages.map((pack) => `<label class="field"><span>${escapeHtml(pack.label)}</span>${moneyField(`package-${pack.id}`, pack.price, "required")}</label>`).join("")}</div><p class="product-note">Ukuran XXL otomatis menambah Rp15.000 per kaos dari harga paket di atas.</p><div class="toggle-group">${switchHtml("active", product.active !== false)}${switchHtml("featured", Boolean(product.featured), "Tampilkan di Semua")}</div><div class="form-footer sticky-form-footer"><button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan Produk</button></div></form>`);
+  bindMoneyInputs(detail);
+  detail.querySelector("#cancel-master").onclick = () => dialog.close();
+  detail.querySelector("#dtf-master-form").onsubmit = async (event) => {
+    event.preventDefault();
+    const form = event.target;
+    const packages = product.dtfPackages.map((pack) => ({ id: pack.id, price: parseMoney(form.elements[`package-${pack.id}`].value) }));
+    try {
+      await api(`/api/products/${product.id}/dtf-packages`, { method: "PUT", body: JSON.stringify({ packages, active: form.elements.active.checked, featured: form.elements.featured.checked }) });
+      dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Harga Sablon Kaos disimpan");
+    } catch (error) { toast(error.message, "error"); }
+  };
 }
 
 function renderStock() {

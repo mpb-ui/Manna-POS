@@ -258,3 +258,19 @@ body{font-size:15.5px}
 .po-report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:15px}.po-report-grid article{display:grid;grid-template-columns:100px 1fr;gap:11px;border:1px solid var(--line);border-radius:11px;padding:10px;align-items:center}.po-report-image{height:76px;border-radius:8px;background:#f1f4f8;overflow:hidden;display:grid;place-items:center;text-align:center;color:var(--muted);font-size:9px}.po-report-image img{width:100%;height:100%;object-fit:cover}.po-report-grid strong{font-size:12px;color:var(--blue)}.po-report-grid p{font-size:10px;margin:4px 0;color:var(--ink)}.po-report-grid small{font-size:9px;color:var(--muted)}
 @media(max-width:980px){.stock-head{flex-direction:column}.stock-filters{margin-left:0;width:100%}.stock-filters .search{flex:1}.po-report-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){.reference-editor,.reference-editor:not(:has([data-reference-mode])),.payment-tab-panel{grid-template-columns:1fr}.stock-filters,.stock-entry-summary{flex-direction:column}.stock-actions{flex-direction:column}.po-report-grid{grid-template-columns:1fr}.sticky-form-footer{margin-left:-13px;margin-right:-13px}.payment-tabs span{padding:9px 10px;font-size:12px}}
+
+/* Sablon DTF: one catalog product, multiple tracked shirt variants. */
+.dtf-packages{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.dtf-package{position:relative;cursor:pointer}
+.dtf-package input{position:absolute;opacity:0;pointer-events:none}
+.dtf-package span{display:grid;gap:5px;border:1px solid var(--line);border-radius:10px;padding:11px;min-height:66px;background:#fff}
+.dtf-package strong{font-size:12px}.dtf-package small{color:var(--muted);font-size:11px}
+.dtf-package input:checked+span{border-color:var(--blue);background:var(--blue-soft);color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.dtf-package input:focus-visible+span{outline:2px solid var(--blue);outline-offset:2px}
+.dtf-shirt-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 100px 36px;gap:8px;align-items:end;margin-bottom:9px}
+.dtf-shirt-row [data-remove-shirt]{height:38px;padding:0;font-size:19px}
+.dtf-shirt-row [data-remove-shirt]:disabled{opacity:.4;cursor:not-allowed}
+.dtf-stock-note{grid-column:1/-1;color:var(--muted);font-size:11px;margin-top:-3px}
+.dtf-add-row{margin-top:3px}
+@media(max-width:620px){.dtf-packages{grid-template-columns:repeat(2,minmax(0,1fr))}.dtf-shirt-row{grid-template-columns:1fr 1fr 75px 32px;gap:5px}}
+@media(max-width:430px){.dtf-packages{grid-template-columns:1fr 1fr}.dtf-shirt-row{grid-template-columns:1fr 1fr}.dtf-shirt-row [data-shirt-quantity]{width:100%}.dtf-shirt-row [data-remove-shirt]{align-self:end}}

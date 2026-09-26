@@ -25,6 +25,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Kategori produk, satuan jual, dan dasar perhitungan dapat ditambahkan langsung dari form produk; kategori baru otomatis menjadi tab POS setelah dipakai produk.
 - Input harga memakai prefix Rp dan pemisah ribuan; tombol Batal/Simpan tetap terlihat saat form produk digulir.
 - Master Finishing dengan relasi kategori agar pilihan finishing produk tidak perlu diketik ulang.
+- Sablon DTF: satu produk Sablon Kaos dengan sembilan paket harga, warna Hitam/Putih dan ukuran S–XXL. Stok kaos dicatat per kombinasi warna dan ukuran; XXL menambah Rp15.000 per kaos.
 - BOM multi-bahan dan relasi multi-mesin pada setiap produk.
 - Harga grosir bertingkat (3 tingkat awal, maksimum 10) dengan perhitungan otomatis di POS.
 - Promo produk terjadwal dengan diskon persen/nominal, label DISKON, dan harga otomatis.
@@ -63,5 +64,7 @@ Tanpa `DATABASE_URL`, aplikasi memakai penyimpanan memory untuk development. Unt
 ## Catatan data awal
 
 Data bahan, produk, mesin, HPP, dan stok awal saat ini berupa dummy untuk tahap MVP. Ganti dengan data riil melalui menu **Master Data** dan **Stok Bahan** sebelum dipakai sebagai sumber data operasional.
+
+Sepuluh SKU **Kaos Polos DTF** dimulai dari stok 0. Isi stok dan HPP masing-masing varian di Master Data/Stok Bahan sebelum mengonfirmasi pembayaran Sablon Kaos. Pesanan yang dibayar mencadangkan stok tersedia; stok fisik berkurang satu kali saat status **Selesai**. Harga paket Sablon Kaos dapat diubah melalui **Master Data → Produk → Edit Sablon Kaos**.
 
 SKU Print A3+ baru memakai harga jual yang diberikan, tetapi sumber bahan dan HPP belum tersedia untuk semua varian. Hubungkan masing-masing SKU ke bahan riil di **Master Data** agar pemakaian stok dan margin tercatat akurat.
