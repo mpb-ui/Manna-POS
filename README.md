@@ -5,6 +5,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 ## Fitur
 
 - POS berbasis produk dengan opsi lebar dan finishing yang relevan.
+- Print A3+ menampilkan kartu tipe kertas A–Z dengan pilihan varian dan sisi cetak; Sticker memakai tab sendiri tanpa opsi dua sisi. Harga dan finishing dihitung per SKU oleh server.
 - Data pelanggan dapat diisi sebelum item ditambahkan.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
 - Catatan produksi tersimpan per item/file.
@@ -62,3 +63,5 @@ Tanpa `DATABASE_URL`, aplikasi memakai penyimpanan memory untuk development. Unt
 ## Catatan data awal
 
 Data bahan, produk, mesin, HPP, dan stok awal saat ini berupa dummy untuk tahap MVP. Ganti dengan data riil melalui menu **Master Data** dan **Stok Bahan** sebelum dipakai sebagai sumber data operasional.
+
+SKU Print A3+ baru memakai harga jual yang diberikan, tetapi sumber bahan dan HPP belum tersedia untuk semua varian. Hubungkan masing-masing SKU ke bahan riil di **Master Data** agar pemakaian stok dan margin tercatat akurat.
