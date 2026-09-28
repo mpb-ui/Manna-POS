@@ -28,10 +28,11 @@ const fileServices = [
   { id: "DESIGN_C", name: "Biaya Design C", price: 50000 },
   { id: "DESIGN_D", name: "Biaya Design D", price: 80000 }
 ];
+const atkGroups = ["Amplop", "Alat tulis", "Map & arsip", "Perekat", "Kertas & label", "ID & lanyard", "Peralatan lainnya"];
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], saleUnits: [], priceBases: [] },
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [], report: null,
-  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", editingOrderId: null,
+  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", atkGroup: "Semua", atkSearch: "", editingOrderId: null,
   masterTab: "products", reportTab: "overview", reportSort: { key: "date", direction: "desc" }, reportFilters: { from: "", to: "", category: "", machineId: "", paymentStatus: "" }, projectCategory: "orders", projectView: "list", projectSearch: "", projectDeadline: "all", projectPic: "all", projectPayment: "all", projectStatus: "all",
   stockSearch: "", stockCategory: "",
   projectCollapsed: new Set(["DIAMBIL"]),
@@ -226,6 +227,25 @@ function a3CatalogHtml(products, selected) {
     ${selected ? `<div class="a3-selection"><h3>${escapeHtml(selectedOption)}</h3>${variantsHtml}${printModes}${sides}${productConfigurationHtml(selected)}</div>` : ""}`;
 }
 
+function atkCatalogHtml(products) {
+  const active = products.filter((item) => item.active !== false);
+  const query = state.atkSearch.trim().toLocaleLowerCase("id-ID");
+  const visible = active.filter((item) => (state.atkGroup === "Semua" || (item.atkGroup || "Peralatan lainnya") === state.atkGroup)
+    && (!query || `${item.name} ${item.sku} ${item.barcode || ""}`.toLocaleLowerCase("id-ID").includes(query)))
+    .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }));
+  const tabs = ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("");
+  const rows = visible.map((item) => {
+    const line = item.retailAtK ? state.cart.find((entry) => entry.productId === item.id) : null;
+    const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-atk-qty="-1" data-atk-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}">−</button><strong>${line.quantity}</strong><button type="button" data-atk-qty="1" data-atk-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
+      : `<button type="button" class="atk-pick" data-atk-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
+    return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-atk-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
+  }).join("");
+  return `<label class="field atk-search"><span>Cari produk ATK</span><input id="atk-search" type="search" value="${escapeHtml(state.atkSearch)}" placeholder="Nama, merek, warna, ukuran, atau barcode…" autocomplete="off"></label>
+    <div class="atk-tabs" role="group" aria-label="Jenis produk ATK">${tabs}</div>
+    <div class="atk-count">${visible.length} produk${query ? " ditemukan" : ""}</div>
+    <div class="atk-list">${visible.length ? `<div class="atk-list-head"><span>Produk</span><span>Harga</span><span>Jumlah</span></div>${rows}` : '<p class="atk-empty">Produk tidak ditemukan. Coba kata lain atau pilih Semua.</p>'}</div>`;
+}
+
 function fileServicesHtml() {
   return `<div class="file-service-grid">${fileServices.map((service, index) => `<div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${index === 0 ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name}</strong><small>${service.price ? rupiah.format(service.price) : "Tanpa biaya"}</small></label></div>`).join("")}</div>`;
 }
@@ -299,7 +319,7 @@ function renderPos() {
   const categoryTabs = productCategories().map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${escapeHtml(label)}</button>`).join("");
   const intro = `<p class="section-label">1 · ${state.selectedCategory === "display-banner" ? "Pilih produk" : "Pilih bahan"}</p>`;
   const productContent = state.selectedCategory === "all" ? allCatalogHtml() : state.selectedCategory === "print-a3" && visibleProducts.some((item) => item.a3Kind)
-    ? a3CatalogHtml(visibleProducts, product) : visibleProducts.length
+    ? a3CatalogHtml(visibleProducts, product) : state.selectedCategory === "atk" ? atkCatalogHtml(visibleProducts) : visibleProducts.length
     ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${product ? productConfigurationHtml(product) : ""}`
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid">
@@ -314,7 +334,10 @@ function renderPos() {
 
 function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
-  return state.cart.map((line, i) => `<div class="cart-item"><div><h4>${line.productName}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p><strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`).join("");
+  return state.cart.map((line, i) => {
+    const retailAtK = state.products.find((item) => item.id === line.productId)?.retailAtK;
+    return `<div class="cart-item"><div><h4>${escapeHtml(line.productName)}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}${retailAtK ? "" : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`}<strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`;
+  }).join("");
 }
 
 function checkoutHtml() {
@@ -561,6 +584,44 @@ function openProductConfigurator(productId) {
 
 function bindPos() {
   bindProductSearch();
+  const setAtkQuantity = (productId, change) => {
+    const product = state.products.find((item) => item.id === productId && item.category === "ATK" && item.active !== false);
+    if (!product) return;
+    if (!product.retailAtK) return openProductConfigurator(productId);
+    const existing = state.cart.findIndex((line) => line.productId === productId);
+    const quantity = Math.max(0, (existing >= 0 ? Number(state.cart[existing].quantity) : 0) + change);
+    syncDraft(document.querySelector("#checkout"));
+    if (existing >= 0) state.cart.splice(existing, 1);
+    if (quantity) {
+      const base = productBase(product, 1, 1, quantity);
+      const line = { productId, productName: product.name, quantity, displaySize: `${quantity} ${product.unitName || "pcs"}`,
+        baseTotal: base.total, previewTotal: base.total, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice,
+        fileServiceId: "READY", fileServiceName: "File Siap Cetak", fileServicePrice: 0, finishing: [], productionNote: "" };
+      state.cart.push(line);
+    }
+    renderPos();
+    if (state.atkSearch) document.querySelector("#atk-search")?.focus();
+  };
+  document.querySelectorAll("[data-atk-group]").forEach((button) => button.addEventListener("click", () => {
+    syncDraft(document.querySelector("#checkout")); state.atkGroup = button.dataset.atkGroup; renderPos();
+  }));
+  document.querySelector("#atk-search")?.addEventListener("input", (event) => {
+    const caret = event.target.selectionStart;
+    syncDraft(document.querySelector("#checkout"));
+    state.atkSearch = event.target.value;
+    renderPos();
+    const input = document.querySelector("#atk-search");
+    input.focus(); input.setSelectionRange(caret, caret);
+  });
+  document.querySelector("#atk-search")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const barcode = event.currentTarget.value.trim();
+    const match = state.products.find((item) => item.category === "ATK" && item.active !== false && item.barcode && item.barcode === barcode);
+    if (match) { state.atkGroup = match.atkGroup || "Peralatan lainnya"; state.atkSearch = ""; setAtkQuantity(match.id, 1); }
+  });
+  document.querySelectorAll("[data-atk-qty]").forEach((button) => button.addEventListener("click", () => setAtkQuantity(button.dataset.atkProduct, Number(button.dataset.atkQty))));
+  document.querySelectorAll(".atk-pick,.atk-name").forEach((button) => button.addEventListener("click", () => setAtkQuantity(button.dataset.atkProduct, state.cart.some((line) => line.productId === button.dataset.atkProduct) ? 0 : 1)));
   const selectA3Family = (family) => {
     const candidates = state.products.filter((item) => item.active !== false && item.a3Kind === state.a3Kind && item.a3Family === family);
     state.selectedProduct = (candidates.find((item) => item.a3PrintMode === "BW" && item.a3Side === "1S")
@@ -1174,11 +1235,14 @@ function openProductForm(product = null) {
   const detail = showMasterDialog(product ? "Edit Produk" : "Tambah Produk", `<form id="product-form" class="master-form product-form"><div class="product-form-grid"><section><p class="section-label">Informasi produk</p><div class="form-grid">
     <label class="field"><span>Nama produk *</span><input name="name" value="${escapeHtml(product?.name || "")}" required></label><label class="field"><span>SKU produk *</span><input name="sku" value="${escapeHtml(product?.sku || "")}" required></label>
     ${referenceField("Kategori", "category", categories, initialCategory, "categories")}${referenceField("Satuan jual", "saleUnit", saleUnits, product?.saleUnit || product?.unitName || saleUnits[0], "saleUnits")}
+    <label class="field atk-master-field ${initialCategory === "ATK" ? "" : "hidden"}"><span>Jenis ATK</span><select name="retailAtK"><option value="false" ${!product?.retailAtK ? "selected" : ""}>Jasa produksi</option><option value="true" ${product?.retailAtK ? "selected" : ""}>Barang dagangan</option></select></label>
+    <label class="field atk-master-field ${initialCategory === "ATK" ? "" : "hidden"}"><span>Tab ATK</span><select name="atkGroup">${atkGroups.map((group) => `<option value="${escapeHtml(group)}" ${product?.atkGroup === group ? "selected" : ""}>${escapeHtml(group)}</option>`).join("")}</select></label>
+    <label class="field atk-master-field ${initialCategory === "ATK" ? "" : "hidden"}"><span>Barcode (opsional)</span><input name="barcode" type="text" maxlength="128" value="${escapeHtml(product?.barcode || "")}" placeholder="Isi kode dari kemasan produk"></label>
     ${referenceField("Dasar perhitungan", "priceBasisId", priceBases, selectedBasis.id, "priceBases", (item) => item.id, (item) => item.label)}<label class="field"><span>Pilihan lebar (pisahkan koma)</span><input name="widths" value="${escapeHtml((product?.widths || []).join(", "))}" placeholder="1, 1.27, 1.52"></label>
     <label class="field"><span>Harga Dasar / HPP</span>${moneyField("baseCost", product?.baseCost || 0)}</label><label class="field"><span>Harga Jual *</span>${moneyField("price", product?.price || 10000, "required")}</label>
     <div class="margin-summary full"><span>Margin kotor</span><strong id="margin-summary">—</strong></div><label class="field full"><span>Catatan produk</span><textarea name="note">${escapeHtml(product?.note || "")}</textarea></label>
   </div><div class="toggle-group">${switchHtml("active", product?.active !== false)}${switchHtml("featured", Boolean(product?.featured), "Tampilkan di Semua")}</div></section>
-  <section><p class="section-label">Kebutuhan produksi</p><div class="builder-card"><div class="builder-head"><strong>Sumber bahan *</strong><button id="add-material-row" class="text-button" type="button">+ Tambah Bahan</button></div><div id="material-rows">${sources.map(materialRowHtml).join("")}</div><small>Jumlah pemakaian dihitung per satuan jual. Stok berkurang saat status Selesai.</small></div>
+  <section id="product-production-section"><p class="section-label">Kebutuhan produksi</p><div class="builder-card"><div class="builder-head"><strong>Sumber bahan *</strong><button id="add-material-row" class="text-button" type="button">+ Tambah Bahan</button></div><div id="material-rows">${sources.map(materialRowHtml).join("")}</div><small>Jumlah pemakaian dihitung per satuan jual. Stok berkurang saat status Selesai.</small></div>
   <div class="builder-card"><div class="builder-head"><strong>Mesin yang digunakan *</strong></div><div class="machine-options">${state.machines.map((machine) => `<label><input type="checkbox" name="machineId" value="${machine.id}" ${(product?.machineIds || []).includes(machine.id) ? "checked" : ""}><span>${escapeHtml(machine.name)}</span></label>`).join("")}</div></div>
   <div class="builder-card"><div class="builder-head"><div><strong>Finishing / Add-on</strong><p>Otomatis difilter berdasarkan kategori produk.</p></div><button id="manage-finishing" class="text-button" type="button">Kelola Finishing</button></div><div id="finishing-options" class="finishing-master-grid">${finishingOptionsHtml(initialCategory, selectedFinishingIds, product)}</div></div></section></div>
   <section class="wholesale-card discount-editor"><div class="builder-head"><div><strong>Promo / Diskon Produk</strong><p>Label DISKON dan harga promo aktif otomatis selama periode promo.</p></div>${switchHtml("discountEnabled", Boolean(discount.enabled), "Aktif")}</div><div id="discount-fields" class="form-grid ${discount.enabled ? "" : "disabled-section"}"><label class="field"><span>Jenis diskon</span><select name="discountType"><option value="percent" ${discount.type !== "nominal" ? "selected" : ""}>Persentase (%)</option><option value="nominal" ${discount.type === "nominal" ? "selected" : ""}>Nominal (Rp)</option></select></label><label class="field"><span>Nilai diskon</span><input name="discountValue" type="number" min="0" value="${discount.value || 0}"></label><label class="field"><span>Mulai promo (WITA)</span><input name="discountStartsAt" type="datetime-local" value="${escapeHtml(localDateTimeInput(discount.startsAt))}"></label><label class="field"><span>Selesai promo (WITA)</span><input name="discountEndsAt" type="datetime-local" value="${escapeHtml(localDateTimeInput(discount.endsAt))}"></label></div></section>
@@ -1190,7 +1254,10 @@ function openProductForm(product = null) {
   bindMoneyInputs(detail); form.elements.baseCost.addEventListener("moneychange", refreshMargins); form.elements.price.addEventListener("moneychange", refreshMargins);
   form.elements.wholesaleEnabled.onchange = () => detail.querySelector("#tier-editor").classList.toggle("disabled-section", !form.elements.wholesaleEnabled.checked);
   form.elements.discountEnabled.onchange = () => detail.querySelector("#discount-fields").classList.toggle("disabled-section", !form.elements.discountEnabled.checked);
-  form.elements.category.onchange = () => { const checked = [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value); detail.querySelector("#finishing-options").innerHTML = finishingOptionsHtml(form.elements.category.value, checked, product); };
+  const updateAtKFields = () => { const isAtk = form.elements.category.value === "ATK"; detail.querySelectorAll(".atk-master-field").forEach((field) => field.classList.toggle("hidden", !isAtk)); detail.querySelector("#product-production-section").classList.toggle("hidden", isAtk && form.elements.retailAtK.value === "true"); };
+  form.elements.retailAtK.onchange = updateAtKFields;
+  form.elements.category.onchange = () => { const checked = [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value); detail.querySelector("#finishing-options").innerHTML = finishingOptionsHtml(form.elements.category.value, checked, product); updateAtKFields(); };
+  updateAtKFields();
   detail.querySelector("#add-tier").onclick = () => { const rows = detail.querySelector("#tier-rows"); const count = rows.children.length; if (count >= 10) return toast("Maksimal 10 tingkat harga", "error"); rows.insertAdjacentHTML("beforeend", tierRowHtml({ min: count * 10 + 1, max: (count + 1) * 10, price: parseMoney(form.elements.price.value) }, count)); detail.querySelector("#tier-count").textContent = `${count + 1}/10`; bindMoneyInputs(rows.lastElementChild); bindBuilders(); refreshMargins(); };
   detail.querySelector("#add-material-row").onclick = () => { detail.querySelector("#material-rows").insertAdjacentHTML("beforeend", materialRowHtml()); bindBuilders(); };
   detail.querySelector("#manage-finishing").onclick = () => { dialog.close(); state.masterTab = "finishings"; renderMaster(); };

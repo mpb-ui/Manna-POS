@@ -6,6 +6,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 
 - POS berbasis produk dengan opsi lebar dan finishing yang relevan.
 - Print A3+ memiliki tab Kertas, Sticker, dan Produk Jadi (belum berisi). Kertas dan Sticker memakai pilihan cepat untuk produk populer serta dropdown lengkap; konfigurasi baru tampil setelah produk dipilih. Sticker tidak memiliki opsi dua sisi. HVS menawarkan Print BW (Rp1.500/Rp3.000 untuk satu/dua sisi) dan Print Warna (Rp4.000/Rp8.000). Harga dan finishing dihitung per SKU oleh server.
+- ATK memakai tab jenis barang dan daftar produk langsung, dengan pencarian nama/SKU/barcode serta pengatur jumlah di tiap baris. Sebanyak 78 contoh SKU yang namanya terbaca pada screenshot tersedia dengan harga jual masing-masing; produk lama Kartu Nama tetap ada sebagai jasa. Barang ATK dapat dibuat melalui Master Data dengan jenis "Barang dagangan" tanpa mesin atau bahan produksi. Barcode opsional dan unik khusus ATK, disimpan sebagai teks agar nol di depan tidak hilang.
 - Data pelanggan dapat diisi sebelum item ditambahkan.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
 - Catatan produksi tersimpan per item/file.
@@ -68,3 +69,5 @@ Data bahan, produk, mesin, HPP, dan stok awal saat ini berupa dummy untuk tahap 
 Sepuluh SKU **Kaos Polos DTF** dimulai dari stok 0. Isi stok dan HPP masing-masing varian di Master Data/Stok Bahan sebelum mengonfirmasi pembayaran Sablon Kaos. Pesanan yang dibayar mencadangkan stok tersedia; stok fisik berkurang satu kali saat status **Selesai**. Harga paket Sablon Kaos dapat diubah melalui **Master Data → Produk → Edit Sablon Kaos**.
 
 SKU Print A3+ baru memakai harga jual yang diberikan, tetapi sumber bahan dan HPP belum tersedia untuk semua varian. Hubungkan masing-masing SKU ke bahan riil di **Master Data** agar pemakaian stok dan margin tercatat akurat.
+
+SKU barang ATK dari screenshot belum memiliki barcode, HPP, atau stok awal. Pengatur jumlah menambahkannya ke pesanan, tetapi stok ATK belum dilacak atau dikurangi otomatis. Lengkapi nama/harga produk yang terpotong di screenshot dari file sumber sebelum mengimpor sisa katalog.
