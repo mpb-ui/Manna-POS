@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { A3_CATALOG_PRODUCTS } from "../lib/a3-catalog.js";
+import { A3_READY_PRODUCTS } from "../lib/a3-ready-catalog.js";
 import { Store, seedState } from "../lib/store.js";
 import { calculateLine } from "../lib/domain.js";
 
@@ -69,7 +70,7 @@ test("migrasi katalog menambahkan SKU tanpa mengubah produk dan harga yang sudah
   legacy.price = 12345;
   const first = await store.read();
   assert.equal(first.products.find((item) => item.id === legacy.id).price, 12345);
-  assert.equal(first.products.filter((item) => item.a3Kind).length, A3_CATALOG_PRODUCTS.length);
+  assert.equal(first.products.filter((item) => item.a3Kind).length, A3_CATALOG_PRODUCTS.length + A3_READY_PRODUCTS.length);
   assert.ok(first.products.find((item) => item.a3Kind === "sticker").finishing.length);
   await store.mutate(() => {});
   const second = await store.read();

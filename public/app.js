@@ -150,7 +150,7 @@ function finishingHtml(product) {
     <div class="finish-option" data-finish-option="${finish.id}">
       <div class="finish-main">
         <input type="checkbox" id="f-${finish.id}" value="${finish.id}">
-        <label for="f-${finish.id}"><strong>${finish.name}</strong><small>${finish.price ? rupiah.format(finish.price) + (finish.rule === "area" ? " /m²" : " /unit") : "Gratis"}</small></label>
+        <label for="f-${finish.id}"><strong>${escapeHtml(finish.name)}</strong><small>${finish.price ? rupiah.format(finish.price) + ({ area: " /m²", point: " /titik" }[finish.rule] || " /unit") : "Gratis"}</small></label>
       </div>
       <div class="finish-actions">
         <button type="button" class="finish-note-toggle" data-finish-note-toggle="${finish.id}" disabled>Catatan</button>
@@ -208,7 +208,12 @@ function a3CatalogHtml(products, selected) {
   const quickFamilies = kind === "paper" ? ["Art Paper (AP)", "HVS", "Bluishwhite"] : kind === "sticker" ? ["White Glossy", "White Matte", "Bontak"] : [];
   const quickCards = quickFamilies.filter((family) => families.includes(family)).map((family) => `<button type="button" class="a3-quick-card ${selected?.a3Family === family ? "active" : ""}" data-a3-family="${escapeHtml(family)}" aria-pressed="${selected?.a3Family === family}"><strong>${escapeHtml(family === "Art Paper (AP)" ? "Art Paper" : family)}</strong><small>${kind === "paper" ? "Kertas A3+" : "Sticker A3+"}</small></button>`).join("");
   const other = kind === "paper" ? products.filter((item) => item.active !== false && !item.a3Kind) : [];
-  const options = [
+  const readyGroups = ["Kartu Nama", "Map Folder", "Voucher Pad", "Tent Card", "Karcis Pad", "Brosur", "Buku Nota"];
+  const readyOptions = readyGroups.map((group) => {
+    const items = curated.filter((item) => item.a3ReadyGroup === group);
+    return items.length ? `<optgroup label="${group}">${items.sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true })).map((item) => `<option value="family:${escapeHtml(item.a3Family)}" ${selected?.id === item.id ? "selected" : ""}>${escapeHtml(item.name)} · ${rupiah.format(item.price)}</option>`).join("")}</optgroup>` : "";
+  }).join("");
+  const options = kind === "ready" ? readyOptions : [
     ...families.map((family) => `<option value="family:${escapeHtml(family)}" ${selected?.a3Family === family ? "selected" : ""}>${escapeHtml(family)}</option>`),
     ...other.map((item) => `<option value="product:${escapeHtml(item.id)}" ${selected?.id === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
   ].join("");
@@ -222,7 +227,7 @@ function a3CatalogHtml(products, selected) {
   const selectedOption = selected?.a3Family ? selected.a3Family : selected?.id ? selected.name : "";
   return `<div class="a3-kind-tabs" role="group" aria-label="Jenis bahan Print A3+">${[["paper", "Kertas"], ["sticker", "Sticker"], ["ready", "Produk Jadi"]].map(([id, label]) => `<button type="button" data-a3-kind="${id}" class="${kind === id ? "active" : ""}" aria-pressed="${kind === id}">${label}</button>`).join("")}</div>
     ${quickCards ? `<div class="a3-quick"><span>Sering dipilih</span><div class="a3-quick-list">${quickCards}</div></div>` : ""}
-    <label class="field a3-picker"><span>Pilih bahan atau produk</span><select id="a3-product-select" ${kind === "ready" && !families.length ? "disabled" : ""}><option value="">${kind === "paper" ? "Pilih bahan kertas…" : kind === "sticker" ? "Pilih jenis sticker…" : "Belum ada produk jadi"}</option>${options}</select></label>
+    <label class="field a3-picker"><span>Pilih bahan atau produk</span><select id="a3-product-select" ${kind === "ready" && !families.length ? "disabled" : ""}><option value="">${kind === "paper" ? "Pilih bahan kertas…" : kind === "sticker" ? "Pilih jenis sticker…" : families.length ? "Pilih produk jadi…" : "Belum ada produk jadi"}</option>${options}</select></label>
     ${kind === "ready" && !families.length ? '<div class="category-empty"><strong>Produk Jadi belum tersedia</strong><p>Produk dapat ditambahkan kemudian.</p></div>' : ""}
     ${selected ? `<div class="a3-selection"><h3>${escapeHtml(selectedOption)}</h3>${variantsHtml}${printModes}${sides}${productConfigurationHtml(selected)}</div>` : ""}`;
 }
@@ -281,8 +286,8 @@ function productConfigurationHtml(product, popup = false) {
     : `<div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual</span><span class="input-with-unit"><input id="length" type="number" min="0.1" step="0.1" value="1"><b>m</b></span></label><label class="field"><span>Jumlah produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>`;
   const measurementTitle = product.templateProduct ? "Pilihan varian" : "Ukuran & jumlah";
-  const fileSection = product.templateProduct ? "" : `<hr class="divider"><p class="section-label">${popup ? "File" : "3 · File"}</p>${fileServicesHtml()}`;
-  const finishStep = product.templateProduct ? 3 : 4;
+  const fileSection = product.templateProduct || product.a3Kind === "ready" ? "" : `<hr class="divider"><p class="section-label">${popup ? "File" : "3 · File"}</p>${fileServicesHtml()}`;
+  const finishStep = product.templateProduct || product.a3Kind === "ready" ? 3 : 4;
   const noteStep = finishStep + 1;
   return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}${choiceGroupsHtml(product)}
     <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
@@ -335,8 +340,11 @@ function renderPos() {
 function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
   return state.cart.map((line, i) => {
-    const retailAtK = state.products.find((item) => item.id === line.productId)?.retailAtK;
-    return `<div class="cart-item"><div><h4>${escapeHtml(line.productName)}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}${retailAtK ? "" : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`}<strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`;
+    const product = state.products.find((item) => item.id === line.productId);
+    const detail = product?.retailAtK ? "" : product?.a3Kind === "ready"
+      ? `${line.finishingNames ? `<p>${escapeHtml(line.finishingNames)}</p>` : ""}<p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`
+      : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`;
+    return `<div class="cart-item"><div><h4>${escapeHtml(line.productName)}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}${detail}<strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`;
   }).join("");
 }
 
@@ -449,7 +457,7 @@ function toggleFinishing(input) {
     const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
     const suggested = finish.rule === "area"
       ? (fixedVariant ? Number(fixedVariant.area || 1) * quantity : product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : Number(width) * Number(length) * quantity)
-      : suggestedFinishUnits(finish, width, length);
+      : finish.id === "fin-a3-card-rounded" ? 1 : suggestedFinishUnits(finish, width, length);
     document.querySelector(`[data-finish-qty="${finish.id}"]`).value = manualAreaFinishing(finish) ? Math.max(1, Number(suggested.toFixed?.(4) ?? suggested)) : Number(suggested.toFixed?.(4) ?? suggested);
   }
   updatePreview();
@@ -1214,7 +1222,10 @@ function finishingOptionsHtml(category, selectedIds = [], product = null) {
   const options = state.finishings.filter((item) => {
     if (item.active === false || !(item.categories || []).includes(category)) return false;
     if (product?.a3Kind === "sticker" && category === "Print A3+") return item.id.startsWith("fin-a3-sticker-");
+    if (product?.a3Kind === "ready" && category === "Print A3+") return product.a3ReadyType === "card" ? item.id.startsWith("fin-a3-card-")
+      : product.a3ReadyType === "nota" ? item.id === "fin-a3-nota-design" : false;
     if (product?.a3Kind === "paper" && category === "Print A3+") return !item.id.startsWith("fin-a3-sticker-") && item.id !== "fin-a3-two-side" &&
+      !item.id.startsWith("fin-a3-card-") && item.id !== "fin-a3-nota-design" &&
       !(item.id.startsWith("fin-a3-lam-") && !item.id.endsWith(product.a3Side === "1S" ? "-1" : "-2"));
     return true;
   });
