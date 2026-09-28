@@ -342,6 +342,8 @@ function saveProduct(state, body, current = null) {
   unique(state, "products", "sku", sku, current?.id); unique(state, "products", "name", name, current?.id);
   const category = text(body.category);
   const retailAtK = category === "ATK" && (body.retailAtK === true || body.retailAtK === "true");
+  const quickSale = ["Akrilik", "Stempel"].includes(category);
+  const simpleSale = retailAtK || quickSale;
   const atkGroup = category === "ATK" ? (ATK_GROUPS.includes(text(body.atkGroup)) ? text(body.atkGroup) : "Peralatan lainnya") : "";
   const barcode = category === "ATK" ? text(body.barcode === undefined ? current?.barcode : body.barcode) : "";
   if (barcode.length > 128) throw new Error("Barcode maksimal 128 karakter");
@@ -349,23 +351,23 @@ function saveProduct(state, body, current = null) {
     throw new Error("Barcode ATK sudah digunakan produk lain");
   }
   const basisOption = state.catalogOptions.priceBases.find((item) => item.id === body.priceBasisId || item.label === body.priceBasisLabel);
-  const priceBasis = retailAtK ? "unit" : ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : basisOption?.mode || "unit";
-  const priceBasisLabel = retailAtK ? "Per unit" : basisOption?.label || text(body.priceBasisLabel) || ({ unit: "Per unit", sqm: "Luas m²", linear_m: "Meter lari" }[priceBasis]);
+  const priceBasis = simpleSale ? "unit" : ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : basisOption?.mode || "unit";
+  const priceBasisLabel = simpleSale ? "Per unit" : basisOption?.label || text(body.priceBasisLabel) || ({ unit: "Per unit", sqm: "Luas m²", linear_m: "Meter lari" }[priceBasis]);
   const saleUnit = text(body.saleUnit) || "pcs";
   const sourceIds = new Set();
-  const materialSources = (retailAtK ? [] : body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
+  const materialSources = (simpleSale ? [] : body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
     const material = state.materials.find((item) => item.id === source.materialId);
     if (!material || material.active === false) throw new Error("Pilih bahan aktif yang valid");
     if (sourceIds.has(material.id)) throw new Error("Bahan yang sama tidak boleh ditambahkan dua kali");
     sourceIds.add(material.id);
     return { materialId: material.id, sku: material.sku, name: material.name, unit: material.unit, quantity: Number(source.quantity), wastePercent: Math.max(0, Number(source.wastePercent || 0)) };
   });
-  if (!materialSources.length && !retailAtK && !current?.groupedProduct && !current?.a3Kind) throw new Error("Produk wajib memiliki minimal satu sumber bahan");
-  const machineIds = retailAtK ? [] : [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
-  if (!machineIds.length && !current && !retailAtK) throw new Error("Pilih minimal satu mesin");
+  if (!materialSources.length && !simpleSale && !current?.groupedProduct && !current?.a3Kind) throw new Error("Produk wajib memiliki minimal satu sumber bahan");
+  const machineIds = simpleSale ? [] : [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
+  if (!machineIds.length && !current && !simpleSale) throw new Error("Pilih minimal satu mesin");
   const unitLabels = { pcs: "/pcs", lbr: "/lembar", "m²": "/m²", pack: "/pack", rim: "/rim", set: "/set", "m lari": "/m lari" };
   const a3Kind = text(body.category) === "Print A3+" ? current?.a3Kind : null;
-  const finishingIds = [...new Set(retailAtK ? [] : body.finishingIds || [])].filter((id) => {
+  const finishingIds = [...new Set(simpleSale ? [] : body.finishingIds || [])].filter((id) => {
     if (!state.finishings.some((item) => item.id === id && item.active !== false && item.categories.includes(text(body.category)))) return false;
     if (a3Kind === "sticker") return id.startsWith("fin-a3-sticker-");
     if (a3Kind === "ready") return current.a3ReadyType === "card" ? id.startsWith("fin-a3-card-")
@@ -376,7 +378,7 @@ function saveProduct(state, body, current = null) {
     return true;
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;

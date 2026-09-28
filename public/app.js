@@ -14,7 +14,7 @@ function makassarInputToIso(value) { return value ? new Date(`${value}:00+08:00`
 const defaultProductCategories = [
   ["all", "Semua"], ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
   ["lf-sticker", "LF Sticker"], ["display-banner", "Display & Banner"],
-  ["merchandise", "Merchandise"], ["sablon-dtf", "Sablon DTF"], ["atk", "ATK"]
+  ["merchandise", "Merchandise"], ["sablon-dtf", "Sablon DTF"], ["atk", "ATK"], ["akrilik", "Akrilik"], ["stempel", "Stempel"]
 ];
 function slug(value) { return String(value || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 function productCategories() {
@@ -32,7 +32,7 @@ const atkGroups = ["Amplop", "Alat tulis", "Map & arsip", "Perekat", "Kertas & l
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], saleUnits: [], priceBases: [] },
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [], report: null,
-  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", atkGroup: "Semua", atkSearch: "", editingOrderId: null,
+  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", atkGroup: "Semua", atkSearch: "", directSearch: { Akrilik: "", Stempel: "" }, editingOrderId: null,
   masterTab: "products", reportTab: "overview", reportSort: { key: "date", direction: "desc" }, reportFilters: { from: "", to: "", category: "", machineId: "", paymentStatus: "" }, projectCategory: "orders", projectView: "list", projectSearch: "", projectDeadline: "all", projectPic: "all", projectPayment: "all", projectStatus: "all",
   stockSearch: "", stockCategory: "",
   projectCollapsed: new Set(["DIAMBIL"]),
@@ -232,21 +232,23 @@ function a3CatalogHtml(products, selected) {
     ${selected ? `<div class="a3-selection"><h3>${escapeHtml(selectedOption)}</h3>${variantsHtml}${printModes}${sides}${productConfigurationHtml(selected)}</div>` : ""}`;
 }
 
-function atkCatalogHtml(products) {
+function flatCatalogHtml(products, category) {
+  const isAtK = category === "ATK";
   const active = products.filter((item) => item.active !== false);
-  const query = state.atkSearch.trim().toLocaleLowerCase("id-ID");
-  const visible = active.filter((item) => (state.atkGroup === "Semua" || (item.atkGroup || "Peralatan lainnya") === state.atkGroup)
+  const searchValue = isAtK ? state.atkSearch : state.directSearch[category] || "";
+  const query = searchValue.trim().toLocaleLowerCase("id-ID");
+  const visible = active.filter((item) => (!isAtK || state.atkGroup === "Semua" || (item.atkGroup || "Peralatan lainnya") === state.atkGroup)
     && (!query || `${item.name} ${item.sku} ${item.barcode || ""}`.toLocaleLowerCase("id-ID").includes(query)))
     .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }));
-  const tabs = ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("");
+  const tabs = isAtK ? ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("") : "";
   const rows = visible.map((item) => {
-    const line = item.retailAtK ? state.cart.find((entry) => entry.productId === item.id) : null;
-    const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-atk-qty="-1" data-atk-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}">−</button><strong>${line.quantity}</strong><button type="button" data-atk-qty="1" data-atk-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
-      : `<button type="button" class="atk-pick" data-atk-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
-    return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-atk-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
+    const line = item.retailAtK || item.quickSale ? state.cart.find((entry) => entry.productId === item.id) : null;
+    const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="-1" data-flat-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}">−</button><strong>${line.quantity}</strong><button type="button" data-flat-qty="1" data-flat-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
+      : `<button type="button" class="atk-pick" data-flat-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
+    return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-flat-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
   }).join("");
-  return `<label class="field atk-search"><span>Cari produk ATK</span><input id="atk-search" type="search" value="${escapeHtml(state.atkSearch)}" placeholder="Nama, merek, warna, ukuran, atau barcode…" autocomplete="off"></label>
-    <div class="atk-tabs" role="group" aria-label="Jenis produk ATK">${tabs}</div>
+  return `<label class="field atk-search"><span>Cari produk ${escapeHtml(category)}</span><input id="flat-search" type="search" value="${escapeHtml(searchValue)}" placeholder="${isAtK ? "Nama, merek, warna, ukuran, atau barcode…" : "Cari nama atau ukuran produk…"}" autocomplete="off"></label>
+    ${isAtK ? `<div class="atk-tabs" role="group" aria-label="Jenis produk ATK">${tabs}</div>` : ""}
     <div class="atk-count">${visible.length} produk${query ? " ditemukan" : ""}</div>
     <div class="atk-list">${visible.length ? `<div class="atk-list-head"><span>Produk</span><span>Harga</span><span>Jumlah</span></div>${rows}` : '<p class="atk-empty">Produk tidak ditemukan. Coba kata lain atau pilih Semua.</p>'}</div>`;
 }
@@ -324,7 +326,8 @@ function renderPos() {
   const categoryTabs = productCategories().map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${escapeHtml(label)}</button>`).join("");
   const intro = `<p class="section-label">1 · ${state.selectedCategory === "display-banner" ? "Pilih produk" : "Pilih bahan"}</p>`;
   const productContent = state.selectedCategory === "all" ? allCatalogHtml() : state.selectedCategory === "print-a3" && visibleProducts.some((item) => item.a3Kind)
-    ? a3CatalogHtml(visibleProducts, product) : state.selectedCategory === "atk" ? atkCatalogHtml(visibleProducts) : visibleProducts.length
+    ? a3CatalogHtml(visibleProducts, product) : ["atk", "akrilik", "stempel"].includes(state.selectedCategory)
+    ? flatCatalogHtml(visibleProducts, productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ATK") : visibleProducts.length
     ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>${product ? productConfigurationHtml(product) : ""}`
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid">
@@ -341,7 +344,7 @@ function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
   return state.cart.map((line, i) => {
     const product = state.products.find((item) => item.id === line.productId);
-    const detail = product?.retailAtK ? "" : product?.a3Kind === "ready"
+    const detail = product?.retailAtK || product?.quickSale ? "" : product?.a3Kind === "ready"
       ? `${line.finishingNames ? `<p>${escapeHtml(line.finishingNames)}</p>` : ""}<p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`
       : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`;
     return `<div class="cart-item"><div><h4>${escapeHtml(line.productName)}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}${detail}<strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`;
@@ -592,10 +595,10 @@ function openProductConfigurator(productId) {
 
 function bindPos() {
   bindProductSearch();
-  const setAtkQuantity = (productId, change) => {
-    const product = state.products.find((item) => item.id === productId && item.category === "ATK" && item.active !== false);
+  const setFlatQuantity = (productId, change) => {
+    const product = state.products.find((item) => item.id === productId && categoryKey(item) === state.selectedCategory && item.active !== false);
     if (!product) return;
-    if (!product.retailAtK) return openProductConfigurator(productId);
+    if (!product.retailAtK && !product.quickSale) return openProductConfigurator(productId);
     const existing = state.cart.findIndex((line) => line.productId === productId);
     const quantity = Math.max(0, (existing >= 0 ? Number(state.cart[existing].quantity) : 0) + change);
     syncDraft(document.querySelector("#checkout"));
@@ -608,28 +611,29 @@ function bindPos() {
       state.cart.push(line);
     }
     renderPos();
-    if (state.atkSearch) document.querySelector("#atk-search")?.focus();
+    if (state.atkSearch || state.directSearch[product.category]) document.querySelector("#flat-search")?.focus();
   };
   document.querySelectorAll("[data-atk-group]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout")); state.atkGroup = button.dataset.atkGroup; renderPos();
   }));
-  document.querySelector("#atk-search")?.addEventListener("input", (event) => {
+  document.querySelector("#flat-search")?.addEventListener("input", (event) => {
     const caret = event.target.selectionStart;
     syncDraft(document.querySelector("#checkout"));
-    state.atkSearch = event.target.value;
+    if (state.selectedCategory === "atk") state.atkSearch = event.target.value;
+    else state.directSearch[productCategories().find(([id]) => id === state.selectedCategory)?.[1]] = event.target.value;
     renderPos();
-    const input = document.querySelector("#atk-search");
+    const input = document.querySelector("#flat-search");
     input.focus(); input.setSelectionRange(caret, caret);
   });
-  document.querySelector("#atk-search")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
+  document.querySelector("#flat-search")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || state.selectedCategory !== "atk") return;
     event.preventDefault();
     const barcode = event.currentTarget.value.trim();
     const match = state.products.find((item) => item.category === "ATK" && item.active !== false && item.barcode && item.barcode === barcode);
-    if (match) { state.atkGroup = match.atkGroup || "Peralatan lainnya"; state.atkSearch = ""; setAtkQuantity(match.id, 1); }
+    if (match) { state.atkGroup = match.atkGroup || "Peralatan lainnya"; state.atkSearch = ""; setFlatQuantity(match.id, 1); }
   });
-  document.querySelectorAll("[data-atk-qty]").forEach((button) => button.addEventListener("click", () => setAtkQuantity(button.dataset.atkProduct, Number(button.dataset.atkQty))));
-  document.querySelectorAll(".atk-pick,.atk-name").forEach((button) => button.addEventListener("click", () => setAtkQuantity(button.dataset.atkProduct, state.cart.some((line) => line.productId === button.dataset.atkProduct) ? 0 : 1)));
+  document.querySelectorAll("[data-flat-qty]").forEach((button) => button.addEventListener("click", () => setFlatQuantity(button.dataset.flatProduct, Number(button.dataset.flatQty))));
+  document.querySelectorAll(".atk-pick,.atk-name").forEach((button) => button.addEventListener("click", () => setFlatQuantity(button.dataset.flatProduct, state.cart.some((line) => line.productId === button.dataset.flatProduct) ? 0 : 1)));
   const selectA3Family = (family) => {
     const candidates = state.products.filter((item) => item.active !== false && item.a3Kind === state.a3Kind && item.a3Family === family);
     state.selectedProduct = (candidates.find((item) => item.a3PrintMode === "BW" && item.a3Side === "1S")
@@ -1265,7 +1269,7 @@ function openProductForm(product = null) {
   bindMoneyInputs(detail); form.elements.baseCost.addEventListener("moneychange", refreshMargins); form.elements.price.addEventListener("moneychange", refreshMargins);
   form.elements.wholesaleEnabled.onchange = () => detail.querySelector("#tier-editor").classList.toggle("disabled-section", !form.elements.wholesaleEnabled.checked);
   form.elements.discountEnabled.onchange = () => detail.querySelector("#discount-fields").classList.toggle("disabled-section", !form.elements.discountEnabled.checked);
-  const updateAtKFields = () => { const isAtk = form.elements.category.value === "ATK"; detail.querySelectorAll(".atk-master-field").forEach((field) => field.classList.toggle("hidden", !isAtk)); detail.querySelector("#product-production-section").classList.toggle("hidden", isAtk && form.elements.retailAtK.value === "true"); };
+  const updateAtKFields = () => { const category = form.elements.category.value; const isAtk = category === "ATK"; const direct = ["Akrilik", "Stempel"].includes(category); detail.querySelectorAll(".atk-master-field").forEach((field) => field.classList.toggle("hidden", !isAtk)); detail.querySelector("#product-production-section").classList.toggle("hidden", direct || (isAtk && form.elements.retailAtK.value === "true")); };
   form.elements.retailAtK.onchange = updateAtKFields;
   form.elements.category.onchange = () => { const checked = [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value); detail.querySelector("#finishing-options").innerHTML = finishingOptionsHtml(form.elements.category.value, checked, product); updateAtKFields(); };
   updateAtKFields();

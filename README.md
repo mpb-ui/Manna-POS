@@ -8,6 +8,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Print A3+ memiliki tab Kertas, Sticker, dan Produk Jadi. Kertas dan Sticker memakai pilihan cepat untuk produk populer serta dropdown lengkap; konfigurasi baru tampil setelah produk dipilih. Sticker tidak memiliki opsi dua sisi. HVS menawarkan Print BW (Rp1.500/Rp3.000 untuk satu/dua sisi) dan Print Warna (Rp4.000/Rp8.000). Harga dan finishing dihitung per SKU oleh server.
 - Tab Produk Jadi Print A3+ memiliki 59 SKU pada dropdown yang dikelompokkan menurut Kartu Nama, Map Folder, Voucher Pad, Tent Card, Karcis Pad, Brosur, dan Buku Nota. Laminasi Kartu Nama 1/2 Sisi serta Rounded hanya ada pada Kartu Nama; Fee Design Nota hanya ada pada Buku Nota. Setiap finishing yang dipilih memiliki jumlah sendiri dan dihitung server sesuai harga daftar.
 - ATK memakai tab jenis barang dan daftar produk langsung, dengan pencarian nama/SKU/barcode serta pengatur jumlah di tiap baris. Sebanyak 78 contoh SKU yang namanya terbaca pada screenshot tersedia dengan harga jual masing-masing; produk lama Kartu Nama tetap ada sebagai jasa. Barang ATK dapat dibuat melalui Master Data dengan jenis "Barang dagangan" tanpa mesin atau bahan produksi. Barcode opsional dan unik khusus ATK, disimpan sebagai teks agar nol di depan tidak hilang.
+- Kategori Akrilik (27 SKU) dan Stempel (30 SKU) menampilkan semua produk langsung dengan pencarian serta tombol Pilih/pengatur jumlah seperti daftar ATK, tanpa subtab. Keduanya dijual per pcs sesuai harga daftar dan dapat ditambah melalui Master Data tanpa mesin atau bahan produksi.
 - Data pelanggan dapat diisi sebelum item ditambahkan.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
 - Catatan produksi tersimpan per item/file.
@@ -72,3 +73,5 @@ Sepuluh SKU **Kaos Polos DTF** dimulai dari stok 0. Isi stok dan HPP masing-masi
 SKU Print A3+ baru memakai harga jual yang diberikan, tetapi sumber bahan dan HPP belum tersedia untuk semua varian. Hubungkan masing-masing SKU ke bahan riil di **Master Data** agar pemakaian stok dan margin tercatat akurat.
 
 SKU barang ATK dari screenshot belum memiliki barcode, HPP, atau stok awal. Pengatur jumlah menambahkannya ke pesanan, tetapi stok ATK belum dilacak atau dikurangi otomatis. Lengkapi nama/harga produk yang terpotong di screenshot dari file sumber sebelum mengimpor sisa katalog.
+
+SKU Akrilik dan Stempel juga belum memiliki HPP, bahan produksi, atau stok awal dari screenshot. Harga jual dan jumlah pesanan tercatat, tetapi pemakaian bahan dan stok kedua kategori belum dihitung otomatis.

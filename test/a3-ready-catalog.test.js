@@ -55,6 +55,6 @@ test("migrasi Produk Jadi menambah produk dan finishing tanpa menimpa pesanan la
   assert.equal(first.orders[0].items[0].unitPrice, 4000);
   await store.mutate(() => {});
   const second = await store.read();
-  assert.equal(second.catalogVersion, 12);
+  assert.equal(second.catalogVersion, 13);
   assert.equal(second.products.filter((item) => item.a3Kind === "ready").length, 59);
 });
