@@ -202,23 +202,28 @@ function productCardsHtml(products) {
 
 function a3CatalogHtml(products, selected) {
   const kind = selected?.a3Kind || state.a3Kind;
-  const curated = products.filter((item) => item.a3Kind === kind);
+  const curated = products.filter((item) => item.active !== false && item.a3Kind === kind);
   const families = [...new Set(curated.map((item) => item.a3Family))].sort((a, b) => a.localeCompare(b, "id", { sensitivity: "base" }));
-  const familyCards = families.map((family) => {
-    const variants = [...new Set(curated.filter((item) => item.a3Family === family).map((item) => item.a3Variant))]
-      .sort((a, b) => a.localeCompare(b, "id", { numeric: true }));
-    const expanded = selected?.a3Family === family;
-    const variantsHtml = variants.length > 1 ? `<div class="a3-field"><span>Varian bahan</span><div class="chips">${variants.map((variant) => `<button type="button" class="a3-option ${selected?.a3Variant === variant ? "active" : ""}" data-a3-variant="${escapeHtml(variant)}" aria-pressed="${selected?.a3Variant === variant}">${escapeHtml(variant)}</button>`).join("")}</div></div>` : "";
-    const sides = kind === "paper" ? `<div class="a3-field"><span>Sisi cetak</span><div class="chips">${["1S", "2S"].map((side) => {
-      const option = curated.find((item) => item.a3Family === family && item.a3Variant === selected?.a3Variant && item.a3Side === side);
-      return `<button type="button" class="a3-option ${selected?.id === option?.id ? "active" : ""}" data-a3-side="${side}" aria-pressed="${selected?.id === option?.id}" ${option ? "" : "disabled"}>Cetak ${side === "1S" ? "1 sisi" : "2 sisi"}${option ? ` · ${rupiah.format(option.price)}` : ""}</button>`;
-    }).join("")}</div></div>` : `<p class="a3-sticker-price">Sticker A3+ · ${rupiah.format(selected?.price || 0)}/lembar</p>`;
-    const description = kind === "paper" ? variants.length > 1 ? variants.join(" · ") : `${curated.find((item) => item.a3Family === family)?.a3Size || "A3+"} · Kertas` : "Sticker A3+";
-    return `<div class="a3-family-card ${expanded ? "expanded" : ""}" data-a3-card="${escapeHtml(family)}"><button type="button" class="a3-family-head" data-a3-family="${escapeHtml(family)}" aria-expanded="${expanded}"><span><strong>${escapeHtml(family)}</strong><small>${escapeHtml(description)}</small></span><b aria-hidden="true">${expanded ? "⌃" : "⌄"}</b></button>${expanded ? `<div class="a3-family-body">${variantsHtml}${sides}${productConfigurationHtml(selected)}</div>` : ""}</div>`;
-  }).join("");
-  const other = products.filter((item) => !item.a3Kind);
-  const legacy = other.length ? `<div class="a3-other"><p class="section-label">Produk lainnya</p><div class="product-grid">${productCardsHtml(other)}</div>${selected && !selected.a3Kind ? productConfigurationHtml(selected) : ""}</div>` : "";
-  return `<div class="a3-kind-tabs" role="group" aria-label="Jenis bahan Print A3+"><button type="button" data-a3-kind="paper" class="${kind === "paper" ? "active" : ""}" aria-pressed="${kind === "paper"}">Kertas</button><button type="button" data-a3-kind="sticker" class="${kind === "sticker" ? "active" : ""}" aria-pressed="${kind === "sticker"}">Sticker</button></div><label class="field a3-search"><span>Cari tipe atau varian bahan</span><input id="a3-search" type="search" placeholder="Contoh: Akasia, AP 210, White Glossy…"></label><p class="section-label">1 · Pilih bahan</p><div class="a3-family-list">${familyCards || '<div class="category-empty"><strong>Belum ada bahan</strong></div>'}</div><p id="a3-no-results" class="category-empty hidden">Tidak ada bahan yang cocok.</p>${legacy}`;
+  const quickFamilies = kind === "paper" ? ["Art Paper (AP)", "HVS", "Bluishwhite"] : kind === "sticker" ? ["White Glossy", "White Matte", "Bontak"] : [];
+  const quickCards = quickFamilies.filter((family) => families.includes(family)).map((family) => `<button type="button" class="a3-quick-card ${selected?.a3Family === family ? "active" : ""}" data-a3-family="${escapeHtml(family)}" aria-pressed="${selected?.a3Family === family}"><strong>${escapeHtml(family === "Art Paper (AP)" ? "Art Paper" : family)}</strong><small>${kind === "paper" ? "Kertas A3+" : "Sticker A3+"}</small></button>`).join("");
+  const other = kind === "paper" ? products.filter((item) => item.active !== false && !item.a3Kind) : [];
+  const options = [
+    ...families.map((family) => `<option value="family:${escapeHtml(family)}" ${selected?.a3Family === family ? "selected" : ""}>${escapeHtml(family)}</option>`),
+    ...other.map((item) => `<option value="product:${escapeHtml(item.id)}" ${selected?.id === item.id ? "selected" : ""}>${escapeHtml(item.name)}</option>`)
+  ].join("");
+  const variants = selected?.a3Family ? [...new Set(curated.filter((item) => item.a3Family === selected.a3Family).map((item) => item.a3Variant))].sort((a, b) => a.localeCompare(b, "id", { numeric: true })) : [];
+  const variantsHtml = variants.length > 1 ? `<div class="a3-field"><span>Varian bahan</span><div class="chips">${variants.map((variant) => `<button type="button" class="a3-option ${selected?.a3Variant === variant ? "active" : ""}" data-a3-variant="${escapeHtml(variant)}" aria-pressed="${selected?.a3Variant === variant}">${escapeHtml(variant)}</button>`).join("")}</div></div>` : "";
+  const printModes = selected?.a3Family === "HVS" ? `<div class="a3-field"><span>Varian print</span><div class="chips">${[["BW", "Print BW"], ["Warna", "Print Warna"]].map(([mode, label]) => `<button type="button" class="a3-option ${selected.a3PrintMode === mode ? "active" : ""}" data-a3-print-mode="${mode}" aria-pressed="${selected.a3PrintMode === mode}">${label}</button>`).join("")}</div></div>` : "";
+  const sides = selected?.a3Kind === "paper" ? `<div class="a3-field"><span>Sisi cetak</span><div class="chips">${["1S", "2S"].map((side) => {
+    const option = curated.find((item) => item.a3Family === selected.a3Family && item.a3Variant === selected.a3Variant && item.a3PrintMode === selected.a3PrintMode && item.a3Side === side);
+    return `<button type="button" class="a3-option ${selected.id === option?.id ? "active" : ""}" data-a3-side="${side}" aria-pressed="${selected.id === option?.id}" ${option ? "" : "disabled"}>Cetak ${side === "1S" ? "1 sisi" : "2 sisi"}${option ? ` · ${rupiah.format(option.price)}` : ""}</button>`;
+  }).join("")}</div></div>` : selected?.a3Kind === "sticker" ? `<p class="a3-sticker-price">Sticker A3+ · ${rupiah.format(selected.price)}/lembar</p>` : "";
+  const selectedOption = selected?.a3Family ? selected.a3Family : selected?.id ? selected.name : "";
+  return `<div class="a3-kind-tabs" role="group" aria-label="Jenis bahan Print A3+">${[["paper", "Kertas"], ["sticker", "Sticker"], ["ready", "Produk Jadi"]].map(([id, label]) => `<button type="button" data-a3-kind="${id}" class="${kind === id ? "active" : ""}" aria-pressed="${kind === id}">${label}</button>`).join("")}</div>
+    ${quickCards ? `<div class="a3-quick"><span>Sering dipilih</span><div class="a3-quick-list">${quickCards}</div></div>` : ""}
+    <label class="field a3-picker"><span>Pilih bahan atau produk</span><select id="a3-product-select" ${kind === "ready" && !families.length ? "disabled" : ""}><option value="">${kind === "paper" ? "Pilih bahan kertas…" : kind === "sticker" ? "Pilih jenis sticker…" : "Belum ada produk jadi"}</option>${options}</select></label>
+    ${kind === "ready" && !families.length ? '<div class="category-empty"><strong>Produk Jadi belum tersedia</strong><p>Produk dapat ditambahkan kemudian.</p></div>' : ""}
+    ${selected ? `<div class="a3-selection"><h3>${escapeHtml(selectedOption)}</h3>${variantsHtml}${printModes}${sides}${productConfigurationHtml(selected)}</div>` : ""}`;
 }
 
 function fileServicesHtml() {
@@ -556,6 +561,12 @@ function openProductConfigurator(productId) {
 
 function bindPos() {
   bindProductSearch();
+  const selectA3Family = (family) => {
+    const candidates = state.products.filter((item) => item.active !== false && item.a3Kind === state.a3Kind && item.a3Family === family);
+    state.selectedProduct = (candidates.find((item) => item.a3PrintMode === "BW" && item.a3Side === "1S")
+      || candidates.find((item) => item.a3Side === "1S") || candidates[0])?.id || null;
+    renderPos();
+  };
   document.querySelectorAll("[data-a3-kind]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout"));
     state.a3Kind = button.dataset.a3Kind;
@@ -564,34 +575,37 @@ function bindPos() {
   }));
   document.querySelectorAll("[data-a3-family]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout"));
-    const current = selectedProduct();
-    const family = button.dataset.a3Family;
-    state.selectedProduct = current?.a3Family === family ? null : state.products.find((item) => item.active !== false && item.a3Kind === state.a3Kind && item.a3Family === family && item.a3Side !== "2S")?.id || null;
-    renderPos();
+    selectA3Family(button.dataset.a3Family);
   }));
+  document.querySelector("#a3-product-select")?.addEventListener("change", (event) => {
+    syncDraft(document.querySelector("#checkout"));
+    const value = event.target.value;
+    if (value.startsWith("family:")) return selectA3Family(value.slice(7));
+    state.selectedProduct = value.startsWith("product:") ? value.slice(8) : null;
+    renderPos();
+  });
   document.querySelectorAll("[data-a3-variant]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout"));
     const current = selectedProduct();
     const options = state.products.filter((item) => item.a3Kind === "paper" && item.a3Family === current?.a3Family && item.a3Variant === button.dataset.a3Variant && item.active !== false);
-    state.selectedProduct = (options.find((item) => item.a3Side === current.a3Side) || options.find((item) => item.a3Side === "1S"))?.id || null;
+    state.selectedProduct = (options.find((item) => item.a3PrintMode === current.a3PrintMode && item.a3Side === current.a3Side)
+      || options.find((item) => item.a3PrintMode === current.a3PrintMode && item.a3Side === "1S"))?.id || null;
+    renderPos();
+  }));
+  document.querySelectorAll("[data-a3-print-mode]").forEach((button) => button.addEventListener("click", () => {
+    syncDraft(document.querySelector("#checkout"));
+    const current = selectedProduct();
+    state.selectedProduct = state.products.find((item) => item.active !== false && item.a3Kind === "paper" && item.a3Family === "HVS"
+      && item.a3PrintMode === button.dataset.a3PrintMode && item.a3Side === current.a3Side)?.id || null;
     renderPos();
   }));
   document.querySelectorAll("[data-a3-side]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout"));
     const current = selectedProduct();
-    state.selectedProduct = state.products.find((item) => item.a3Family === current?.a3Family && item.a3Variant === current?.a3Variant && item.a3Side === button.dataset.a3Side && item.active !== false)?.id || current?.id;
+    state.selectedProduct = state.products.find((item) => item.a3Family === current?.a3Family && item.a3Variant === current?.a3Variant
+      && item.a3PrintMode === current?.a3PrintMode && item.a3Side === button.dataset.a3Side && item.active !== false)?.id || current?.id;
     renderPos();
   }));
-  document.querySelector("#a3-search")?.addEventListener("input", (event) => {
-    const query = event.target.value.trim().toLocaleLowerCase("id-ID");
-    let shown = 0;
-    document.querySelectorAll("[data-a3-card]").forEach((card) => {
-      const matches = card.textContent.toLocaleLowerCase("id-ID").includes(query);
-      card.classList.toggle("hidden", !matches);
-      if (matches) shown += 1;
-    });
-    document.querySelector("#a3-no-results")?.classList.toggle("hidden", shown > 0);
-  });
   document.querySelectorAll("[data-category]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout"));
     state.selectedCategory = button.dataset.category;

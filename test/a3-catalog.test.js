@@ -30,6 +30,36 @@ test("harga dan quantity finishing A3+ dihitung oleh server per SKU", () => {
   assert.equal(stickerLine.finishingTotal, 20000);
 });
 
+test("HVS Print BW dan Print Warna memiliki harga per sisi dan SKU berbeda", () => {
+  const state = seedState();
+  const hvs = state.products.filter((item) => item.a3Family === "HVS");
+  assert.deepEqual(hvs.map((item) => [item.a3PrintMode, item.a3Side, item.price]).sort(), [
+    ["BW", "1S", 1500], ["BW", "2S", 3000], ["Warna", "1S", 4000], ["Warna", "2S", 8000]
+  ]);
+  assert.equal(new Set(hvs.map((item) => item.id)).size, 4);
+  for (const item of hvs) {
+    assert.equal(calculateLine(item, { quantity: 2, finishing: [] }).baseTotal, item.price * 2);
+  }
+});
+
+test("migrasi HVS menambah BW dan memperjelas SKU warna tanpa mengubah pesanan lama", async () => {
+  const store = new Store();
+  store.memory.catalogVersion = 9;
+  store.memory.products = store.memory.products.filter((item) => item.a3Family !== "HVS" || item.a3PrintMode !== "BW");
+  const color = store.memory.products.find((item) => item.a3Family === "HVS" && item.a3Side === "1S");
+  const originalId = color.id;
+  color.price = 9999;
+  delete color.a3PrintMode;
+  store.memory.orders.push({ id: "old-order", items: [{ productId: originalId, unitPrice: 4000 }] });
+  const state = await store.read();
+  assert.equal(state.products.find((item) => item.id === originalId).price, 4000);
+  assert.equal(state.products.find((item) => item.id === originalId).a3PrintMode, "Warna");
+  assert.equal(state.products.filter((item) => item.a3Family === "HVS").length, 4);
+  assert.equal(state.orders[0].items[0].productId, originalId);
+  await store.mutate(() => {});
+  assert.equal((await store.read()).products.filter((item) => item.a3Family === "HVS").length, 4);
+});
+
 test("migrasi katalog menambahkan SKU tanpa mengubah produk dan harga yang sudah ada", async () => {
   const store = new Store();
   store.memory.catalogVersion = 7;

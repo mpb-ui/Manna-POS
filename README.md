@@ -5,7 +5,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 ## Fitur
 
 - POS berbasis produk dengan opsi lebar dan finishing yang relevan.
-- Print A3+ menampilkan kartu tipe kertas A–Z dengan pilihan varian dan sisi cetak; Sticker memakai tab sendiri tanpa opsi dua sisi. Harga dan finishing dihitung per SKU oleh server.
+- Print A3+ memiliki tab Kertas, Sticker, dan Produk Jadi (belum berisi). Kertas dan Sticker memakai pilihan cepat untuk produk populer serta dropdown lengkap; konfigurasi baru tampil setelah produk dipilih. Sticker tidak memiliki opsi dua sisi. HVS menawarkan Print BW (Rp1.500/Rp3.000 untuk satu/dua sisi) dan Print Warna (Rp4.000/Rp8.000). Harga dan finishing dihitung per SKU oleh server.
 - Data pelanggan dapat diisi sebelum item ditambahkan.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
 - Catatan produksi tersimpan per item/file.
