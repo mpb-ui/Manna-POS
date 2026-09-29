@@ -362,6 +362,27 @@ function saveProduct(state, body, current = null) {
     sourceIds.add(material.id);
     return { materialId: material.id, sku: material.sku, name: material.name, unit: material.unit, quantity: Number(source.quantity), wastePercent: Math.max(0, Number(source.wastePercent || 0)) };
   });
+  let fixedSizeVariants = current?.fixedSizeVariants || [];
+  if (current?.id === "display-x-banner" && body.fixedSizeVariants !== undefined) {
+    const submitted = body.fixedSizeVariants;
+    if (!Array.isArray(submitted) || submitted.length !== fixedSizeVariants.length) throw new Error("Semua varian X-Banner wajib memiliki sumber bahan");
+    const byId = new Map(submitted.map((variant) => [variant.id, variant]));
+    if (byId.size !== fixedSizeVariants.length || fixedSizeVariants.some((variant) => !byId.has(variant.id))) throw new Error("Varian X-Banner tidak valid");
+    fixedSizeVariants = fixedSizeVariants.map((variant) => {
+      const sources = byId.get(variant.id).materialSources;
+      if (!Array.isArray(sources) || !sources.length) throw new Error(`Tambahkan bahan untuk ${variant.label}`);
+      const used = new Set();
+      return { ...variant, materialSources: sources.map((source) => {
+        const material = state.materials.find((item) => item.id === source.materialId && item.active !== false);
+        const quantity = Number(source.quantity); const wastePercent = Number(source.wastePercent || 0);
+        if (!material || used.has(material.id) || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(wastePercent) || wastePercent < 0) {
+          throw new Error(`Bahan, jumlah, atau waste tidak valid pada ${variant.label}`);
+        }
+        used.add(material.id);
+        return { materialId: material.id, sku: material.sku, name: material.name, unit: material.unit, cost: Number(material.cost || 0), quantity, wastePercent };
+      }) };
+    });
+  }
   if (!materialSources.length && !simpleSale && !current?.groupedProduct && !current?.a3Kind) throw new Error("Produk wajib memiliki minimal satu sumber bahan");
   const machineIds = simpleSale ? [] : [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
   if (!machineIds.length && !current && !simpleSale) throw new Error("Pilih minimal satu mesin");
@@ -378,7 +399,7 @@ function saveProduct(state, body, current = null) {
     return true;
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants: current?.fixedSizeVariants || [], groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants: current?.sizeVariants || [], designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups: current?.choiceGroups || [], cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;

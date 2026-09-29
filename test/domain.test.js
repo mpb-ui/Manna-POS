@@ -61,6 +61,19 @@ test("Display & Banner memakai tujuh produk induk dengan varian harga tetap", ()
   assert.equal(products.find((item) => item.id === "display-roll-banner").fixedSizeVariants.length, 6);
 });
 
+test("X-Banner mencatat bahan sesuai varian dan jumlah set pada snapshot pesanan", () => {
+  const product = PRODUCTS.find((item) => item.id === "display-x-banner");
+  const albatros = calculateLine(product, { sizeVariantId: "albatros", quantity: 2, finishing: [] });
+  assert.equal(albatros.materials.find((item) => item.materialId === "mat-xstand").units, 2);
+  assert.equal(albatros.materials.find((item) => item.materialId === "mat-albatros").units, 1.6);
+  assert.ok(!albatros.materials.some((item) => item.materialId === "mat-luster"));
+  const luster = calculateLine(product, { sizeVariantId: "luster", quantity: 3, finishing: [] });
+  assert.equal(luster.materials.find((item) => item.materialId === "mat-luster").units, 2.4);
+  assert.ok(!luster.materials.some((item) => item.materialId === "mat-albatros"));
+  const mini = calculateLine(product, { sizeVariantId: "mini", quantity: 1, finishing: [] });
+  assert.deepEqual(mini.materials.map((item) => item.materialId), ["mat-mini-xstand"]);
+});
+
 test("pilihan Foamboard dan Impraboard wajib tunggal", () => {
   const mockup = PRODUCTS.find((item) => item.id === "display-mockup");
   assert.throws(() => calculateLine(mockup, { sizeVariantId: "30x40", quantity: 1, choices: [], finishing: [] }), /Pilih bahan/i);
