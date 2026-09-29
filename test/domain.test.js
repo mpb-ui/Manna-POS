@@ -95,6 +95,34 @@ test("varian bahan mandiri memilih stok yang tepat dan harga khusus opsional", (
   assert.match(luster.displaySize, /Luster/);
 });
 
+test("harga grosir kombinasi varian dan sub-varian memilih stok varian bahan", () => {
+  const product = {
+    id: "print-custom", name: "Print Custom", price: 10000, priceBasis: "unit", unitName: "lembar", widths: [], finishing: [],
+    hasMaterialVariants: true, subVariantLabel: "Sisi", subVariants: [{ id: "one", label: "1 sisi" }, { id: "two", label: "2 sisi" }],
+    materialVariants: [
+      { id: "ap120", label: "AP 120", price: 12000, priceTiers: [{ min: 1, max: 9, price: 12000 }, { min: 10, max: null, price: 9000 }], materialSources: [{ materialId: "paper120", quantity: 1 }], combinations: [
+        { subVariantId: "one", price: null, active: true, priceTiers: [] },
+        { subVariantId: "two", price: 18000, active: true, priceTiers: [{ min: 1, max: 9, price: 18000 }, { min: 10, max: null, price: 14000 }] }
+      ] },
+      { id: "ap150", label: "AP 150", price: 15000, materialSources: [{ materialId: "paper150", quantity: 1 }], combinations: [
+        { subVariantId: "one", price: null, active: false, priceTiers: [] },
+        { subVariantId: "two", price: 20000, active: true, priceTiers: [] }
+      ] }
+    ]
+  };
+  const input = { materialVariantId: "ap120", subVariantId: "two", quantity: 12, finishing: [] };
+  assert.throws(() => calculateLine(product, { ...input, subVariantId: "" }), /Pilih sub-varian/);
+  assert.throws(() => calculateLine(product, { ...input, materialVariantId: "ap150", subVariantId: "one" }), /tidak tersedia/);
+  const two = calculateLine(product, input);
+  assert.equal(two.baseTotal, 168000);
+  assert.equal(two.subVariantId, "two");
+  assert.equal(two.materials.find((item) => item.materialId === "paper120").units, 12);
+  assert.equal(calculateLine(product, { ...input, subVariantId: "one" }).baseTotal, 108000);
+  const other = calculateLine(product, { ...input, materialVariantId: "ap150" });
+  assert.equal(other.baseTotal, 240000);
+  assert.deepEqual(other.materials.map((item) => item.materialId), ["paper150"]);
+});
+
 test("varian bahan per m² mengikuti luas tagihan tanpa mengubah ukuran pesanan", () => {
   const product = {
     id: "poster-custom", name: "Poster Custom", price: 50000, priceBasis: "sqm", widths: [1], billingIncrement: 0.5,

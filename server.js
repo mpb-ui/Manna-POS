@@ -391,6 +391,19 @@ function saveProduct(state, body, current = null) {
     throw new Error("Tambahkan minimal satu varian bahan (maksimal 40)");
   }
   const variantIds = new Set(); const variantLabels = new Set();
+  const submittedSubVariants = hasMaterialVariants ? (body.subVariants === undefined ? current?.subVariants || [] : body.subVariants) : [];
+  if (!Array.isArray(submittedSubVariants) || submittedSubVariants.length > 10) throw new Error("Maksimal 10 sub-varian");
+  const subIds = new Set(); const subLabels = new Set();
+  const subVariants = submittedSubVariants.map((item) => {
+    const id = text(item.id); const label = text(item.label);
+    if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id) || !label || label.length > 100 || subIds.has(id) || subLabels.has(label.toLowerCase())) throw new Error("Sub-varian tidak valid/duplikat");
+    subIds.add(id); subLabels.add(label.toLowerCase()); return { id, label };
+  });
+  const optionalTiers = (tiers, retailPrice) => {
+    if (tiers === undefined || (Array.isArray(tiers) && !tiers.length)) return [];
+    if (!Array.isArray(tiers) || tiers.length > 10) throw new Error("Maksimal 10 tingkat harga grosir per pilihan");
+    return normalizeTiers({ wholesaleEnabled: true, priceTiers: tiers }, retailPrice);
+  };
   const materialVariants = submittedMaterialVariants.map((variant) => {
     const id = text(variant.id); const label = text(variant.label);
     const priceOverride = variant.price === "" || variant.price == null ? null : Number(variant.price);
@@ -399,7 +412,21 @@ function saveProduct(state, body, current = null) {
     variantIds.add(id); variantLabels.add(label.toLowerCase());
     const sources = validateSources(variant.materialSources, label);
     if (!sources.length) throw new Error(`Tambahkan minimal satu bahan untuk varian ${label}`);
-    return { id, label, price: priceOverride, materialSources: sources };
+    const variantRetail = priceOverride ?? price;
+    const priceTiers = optionalTiers(variant.priceTiers, variantRetail);
+    const submittedCombinations = subVariants.length ? variant.combinations : [];
+    if (!Array.isArray(submittedCombinations) || submittedCombinations.length !== subVariants.length) throw new Error(`Harga sub-varian untuk ${label} belum lengkap`);
+    const bySub = new Map(submittedCombinations.map((item) => [item.subVariantId, item]));
+    if (bySub.size !== subVariants.length || subVariants.some((item) => !bySub.has(item.id))) throw new Error(`Kombinasi sub-varian untuk ${label} tidak valid`);
+    const combinations = subVariants.map((sub) => {
+      const input = bySub.get(sub.id);
+      const combinationPrice = input.price === "" || input.price == null ? null : Number(input.price);
+      if (combinationPrice !== null && (!Number.isSafeInteger(combinationPrice) || combinationPrice <= 0)) throw new Error(`Harga ${label} · ${sub.label} tidak valid`);
+      return { subVariantId: sub.id, price: combinationPrice, active: input.active !== false,
+        priceTiers: optionalTiers(input.priceTiers, combinationPrice ?? variantRetail) };
+    });
+    if (subVariants.length && !combinations.some((item) => item.active)) throw new Error(`Aktifkan minimal satu pilihan pada ${label}`);
+    return { id, label, price: priceOverride, priceTiers, combinations, materialSources: sources };
   });
   let choiceGroups = current?.choiceGroups || [];
   if (body.choiceGroups !== undefined) {
@@ -437,7 +464,7 @@ function saveProduct(state, body, current = null) {
     return true;
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;
