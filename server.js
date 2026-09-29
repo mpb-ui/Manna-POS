@@ -195,18 +195,19 @@ app.get("/api/bootstrap", async (req, res, next) => {
     const canCatalog = permissions.includes("pos.view") || permissions.includes("master.view");
     const canStock = permissions.includes("stock.view") || permissions.includes("master.view");
     const canMaster = permissions.includes("master.view");
-    const materials = canStock ? structuredClone(state.materials) : [];
+    const visibleMaterials = state.materials.filter((item) => !item.deletedAt);
+    const materials = canStock ? structuredClone(visibleMaterials) : [];
     if (!permissions.includes("stock.value") && !permissions.includes("master.materials")) materials.forEach((item) => { delete item.cost; delete item.supplier; });
     res.json({
       currentUser: publicUser(req.user), permissions,
       permissionCatalog: permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: permissions.includes("users.manage") ? ROLE_PRESETS : {},
-      products: canCatalog ? state.products.filter((item) => item.active !== false).map((item) => sanitizeProduct(item, req.user)) : [],
-      allProducts: canMaster ? state.products.map((item) => sanitizeProduct(item, req.user)) : [],
+      products: canCatalog ? state.products.filter((item) => item.active !== false && !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
+      allProducts: canMaster ? state.products.filter((item) => !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
       catalogOptions: canCatalog || canMaster ? state.catalogOptions : { categories: [], saleUnits: [], priceBases: [] },
-      materials, finishings: canCatalog || canMaster ? state.finishings : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines : [],
+      materials, finishings: canCatalog || canMaster ? state.finishings.filter((item) => !item.deletedAt) : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines.filter((item) => !item.deletedAt) : [],
       orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => sanitizeOrder(order, req.user)),
-      inventory: canStock ? state.inventory : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
-      users: permissions.includes("users.manage") ? state.users.map(publicUser) : [],
+      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
+      users: permissions.includes("users.manage") ? state.users.filter((item) => !item.deletedAt).map(publicUser) : [],
       auditLogs: permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
     });
   } catch (error) { next(error); }
@@ -259,7 +260,7 @@ app.post("/api/materials", requirePermission("master.materials"), async (req, re
 app.put("/api/materials/:id", requirePermission("master.materials"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const material = state.materials.find((item) => item.id === req.params.id);
+      const material = state.materials.find((item) => item.id === req.params.id && !item.deletedAt);
       if (!material) throw new Error("Bahan tidak ditemukan");
       const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase(); const unit = text(req.body.unit);
       if (!name || !sku || !unit) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
@@ -292,7 +293,7 @@ app.post("/api/finishings", requirePermission("master.finishings"), async (req, 
 app.put("/api/finishings/:id", requirePermission("master.finishings"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const finishing = state.finishings.find((item) => item.id === req.params.id);
+      const finishing = state.finishings.find((item) => item.id === req.params.id && !item.deletedAt);
       if (!finishing) throw new Error("Finishing tidak ditemukan");
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       const categories = [...new Set(req.body.categories || [])].map(text).filter(Boolean);
@@ -322,7 +323,7 @@ app.post("/api/machines", requirePermission("master.machines"), async (req, res,
 app.put("/api/machines/:id", requirePermission("master.machines"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const machine = state.machines.find((item) => item.id === req.params.id);
+      const machine = state.machines.find((item) => item.id === req.params.id && !item.deletedAt);
       if (!machine) throw new Error("Mesin tidak ditemukan");
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       if (!name || !code) throw new Error("Nama dan kode mesin wajib diisi");
@@ -474,13 +475,13 @@ app.post("/api/products", requirePermission("master.products"), async (req, res,
   try { const result = await store.mutate((state) => { const product = saveProduct(state, req.body); audit(state, req.user, "PRODUCT_CREATE", `Menambahkan produk ${product.name}`, { productId: product.id, price: product.price }); return product; }); res.status(201).json(result); } catch (error) { next(error); }
 });
 app.put("/api/products/:id", requirePermission("master.products"), async (req, res, next) => {
-  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id); if (!product) throw new Error("Produk tidak ditemukan"); const beforePrice = product.price; const saved = saveProduct(state, req.body, product); audit(state, req.user, "PRODUCT_UPDATE", `Memperbarui produk ${saved.name}`, { productId: saved.id, beforePrice, price: saved.price }); return saved; }); res.json(result); } catch (error) { next(error); }
+  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id && !item.deletedAt); if (!product) throw new Error("Produk tidak ditemukan"); const beforePrice = product.price; const saved = saveProduct(state, req.body, product); audit(state, req.user, "PRODUCT_UPDATE", `Memperbarui produk ${saved.name}`, { productId: saved.id, beforePrice, price: saved.price }); return saved; }); res.json(result); } catch (error) { next(error); }
 });
 
 app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const product = state.products.find((item) => item.id === req.params.id && item.dtfShirt);
+      const product = state.products.find((item) => item.id === req.params.id && item.dtfShirt && !item.deletedAt);
       if (!product) throw new Error("Produk Sablon Kaos tidak ditemukan");
       const submitted = req.body.packages;
       if (!Array.isArray(submitted) || submitted.length !== product.dtfPackages.length) throw new Error("Semua paket sablon wajib diisi");
@@ -510,7 +511,7 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
 app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const priced = calculateOrder(state.products, req.body.items || []);
+      const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || []);
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       const order = {
@@ -551,7 +552,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       if (!order) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
       if (order.status !== STATUS.WAITING_PAYMENT || order.paymentConfirmed) throw new Error("Hanya draft yang belum dibayar yang dapat diedit");
-      const priced = calculateOrder(state.products, req.body.items || []);
+      const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || []);
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       order.customerName = String(req.body.customerName).trim();
@@ -668,6 +669,7 @@ app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, 
     const result = await store.mutate((state) => {
       const stock = state.inventory.find((item) => item.sku === req.params.sku);
       if (!stock) throw new Error("Item stok tidak ditemukan");
+      if (state.materials.some((item) => (item.id === stock.materialId || item.sku === stock.sku) && item.deletedAt)) throw new Error("Bahan sudah dihapus");
       const change = Number(req.body.change);
       if (!Number.isFinite(change) || change === 0) throw new Error("Jumlah penyesuaian tidak valid");
       if (stock.category === "Kaos Polos DTF") {
@@ -712,7 +714,7 @@ app.post("/api/users", requirePermission("users.manage"), async (req, res, next)
 app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const user = state.users.find((item) => item.id === req.params.id); if (!user) throw new Error("User tidak ditemukan");
+      const user = state.users.find((item) => item.id === req.params.id && !item.deletedAt); if (!user) throw new Error("User tidak ditemukan");
       const name = text(req.body.name); const username = text(req.body.username).toLowerCase();
       const role = ROLE_PRESETS[req.body.role] ? req.body.role : user.role;
       if (!name || !username) throw new Error("Nama dan username wajib diisi");
@@ -728,6 +730,78 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
       return publicUser(user);
     });
     res.json(result);
+  } catch (error) { next(error); }
+});
+
+function materialUsedByProduct(product, materialId) {
+  const sources = [product.materialSources, ...(product.fixedSizeVariants || []).map((item) => item.materialSources),
+    ...(product.sizeVariants || []).map((item) => item.materialSources), ...(product.materialVariants || []).map((item) => item.materialSources)];
+  return sources.some((rows) => (rows || []).some((source) => source.materialId === materialId)) ||
+    (product.choiceGroups || []).some((group) => (group.options || []).some((option) => option.materialId === materialId)) ||
+    (product.dtfStockVariants || []).some((variant) => variant.materialId === materialId);
+}
+
+function archiveRecord(state, collection, id, user, action, label) {
+  const item = state[collection].find((row) => row.id === id && !row.deletedAt);
+  if (!item) throw new Error(`${label} tidak ditemukan`);
+  item.active = false;
+  item.deletedAt = now();
+  audit(state, user, action, `Menghapus ${label.toLowerCase()} ${item.name}`, { targetId: item.id });
+  return { ok: true, id: item.id };
+}
+
+app.delete("/api/products/:id", requirePermission("master.products"), async (req, res, next) => {
+  try { res.json(await store.mutate((state) => archiveRecord(state, "products", req.params.id, req.user, "PRODUCT_DELETE", "Produk"))); }
+  catch (error) { next(error); }
+});
+
+app.delete("/api/materials/:id", requirePermission("master.materials"), async (req, res, next) => {
+  try {
+    res.json(await store.mutate((state) => {
+      const material = state.materials.find((item) => item.id === req.params.id && !item.deletedAt);
+      if (!material) throw new Error("Bahan tidak ditemukan");
+      const product = state.products.find((item) => item.active !== false && !item.deletedAt && materialUsedByProduct(item, material.id));
+      if (product) throw new Error(`Bahan masih digunakan produk aktif ${product.name}. Pindahkan bahan pada produk terlebih dahulu.`);
+      const finishing = state.finishings.find((item) => item.active !== false && !item.deletedAt && item.materialId === material.id);
+      if (finishing) throw new Error(`Bahan masih digunakan finishing ${finishing.name}. Ubah atau hapus finishing terlebih dahulu.`);
+      const stock = state.inventory.find((item) => item.materialId === material.id || item.sku === material.sku);
+      if (Number(stock?.quantity || 0) !== 0) throw new Error("Stok bahan harus nol sebelum dihapus. Sesuaikan stok terlebih dahulu.");
+      if (state.orders.some((order) => ![STATUS.DONE, STATUS.PICKED_UP].includes(order.status) &&
+        (order.items || []).some((item) => (item.materials || []).some((source) => source.materialId === material.id)))) {
+        throw new Error("Bahan masih dipakai pesanan yang belum Selesai.");
+      }
+      return archiveRecord(state, "materials", material.id, req.user, "MATERIAL_DELETE", "Bahan");
+    }));
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/finishings/:id", requirePermission("master.finishings"), async (req, res, next) => {
+  try { res.json(await store.mutate((state) => archiveRecord(state, "finishings", req.params.id, req.user, "FINISHING_DELETE", "Finishing"))); }
+  catch (error) { next(error); }
+});
+
+app.delete("/api/machines/:id", requirePermission("master.machines"), async (req, res, next) => {
+  try {
+    res.json(await store.mutate((state) => {
+      const product = state.products.find((item) => item.active !== false && !item.deletedAt && (item.machineIds || []).includes(req.params.id));
+      if (product) throw new Error(`Mesin masih digunakan produk aktif ${product.name}. Ganti mesin produk terlebih dahulu.`);
+      return archiveRecord(state, "machines", req.params.id, req.user, "MACHINE_DELETE", "Mesin");
+    }));
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/users/:id", requirePermission("users.manage"), async (req, res, next) => {
+  try {
+    res.json(await store.mutate((state) => {
+      const user = state.users.find((item) => item.id === req.params.id && !item.deletedAt);
+      if (!user) throw new Error("User tidak ditemukan");
+      if (user.id === req.user.id) throw new Error("Anda tidak dapat menghapus akun sendiri");
+      if (user.role === "OWNER" && user.active !== false && state.users.filter((item) => item.role === "OWNER" && item.active !== false && !item.deletedAt).length <= 1) {
+        throw new Error("Minimal satu Owner aktif harus tersedia");
+      }
+      user.sessionVersion = Number(user.sessionVersion || 1) + 1;
+      return archiveRecord(state, "users", user.id, req.user, "USER_DELETE", "User");
+    }));
   } catch (error) { next(error); }
 });
 

@@ -34,6 +34,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Sablon DTF: satu produk Sablon Kaos dengan sembilan paket harga, warna Hitam/Putih dan ukuran S–XXL. Stok kaos dicatat per kombinasi warna dan ukuran; XXL menambah Rp15.000 per kaos.
 - BOM multi-bahan dan relasi multi-mesin pada setiap produk.
 - Harga grosir bertingkat (3 tingkat awal, maksimum 10) dengan perhitungan otomatis di POS.
+- Editor Produk, Bahan, Finishing, Mesin, dan User menyediakan tombol Hapus dengan konfirmasi. Hapus mengarsipkan data dan mencatat audit; pesanan serta mutasi lama tetap tersedia. Produk/finishing hilang dari pilihan pesanan baru. Bahan hanya dapat dihapus jika stoknya nol dan tidak dipakai produk aktif, finishing aktif, atau pesanan berjalan. Mesin harus dilepas dari produk aktif. User langsung kehilangan akses; akun sendiri dan Owner aktif terakhir tidak dapat dihapus. SKU/kode yang telah diarsipkan tetap dicadangkan demi riwayat.
 - Promo produk terjadwal dengan diskon persen/nominal, label DISKON, dan harga otomatis.
 - Tab Semua berisi Produk Terlaris dan Promo Aktif; konfigurasi produk dibuka melalui popup.
 - Print tanda terima untuk order selesai/diambil.
