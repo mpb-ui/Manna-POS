@@ -74,6 +74,39 @@ test("X-Banner mencatat bahan sesuai varian dan jumlah set pada snapshot pesanan
   assert.deepEqual(mini.materials.map((item) => item.materialId), ["mat-mini-xstand", "mat-lmo-paper"]);
 });
 
+test("varian bahan mandiri memilih stok yang tepat dan harga khusus opsional", () => {
+  const product = {
+    id: "banner-custom", name: "Banner Custom", price: 100000, priceBasis: "unit", unitName: "set", widths: [],
+    finishing: [], materialSources: [{ materialId: "mat-xstand", sku: "ACC-XBNR", name: "Kaki", unit: "pcs", quantity: 1 }],
+    hasMaterialVariants: true, materialVariants: [
+      { id: "albatros", label: "Albatros", price: null, materialSources: [{ materialId: "mat-albatros", sku: "BHN-ALB", name: "Albatros", unit: "m²", quantity: 0.8 }] },
+      { id: "luster", label: "Luster", price: 120000, materialSources: [{ materialId: "mat-luster", sku: "BHN-LUSTER", name: "Luster", unit: "m²", quantity: 0.8 }] }
+    ]
+  };
+  assert.throws(() => calculateLine(product, { quantity: 2, finishing: [] }), /Pilih varian bahan/);
+  assert.throws(() => calculateLine(product, { materialVariantId: "unknown", quantity: 2, finishing: [] }), /Pilih varian bahan/);
+  const albatros = calculateLine(product, { materialVariantId: "albatros", quantity: 2, finishing: [] });
+  assert.deepEqual(albatros.materials.map((item) => [item.materialId, item.units]), [["mat-xstand", 2], ["mat-albatros", 1.6]]);
+  assert.equal(albatros.baseTotal, 200000);
+  const luster = calculateLine(product, { materialVariantId: "luster", quantity: 3, finishing: [] });
+  assert.deepEqual(luster.materials.map((item) => [item.materialId, item.units]), [["mat-xstand", 3], ["mat-luster", 2.4]]);
+  assert.equal(luster.baseTotal, 360000);
+  assert.equal(luster.materialVariantLabel, "Luster");
+  assert.match(luster.displaySize, /Luster/);
+});
+
+test("varian bahan per m² mengikuti luas tagihan tanpa mengubah ukuran pesanan", () => {
+  const product = {
+    id: "poster-custom", name: "Poster Custom", price: 50000, priceBasis: "sqm", widths: [1], billingIncrement: 0.5,
+    finishing: [], materialSources: [], hasMaterialVariants: true,
+    materialVariants: [{ id: "matte", label: "Matte", price: null, materialSources: [{ materialId: "mat-luster", sku: "BHN-LUSTER", name: "Luster", unit: "m²", quantity: 1.1 }] }]
+  };
+  const line = calculateLine(product, { materialVariantId: "matte", width: 1, length: 1.2, quantity: 2, finishing: [] });
+  assert.equal(line.billedLength, 1.5);
+  assert.equal(line.baseTotal, 150000);
+  assert.equal(line.materials[0].units, 3.3);
+});
+
 test("setiap varian Display memakai bahan yang sesuai dan pilihan board terpisah", () => {
   for (const product of PRODUCTS.filter((item) => item.category === "Display & Banner")) {
     for (const variant of product.fixedSizeVariants) {

@@ -125,11 +125,11 @@ function billedLength(value, increment = 0.5) {
   const step = Number(increment) > 0 ? Number(increment) : 0.5;
   return Math.max(1, Number((Math.ceil(Number(value || 1) / step - 1e-9) * step).toFixed(4)));
 }
-function productBase(product, width, length, quantity, fixedVariant = null) {
+function productBase(product, width, length, quantity, fixedVariant = null, materialVariant = null) {
   const billed = billedLength(length, product.billingIncrement);
   const units = fixedVariant ? Number(quantity) : product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
   const tier = product.wholesaleEnabled ? (product.priceTiers || []).filter((item) => Number(item.min) <= quantity && (item.max == null || item.max === "" || quantity <= Number(item.max))).sort((a, b) => Number(b.min) - Number(a.min))[0] : null;
-  const originalUnitPrice = Number(fixedVariant?.price ?? tier?.price ?? product.price);
+  const originalUnitPrice = Number(materialVariant?.price ?? fixedVariant?.price ?? tier?.price ?? product.price);
   const unitPrice = promoPrice(product, originalUnitPrice);
   return { billed, units, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
 }
@@ -177,6 +177,11 @@ function fixedSizeMeasurementHtml(product) {
 
 function choiceGroupsHtml(product) {
   return (product.choiceGroups || []).map((group) => `<div class="variant-choice-group"><span class="variant-label">${escapeHtml(group.label)}</span><div class="chips exclusive-choice-options">${(group.options || []).map((option, index) => `<div class="chip exclusive-choice"><input type="radio" name="choice-${group.id}" id="choice-${product.id}-${group.id}-${option.id}" value="${option.id}" ${index === 0 ? "checked" : ""}><label for="choice-${product.id}-${group.id}-${option.id}"><i aria-hidden="true"></i>${escapeHtml(option.label)}</label></div>`).join("")}</div><small>Hanya satu pilihan yang dapat dipilih.</small></div>`).join("");
+}
+
+function materialVariantOptionsHtml(product) {
+  if (!product.hasMaterialVariants || !product.materialVariants?.length) return "";
+  return `<div class="field full"><span>Varian Bahan *</span><div class="chips">${product.materialVariants.map((variant, index) => `<div class="chip size-variant-chip"><input type="radio" name="material-variant" id="material-variant-${escapeHtml(product.id)}-${escapeHtml(variant.id)}" value="${escapeHtml(variant.id)}" ${index === 0 ? "checked" : ""}><label for="material-variant-${escapeHtml(product.id)}-${escapeHtml(variant.id)}"><strong>${escapeHtml(variant.label)}</strong>${variant.price != null ? `<small>${rupiah.format(variant.price)}</small>` : ""}</label></div>`).join("")}</div></div>`;
 }
 
 function categoryKey(product) {
@@ -242,7 +247,7 @@ function flatCatalogHtml(products, category) {
     .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }));
   const tabs = isAtK ? ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("") : "";
   const rows = visible.map((item) => {
-    const line = item.retailAtK || item.quickSale ? state.cart.find((entry) => entry.productId === item.id) : null;
+    const line = (item.retailAtK || item.quickSale) && !item.hasMaterialVariants ? state.cart.find((entry) => entry.productId === item.id) : null;
     const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="-1" data-flat-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}">−</button><strong>${line.quantity}</strong><button type="button" data-flat-qty="1" data-flat-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
       : `<button type="button" class="atk-pick" data-flat-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
     return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-flat-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
@@ -291,7 +296,7 @@ function productConfigurationHtml(product, popup = false) {
   const fileSection = product.templateProduct || product.a3Kind === "ready" ? "" : `<hr class="divider"><p class="section-label">${popup ? "File" : "3 · File"}</p>${fileServicesHtml()}`;
   const finishStep = product.templateProduct || product.a3Kind === "ready" ? 3 : 4;
   const noteStep = finishStep + 1;
-  return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}${choiceGroupsHtml(product)}
+  return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}${materialVariantOptionsHtml(product)}${choiceGroupsHtml(product)}
     <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
     ${fileSection}
     <hr class="divider"><p class="section-label">${popup ? "Finishing" : `${finishStep} · Finishing`}</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
@@ -344,7 +349,7 @@ function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
   return state.cart.map((line, i) => {
     const product = state.products.find((item) => item.id === line.productId);
-    const detail = product?.retailAtK || product?.quickSale ? "" : product?.a3Kind === "ready"
+    const detail = (product?.retailAtK || product?.quickSale) && !product?.hasMaterialVariants ? "" : product?.a3Kind === "ready"
       ? `${line.finishingNames ? `<p>${escapeHtml(line.finishingNames)}</p>` : ""}<p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`
       : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`;
     return `<div class="cart-item"><div><h4>${escapeHtml(line.productName)}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}${detail}<strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`;
@@ -377,13 +382,15 @@ function readCurrentLine() {
   }
   const sizeVariantId = document.querySelector('input[name="size-variant"]:checked')?.value || "";
   const fixedVariant = (product.fixedSizeVariants || []).find((item) => item.id === sizeVariantId) || null;
+  const materialVariantId = document.querySelector('input[name="material-variant"]:checked')?.value || "";
+  const materialVariant = (product.materialVariants || []).find((item) => item.id === materialVariantId) || null;
   const isFixedSize = Boolean(fixedVariant);
   const isUnit = product.priceBasis === "unit" || isFixedSize;
   const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
   const width = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
   const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : Number(document.querySelector("#length")?.value || 1);
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
-  const base = productBase(product, width, length, quantity, fixedVariant);
+  const base = productBase(product, width, length, quantity, fixedVariant, materialVariant);
   const fileService = product.templateProduct ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
   const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) : 0;
@@ -401,7 +408,7 @@ function readCurrentLine() {
   const choiceLabels = choices.map((choice) => product.choiceGroups.find((group) => group.id === choice.groupId)?.options.find((option) => option.id === choice.optionId)?.label).filter(Boolean);
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed, templateDesign,
-    sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "", choices,
+    sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "", materialVariantId: materialVariant?.id || "", materialVariantLabel: materialVariant?.label || "", choices,
     baseTotal: base.total, templateDesignTotal,
     fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price,
     quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
@@ -409,7 +416,7 @@ function readCurrentLine() {
       const finish = product.finishing.find((x) => x.id === f.id);
       return `${finish?.name} × ${f.units}${f.note ? ` (${f.note})` : ""}`;
     }).join(", "),
-    displaySize: `${isFixedSize ? `${fixedVariant.label} · ${quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lbr"}` : isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`}${choiceLabels.length ? ` · ${choiceLabels.join(" · ")}` : ""}`,
+    displaySize: `${isFixedSize ? `${fixedVariant.label} · ${quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lbr"}` : isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`}${materialVariant ? ` · ${materialVariant.label}` : ""}${choiceLabels.length ? ` · ${choiceLabels.join(" · ")}` : ""}`,
     productionNote: document.querySelector("#production-note")?.value.trim() || "",
     previewTotal: base.total + finishTotal + fileService.price + templateDesignTotal
   };
@@ -556,7 +563,7 @@ function bindProductConfiguration(onAdd) {
     };
     return;
   }
-  document.querySelectorAll('#length,#quantity,input[name="width"],input[name="size-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll('#length,#quantity,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   document.querySelectorAll('#finishing-grid input[type="checkbox"]').forEach((input) => input.addEventListener("change", () => toggleFinishing(input)));
@@ -598,7 +605,7 @@ function bindPos() {
   const setFlatQuantity = (productId, change) => {
     const product = state.products.find((item) => item.id === productId && categoryKey(item) === state.selectedCategory && item.active !== false);
     if (!product) return;
-    if (!product.retailAtK && !product.quickSale) return openProductConfigurator(productId);
+    if (product.hasMaterialVariants || (!product.retailAtK && !product.quickSale)) return openProductConfigurator(productId);
     const existing = state.cart.findIndex((line) => line.productId === productId);
     const quantity = Math.max(0, (existing >= 0 ? Number(state.cart[existing].quantity) : 0) + change);
     syncDraft(document.querySelector("#checkout"));
@@ -998,6 +1005,7 @@ function startEditOrder(order) {
     dtfPackageId: item.dtfPackageId || "", shirtVariants: (item.shirtVariants || []).map((variant) => ({ ...variant })),
     length: item.actualLength, billedLength: item.billedLength, quantity: item.quantity,
     sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
+    materialVariantId: item.materialVariantId || "", materialVariantLabel: item.materialVariantLabel || "",
     choices: (item.choices || []).map((choice) => ({ groupId: choice.groupId, optionId: choice.optionId })),
     finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units, note: finish.note || "" })),
     finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}${finish.note ? ` (${finish.note})` : ""}`).join(", "),
@@ -1228,6 +1236,10 @@ function variantSourcesHtml(product) {
     ${(product.choiceGroups || []).map((group) => `<div class="variant-material-group" data-choice-group="${escapeHtml(group.id)}"><strong>${escapeHtml(group.label)} · bahan sesuai pilihan kasir</strong>${group.options.map((option) => `<div class="builder-row choice-material-row" data-choice-option="${escapeHtml(option.id)}"><span>${escapeHtml(option.label)}</span><select data-choice-material aria-label="Bahan ${escapeHtml(option.label)}">${optionHtml(option.materialId)}</select><input data-choice-quantity type="number" min="0.0001" step="0.0001" value="${Number(option.quantity || 1)}" aria-label="Jumlah bahan ${escapeHtml(option.label)}"><span>${escapeHtml(option.unit || "")}</span></div>`).join("")}</div>`).join("")}</div>`;
 }
 
+function editableMaterialVariantHtml(variant = {}) {
+  return `<div class="variant-material-group editable-material-variant" data-editable-material-variant data-variant-id="${escapeHtml(variant.id || `mv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)}"><div class="builder-head"><strong>Varian Bahan</strong><button type="button" class="text-button" data-remove-material-variant>Hapus Varian</button></div><div class="form-grid"><label class="field"><span>Nama varian *</span><input data-material-variant-label maxlength="100" value="${escapeHtml(variant.label || "")}" placeholder="Contoh: Albatros"></label><label class="field"><span>Harga varian (opsional)</span><span class="money-input"><b>Rp</b><input data-material-variant-price type="text" inputmode="numeric" value="${variant.price == null ? "" : formatMoneyValue(variant.price)}" placeholder="Ikuti harga produk"></span></label></div><div class="builder-head"><span>Bahan stok untuk varian ini *</span><button type="button" class="text-button" data-add-custom-material>+ Tambah Bahan</button></div><div data-variant-material-rows>${(variant.materialSources?.length ? variant.materialSources : [{}]).map(materialRowHtml).join("")}</div><small>Jumlah bahan per satuan dasar perhitungan. Bahan umum tetap ditambahkan bila diisi.</small></div>`;
+}
+
 function readMaterialRows(container) {
   return [...container.querySelectorAll("[data-material-row]")].map((row) => ({ materialId: row.querySelector("[data-material-id]").value, quantity: row.querySelector("[data-material-qty]").value, wastePercent: row.querySelector("[data-material-waste]").value })).filter((item) => item.materialId);
 }
@@ -1271,7 +1283,8 @@ function openProductForm(product = null) {
     <label class="field"><span>Harga Dasar / HPP</span>${moneyField("baseCost", product?.baseCost || 0)}</label><label class="field"><span>Harga Jual *</span>${moneyField("price", product?.price || 10000, "required")}</label>
     <div class="margin-summary full"><span>Margin kotor</span><strong id="margin-summary">—</strong></div><label class="field full"><span>Catatan produk</span><textarea name="note">${escapeHtml(product?.note || "")}</textarea></label>
   </div><div class="toggle-group">${switchHtml("active", product?.active !== false)}${switchHtml("featured", Boolean(product?.featured), "Tampilkan di Semua")}</div></section>
-  <section id="product-production-section"><p class="section-label">Kebutuhan produksi</p><div class="builder-card" id="product-common-sources"><div class="builder-head"><strong>Sumber bahan *</strong><button id="add-material-row" class="text-button" type="button">+ Tambah Bahan</button></div><div id="material-rows">${sources.map(materialRowHtml).join("")}</div><small>Jumlah pemakaian dihitung per satuan jual. Stok berkurang saat status Selesai.</small></div>
+  <section id="product-production-section"><p class="section-label">Kebutuhan produksi</p><div class="builder-card" id="product-common-sources"><div class="builder-head"><strong>Sumber bahan umum</strong><button id="add-material-row" class="text-button" type="button">+ Tambah Bahan</button></div><div id="material-rows">${sources.map(materialRowHtml).join("")}</div><small>Wajib jika produk tidak memiliki varian bahan. Stok berkurang saat status Selesai.</small></div>
+  <div class="builder-card" id="material-variant-editor"><label class="variant-checkbox"><input type="checkbox" name="hasMaterialVariants" ${product?.hasMaterialVariants ? "checked" : ""}> Produk Memiliki Varian Bahan</label><div id="material-variant-fields" class="${product?.hasMaterialVariants ? "" : "hidden"}"><p class="product-note">Pilih satu varian di POS. Setiap varian dapat memakai satu atau lebih bahan stok; harga khusus boleh dikosongkan untuk mengikuti harga produk.</p><div id="editable-material-variants">${(product?.materialVariants || []).map(editableMaterialVariantHtml).join("")}</div><button type="button" class="secondary" id="add-material-variant">+ Tambah Varian</button></div></div>
   ${variantSourcesHtml(product)}
   <div class="builder-card"><div class="builder-head"><strong>Mesin yang digunakan *</strong></div><div class="machine-options">${state.machines.map((machine) => `<label><input type="checkbox" name="machineId" value="${machine.id}" ${(product?.machineIds || []).includes(machine.id) ? "checked" : ""}><span>${escapeHtml(machine.name)}</span></label>`).join("")}</div></div>
   <div class="builder-card"><div class="builder-head"><div><strong>Finishing / Add-on</strong><p>Otomatis difilter berdasarkan kategori produk.</p></div><button id="manage-finishing" class="text-button" type="button">Kelola Finishing</button></div><div id="finishing-options" class="finishing-master-grid">${finishingOptionsHtml(initialCategory, selectedFinishingIds, product)}</div></div></section></div>
@@ -1284,19 +1297,27 @@ function openProductForm(product = null) {
   bindMoneyInputs(detail); form.elements.baseCost.addEventListener("moneychange", refreshMargins); form.elements.price.addEventListener("moneychange", refreshMargins);
   form.elements.wholesaleEnabled.onchange = () => detail.querySelector("#tier-editor").classList.toggle("disabled-section", !form.elements.wholesaleEnabled.checked);
   form.elements.discountEnabled.onchange = () => detail.querySelector("#discount-fields").classList.toggle("disabled-section", !form.elements.discountEnabled.checked);
-  const updateAtKFields = () => { const category = form.elements.category.value; const isAtk = category === "ATK"; const direct = ["Akrilik", "Stempel"].includes(category); detail.querySelectorAll(".atk-master-field").forEach((field) => field.classList.toggle("hidden", !isAtk)); detail.querySelector("#product-production-section").classList.toggle("hidden", direct || (isAtk && form.elements.retailAtK.value === "true")); };
+  const updateAtKFields = () => { const category = form.elements.category.value; const isAtk = category === "ATK"; const direct = ["Akrilik", "Stempel"].includes(category); detail.querySelectorAll(".atk-master-field").forEach((field) => field.classList.toggle("hidden", !isAtk)); detail.querySelector("#product-production-section").classList.toggle("hidden", !form.elements.hasMaterialVariants.checked && (direct || (isAtk && form.elements.retailAtK.value === "true"))); };
+  form.elements.hasMaterialVariants.onchange = () => { detail.querySelector("#material-variant-fields").classList.toggle("hidden", !form.elements.hasMaterialVariants.checked); updateAtKFields(); };
   form.elements.retailAtK.onchange = updateAtKFields;
   form.elements.category.onchange = () => { const checked = [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value); detail.querySelector("#finishing-options").innerHTML = finishingOptionsHtml(form.elements.category.value, checked, product); updateAtKFields(); };
   updateAtKFields();
   detail.querySelector("#add-tier").onclick = () => { const rows = detail.querySelector("#tier-rows"); const count = rows.children.length; if (count >= 10) return toast("Maksimal 10 tingkat harga", "error"); rows.insertAdjacentHTML("beforeend", tierRowHtml({ min: count * 10 + 1, max: (count + 1) * 10, price: parseMoney(form.elements.price.value) }, count)); detail.querySelector("#tier-count").textContent = `${count + 1}/10`; bindMoneyInputs(rows.lastElementChild); bindBuilders(); refreshMargins(); };
   detail.querySelector("#add-material-row").onclick = () => { detail.querySelector("#material-rows").insertAdjacentHTML("beforeend", materialRowHtml()); bindBuilders(); };
+  detail.querySelector("#add-material-variant").onclick = () => { const list = detail.querySelector("#editable-material-variants"); if (list.children.length >= 40) return toast("Maksimal 40 varian bahan", "error"); list.insertAdjacentHTML("beforeend", editableMaterialVariantHtml()); bindMoneyInputs(list.lastElementChild); bindBuilders(); list.lastElementChild.querySelector("[data-material-variant-label]").focus(); };
+  detail.querySelector("#editable-material-variants").onclick = (event) => {
+    const row = event.target.closest("[data-editable-material-variant]");
+    if (!row) return;
+    if (event.target.closest("[data-remove-material-variant]")) row.remove();
+    if (event.target.closest("[data-add-custom-material]")) { row.querySelector("[data-variant-material-rows]").insertAdjacentHTML("beforeend", materialRowHtml()); bindBuilders(); }
+  };
   detail.querySelectorAll("[data-add-variant-material]").forEach((button) => button.onclick = () => { button.closest("[data-variant-id]").querySelector("[data-variant-material-rows]").insertAdjacentHTML("beforeend", materialRowHtml()); bindBuilders(); });
   detail.querySelector("#manage-finishing").onclick = () => { dialog.close(); state.masterTab = "finishings"; renderMaster(); };
   detail.querySelector("#cancel-master").onclick = () => dialog.close(); bindBuilders(); refreshMargins();
   detail.querySelectorAll("[data-reference-kind]").forEach((button) => button.onclick = () => { const editor = button.closest(".reference-field").querySelector("[data-reference-editor]"); editor.classList.remove("hidden"); editor.querySelector("[data-reference-label]").focus(); });
   detail.querySelectorAll("[data-cancel-reference]").forEach((button) => button.onclick = () => button.closest(".reference-editor").classList.add("hidden"));
   detail.querySelectorAll("[data-save-reference]").forEach((button) => button.onclick = async () => { const editor = button.closest(".reference-editor"); const field = editor.closest(".reference-field"); const kind = editor.dataset.referenceEditor; const label = editor.querySelector("[data-reference-label]").value.trim(); if (!label) return toast("Nama pilihan wajib diisi", "error"); try { const result = await api(`/api/catalog-options/${kind}`, { method: "POST", body: JSON.stringify({ label, mode: editor.querySelector("[data-reference-mode]")?.value }) }); state.catalogOptions = result.options; const select = field.querySelector("select[name]"); const option = result.option; select.insertAdjacentHTML("beforeend", `<option value="${escapeHtml(typeof option === "string" ? option : option.id)}" selected>${escapeHtml(typeof option === "string" ? option : option.label)}</option>`); editor.classList.add("hidden"); if (kind === "categories") { form.elements.category.dispatchEvent(new Event("change")); } toast("Pilihan baru ditambahkan"); } catch (error) { toast(error.message, "error"); } });
-  form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const basis = state.catalogOptions.priceBases.find((item) => item.id === values.priceBasisId) || priceBases.find((item) => item.id === values.priceBasisId); const payload = { ...values, price: parseMoney(values.price), baseCost: parseMoney(values.baseCost), priceBasis: basis?.mode || "unit", priceBasisLabel: basis?.label || "Per unit", active: form.elements.active.checked, featured: form.elements.featured.checked, wholesaleEnabled: form.elements.wholesaleEnabled.checked, discount: { enabled: form.elements.discountEnabled.checked, type: values.discountType, value: Number(values.discountValue || 0), startsAt: makassarInputToIso(values.discountStartsAt), endsAt: makassarInputToIso(values.discountEndsAt) }, widths: values.widths.split(",").map((value) => value.trim()).filter(Boolean), machineIds: [...form.querySelectorAll('input[name="machineId"]:checked')].map((input) => input.value), materialSources: readMaterialRows(form.querySelector("#material-rows")), fixedSizeVariants: product?.fixedSizeVariants?.length ? [...form.querySelectorAll('[data-variant-kind="fixed"]')].map((group) => ({ id: group.dataset.variantId, materialSources: readMaterialRows(group) })) : undefined, sizeVariants: product?.sizeVariants?.length ? [...form.querySelectorAll('[data-variant-kind="template"]')].map((group) => ({ id: group.dataset.variantId, materialSources: readMaterialRows(group) })) : undefined, choiceGroups: product?.choiceGroups?.length ? [...form.querySelectorAll("[data-choice-group]")].map((group) => ({ id: group.dataset.choiceGroup, options: [...group.querySelectorAll("[data-choice-option]")].map((option) => ({ id: option.dataset.choiceOption, materialId: option.querySelector("[data-choice-material]").value, quantity: option.querySelector("[data-choice-quantity]").value })) })) : undefined, finishingIds: [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value), priceTiers: [...form.querySelectorAll("[data-tier-row]")].map((row) => ({ min: row.querySelector("[data-tier-min]").value, max: row.querySelector("[data-tier-max]").value, price: parseMoney(row.querySelector("[data-tier-price]").value) })) }; try { await api(product ? `/api/products/${product.id}` : "/api/products", { method: product ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Produk berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+  form.onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(form)); const basis = state.catalogOptions.priceBases.find((item) => item.id === values.priceBasisId) || priceBases.find((item) => item.id === values.priceBasisId); const payload = { ...values, price: parseMoney(values.price), baseCost: parseMoney(values.baseCost), priceBasis: basis?.mode || "unit", priceBasisLabel: basis?.label || "Per unit", active: form.elements.active.checked, featured: form.elements.featured.checked, wholesaleEnabled: form.elements.wholesaleEnabled.checked, discount: { enabled: form.elements.discountEnabled.checked, type: values.discountType, value: Number(values.discountValue || 0), startsAt: makassarInputToIso(values.discountStartsAt), endsAt: makassarInputToIso(values.discountEndsAt) }, widths: values.widths.split(",").map((value) => value.trim()).filter(Boolean), machineIds: [...form.querySelectorAll('input[name="machineId"]:checked')].map((input) => input.value), materialSources: readMaterialRows(form.querySelector("#material-rows")), hasMaterialVariants: form.elements.hasMaterialVariants.checked, materialVariants: form.elements.hasMaterialVariants.checked ? [...form.querySelectorAll("[data-editable-material-variant]")].map((group) => ({ id: group.dataset.variantId, label: group.querySelector("[data-material-variant-label]").value.trim(), price: group.querySelector("[data-material-variant-price]").value.trim() ? parseMoney(group.querySelector("[data-material-variant-price]").value) : null, materialSources: readMaterialRows(group) })) : [], fixedSizeVariants: product?.fixedSizeVariants?.length ? [...form.querySelectorAll('[data-variant-kind="fixed"]')].map((group) => ({ id: group.dataset.variantId, materialSources: readMaterialRows(group) })) : undefined, sizeVariants: product?.sizeVariants?.length ? [...form.querySelectorAll('[data-variant-kind="template"]')].map((group) => ({ id: group.dataset.variantId, materialSources: readMaterialRows(group) })) : undefined, choiceGroups: product?.choiceGroups?.length ? [...form.querySelectorAll("[data-choice-group]")].map((group) => ({ id: group.dataset.choiceGroup, options: [...group.querySelectorAll("[data-choice-option]")].map((option) => ({ id: option.dataset.choiceOption, materialId: option.querySelector("[data-choice-material]").value, quantity: option.querySelector("[data-choice-quantity]").value })) })) : undefined, finishingIds: [...form.querySelectorAll('input[name="finishingId"]:checked')].map((input) => input.value), priceTiers: [...form.querySelectorAll("[data-tier-row]")].map((row) => ({ min: row.querySelector("[data-tier-min]").value, max: row.querySelector("[data-tier-max]").value, price: parseMoney(row.querySelector("[data-tier-price]").value) })) }; try { await api(product ? `/api/products/${product.id}` : "/api/products", { method: product ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "products"; render(); toast("Produk berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
 function openDtfProductForm(product) {

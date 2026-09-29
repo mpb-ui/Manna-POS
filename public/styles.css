@@ -238,6 +238,7 @@ body{font-size:15.5px}
 
 /* Material usage for product variants in the product editor. */
 .variant-material-group{border-top:1px solid var(--line);padding:14px 0}.variant-material-group:first-of-type{border-top:0}.variant-material-group .builder-head{margin-bottom:10px}.variant-material-group .builder-head strong{font-size:12px}
+.variant-checkbox{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;cursor:pointer}.variant-checkbox input{width:17px;height:17px;accent-color:var(--blue)}#material-variant-fields{margin-top:12px}.editable-material-variant .form-grid{margin-bottom:12px}.editable-material-variant .builder-head>span{font-size:12px;font-weight:700}.editable-material-variant small{color:var(--muted)}
 .choice-material-row{grid-template-columns:minmax(80px,1fr) minmax(130px,1.8fr) minmax(65px,.6fr) 40px;align-items:center}.choice-material-row>span{font-size:12px}
 @media(max-width:620px){.choice-material-row{grid-template-columns:minmax(80px,1fr) minmax(130px,2fr)}.choice-material-row>span:last-child{display:none}}
 
