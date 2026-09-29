@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { roundBillingLength, calculateLine, allowedNextStatus, STATUS, tierPriceForQuantity, isDiscountActive, discountedPrice } from "../lib/domain.js";
-import { PRODUCTS, MACHINES, MATERIALS } from "../lib/store.js";
+import { PRODUCTS, MACHINES, MATERIALS, Store } from "../lib/store.js";
 
 test("panjang ditagihkan dibulatkan per 50 cm dengan minimum 1 m", () => {
   assert.equal(roundBillingLength(0.4), 1);
@@ -71,7 +71,49 @@ test("X-Banner mencatat bahan sesuai varian dan jumlah set pada snapshot pesanan
   assert.equal(luster.materials.find((item) => item.materialId === "mat-luster").units, 2.4);
   assert.ok(!luster.materials.some((item) => item.materialId === "mat-albatros"));
   const mini = calculateLine(product, { sizeVariantId: "mini", quantity: 1, finishing: [] });
-  assert.deepEqual(mini.materials.map((item) => item.materialId), ["mat-mini-xstand"]);
+  assert.deepEqual(mini.materials.map((item) => item.materialId), ["mat-mini-xstand", "mat-lmo-paper"]);
+});
+
+test("setiap varian Display memakai bahan yang sesuai dan pilihan board terpisah", () => {
+  for (const product of PRODUCTS.filter((item) => item.category === "Display & Banner")) {
+    for (const variant of product.fixedSizeVariants) {
+      const choice = product.choiceGroups?.[0];
+      const line = calculateLine(product, { sizeVariantId: variant.id, quantity: 2, choices: choice ? [{ groupId: choice.id, optionId: choice.options[0].id }] : [], finishing: [] });
+      for (const source of variant.materialSources || product.materialSources || []) {
+        assert.ok(line.materials.some((item) => item.materialId === source.materialId), `${product.id}/${variant.id}: ${source.materialId}`);
+      }
+      if (choice) {
+        assert.ok(line.materials.some((item) => item.materialId === choice.options[0].materialId));
+        assert.ok(!line.materials.some((item) => item.materialId === choice.options[1].materialId));
+      }
+    }
+  }
+});
+
+test("bahan khusus ukuran template menggantikan bahan umum dan dihitung per pesanan", () => {
+  const template = structuredClone(PRODUCTS.find((item) => item.id === "spanduk-template"));
+  template.sizeVariants[0].materialSources = [{ materialId: "mat-lmo-paper", quantity: 2, wastePercent: 0 }];
+  const line = calculateLine(template, { width: 1.5, length: 1, quantity: 3, templateDesign: template.designTemplates[0], finishing: [] });
+  assert.deepEqual(line.materials.map((item) => [item.materialId, item.units]), [["mat-lmo-paper", 6]]);
+});
+
+test("migrasi LMO Paper menjaga stok dan pemetaan X-Banner yang telah diedit", async () => {
+  const store = new Store();
+  store.memory.catalogVersion = 13;
+  store.memory.materials = store.memory.materials.filter((item) => item.id !== "mat-lmo-paper");
+  store.memory.inventory = store.memory.inventory.filter((item) => item.materialId !== "mat-lmo-paper");
+  const mini = store.memory.products.find((item) => item.id === "display-x-banner").fixedSizeVariants.find((item) => item.id === "mini");
+  mini.materialSources = [{ materialId: "mat-mini-xstand", quantity: 2 }];
+  const existing = store.memory.inventory.find((item) => item.materialId === "mat-mini-xstand");
+  existing.quantity = 7;
+  const first = await store.read();
+  assert.equal(first.inventory.find((item) => item.materialId === "mat-mini-xstand").quantity, 7);
+  assert.equal(first.inventory.find((item) => item.materialId === "mat-lmo-paper").quantity, 0);
+  assert.deepEqual(first.products.find((item) => item.id === "display-x-banner").fixedSizeVariants.find((item) => item.id === "mini").materialSources.map((item) => [item.materialId, item.quantity]), [["mat-mini-xstand", 2], ["mat-lmo-paper", 1]]);
+  await store.mutate(() => {});
+  const second = await store.read();
+  assert.equal(second.catalogVersion, 14);
+  assert.equal(second.materials.filter((item) => item.id === "mat-lmo-paper").length, 1);
 });
 
 test("pilihan Foamboard dan Impraboard wajib tunggal", () => {

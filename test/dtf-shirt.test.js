@@ -33,6 +33,18 @@ test("paket hanya menentukan harga; stok mengikuti warna dan ukuran, XXL menamba
   assert.throws(() => calculateLine(DTF_SHIRT_PRODUCT, { dtfPackageId: "logo", shirtVariants: [{ color: "Hitam", size: "M", quantity: 1.5 }] }), /tidak valid/i);
 });
 
+test("pemetaan stok DTF dari Edit Produk dipakai dalam snapshot dan ketersediaan", () => {
+  const state = seedState();
+  const shirt = state.products.find((item) => item.dtfShirt);
+  const black = shirt.dtfStockVariants.find((item) => item.color === "Hitam" && item.size === "M");
+  const white = shirt.dtfStockVariants.find((item) => item.color === "Putih" && item.size === "S");
+  [black.materialId, white.materialId] = [white.materialId, black.materialId];
+  state.inventory.find((item) => item.materialId === black.materialId).quantity = 4;
+  const line = calculateLine(shirt, { dtfPackageId: "logo", shirtVariants: [{ color: "Hitam", size: "M", quantity: 2 }] });
+  assert.equal(line.materials[0].materialId, black.materialId);
+  assert.equal(shirtAvailability(state).find((item) => item.color === "Hitam" && item.size === "M").available, 4);
+});
+
 test("reservasi pesanan terbayar mencegah penjualan melebihi stok dan selesai mengurangi stok fisik sekali", () => {
   const state = seedState();
   for (const row of state.inventory.filter((item) => item.category === "Kaos Polos DTF")) row.quantity = 5;

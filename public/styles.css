@@ -236,8 +236,10 @@ body{font-size:15.5px}
 .a3-sticker-price{font-size:12px;color:var(--muted);margin-bottom:12px}
 @media(max-width:620px){.a3-kind-tabs{width:100%}.a3-kind-tabs button{flex:1;padding:9px 5px}.a3-quick-list{gap:6px}.a3-quick-card{padding:10px}.a3-quick-card strong{font-size:11px}.a3-quick-card small{font-size:9px}.a3-option{flex:1 1 auto}}
 
-/* Material usage for each X-Banner variant in the product editor. */
+/* Material usage for product variants in the product editor. */
 .variant-material-group{border-top:1px solid var(--line);padding:14px 0}.variant-material-group:first-of-type{border-top:0}.variant-material-group .builder-head{margin-bottom:10px}.variant-material-group .builder-head strong{font-size:12px}
+.choice-material-row{grid-template-columns:minmax(80px,1fr) minmax(130px,1.8fr) minmax(65px,.6fr) 40px;align-items:center}.choice-material-row>span{font-size:12px}
+@media(max-width:620px){.choice-material-row{grid-template-columns:minmax(80px,1fr) minmax(130px,2fr)}.choice-material-row>span:last-child{display:none}}
 
 /* ATK retail uses a flat list under its tabs; quantity stays in each row. */
 .atk-search{margin-bottom:14px}.atk-tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:16px}
