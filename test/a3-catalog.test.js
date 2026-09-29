@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { A3_CATALOG_PRODUCTS } from "../lib/a3-catalog.js";
+import { A3_CATALOG_PRODUCTS, A3_PAPER_STOCK } from "../lib/a3-catalog.js";
 import { A3_READY_PRODUCTS } from "../lib/a3-ready-catalog.js";
 import { Store, seedState } from "../lib/store.js";
 import { calculateLine } from "../lib/domain.js";
@@ -14,6 +14,54 @@ test("katalog A3+ memiliki keluarga kertas A–Z dan sticker tanpa dua sisi", ()
   assert.equal(new Set(A3_CATALOG_PRODUCTS.map((item) => item.id)).size, A3_CATALOG_PRODUCTS.length);
   assert.ok(paper.some((item) => item.a3Variant === "AP 230" && item.a3Side === "1S"));
   assert.ok(!paper.some((item) => item.a3Variant === "AP 230" && item.a3Side === "2S"));
+});
+
+test("Cream/White dan setiap gramasi AP memakai bahan kertas tersendiri untuk kedua sisi cetak", () => {
+  const state = seedState();
+  assert.equal(A3_PAPER_STOCK.length, 15);
+  assert.equal(new Set(A3_PAPER_STOCK.map((item) => item.id)).size, 15);
+  assert.equal(new Set(A3_PAPER_STOCK.map((item) => item.sku)).size, 15);
+  const colorFamilies = ["Akasia", "Concorde", "Copenhagen", "Hammer"];
+  for (const family of colorFamilies) {
+    assert.notEqual(A3_PAPER_STOCK.find((item) => item.family === family && item.variant === "Cream").id,
+      A3_PAPER_STOCK.find((item) => item.family === family && item.variant === "White").id);
+  }
+  for (const material of A3_PAPER_STOCK) {
+    assert.ok(state.materials.some((item) => item.id === material.id));
+    assert.ok(state.inventory.some((item) => item.materialId === material.id));
+    const products = state.products.filter((item) => item.a3Family === material.family && item.a3Variant === material.variant);
+    assert.ok(products.length >= 1);
+    for (const product of products) {
+      const line = calculateLine(product, { quantity: 3, finishing: [] });
+      assert.deepEqual(line.materials.map((item) => [item.materialId, item.units]), [[material.id, 3]]);
+    }
+  }
+  const ap260 = state.inventory.find((item) => item.materialId === "mat-art260");
+  assert.equal(ap260.quantity, 1200);
+});
+
+test("migrasi kertas A3+ menambah stok tanpa mengubah pemetaan khusus dan pesanan lama", async () => {
+  const store = new Store();
+  store.memory.catalogVersion = 14;
+  const newIds = new Set(A3_PAPER_STOCK.filter((item) => item.id !== "mat-art260").map((item) => item.id));
+  store.memory.materials = store.memory.materials.filter((item) => !newIds.has(item.id));
+  store.memory.inventory = store.memory.inventory.filter((item) => !newIds.has(item.materialId));
+  for (const product of store.memory.products.filter((item) => item.a3Kind === "paper")) product.materialSources = [];
+  const custom = store.memory.products.find((item) => item.a3Family === "Akasia" && item.a3Variant === "Cream" && item.a3Side === "1S");
+  custom.materialSources = [{ materialId: "mat-art260", quantity: 2 }];
+  const existing = store.memory.inventory.find((item) => item.materialId === "mat-art260");
+  existing.quantity = 432;
+  store.memory.orders.push({ id: "before-paper-migration", items: [{ productId: custom.id, materials: [{ materialId: "mat-art260", units: 2 }] }] });
+  const first = await store.read();
+  assert.equal(first.inventory.find((item) => item.materialId === "mat-art260").quantity, 432);
+  assert.deepEqual(first.products.find((item) => item.id === custom.id).materialSources.map((item) => item.materialId), ["mat-art260"]);
+  assert.deepEqual(first.products.find((item) => item.a3Family === "Akasia" && item.a3Variant === "Cream" && item.a3Side === "2S").materialSources.map((item) => item.materialId), ["mat-a3-akasia-cream"]);
+  assert.equal(first.orders[0].items[0].materials[0].units, 2);
+  await store.mutate(() => {});
+  const second = await store.read();
+  assert.equal(second.catalogVersion, 15);
+  assert.equal(second.materials.filter((item) => newIds.has(item.id)).length, newIds.size);
+  assert.equal(second.inventory.filter((item) => newIds.has(item.materialId)).length, newIds.size);
 });
 
 test("harga dan quantity finishing A3+ dihitung oleh server per SKU", () => {
