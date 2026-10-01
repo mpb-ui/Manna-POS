@@ -1,3 +1,4 @@
+import { registerPayrollRoutes } from "./lib/payroll-routes.js";
 import crypto from "node:crypto";
 import express from "express";
 import { addCategory, renameCategory, deleteCategory, reorderCategories, categoryKey, savePic, deletePic } from "./lib/catalog-settings.js";
@@ -218,6 +219,8 @@ app.get("/api/bootstrap", async (req, res, next) => {
     });
   } catch (error) { next(error); }
 });
+
+registerPayrollRoutes(app, store, requireCatalogAdmin, audit);
 
 app.post("/api/catalog-options/:kind", requirePermission("master.products"), async (req, res, next) => {
   try {
