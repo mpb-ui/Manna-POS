@@ -13,6 +13,10 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - ATK memakai tab jenis barang dan daftar produk langsung, dengan pencarian nama/SKU/barcode serta pengatur jumlah di tiap baris. Sebanyak 78 contoh SKU yang namanya terbaca pada screenshot tersedia dengan harga jual masing-masing; produk lama Kartu Nama tetap ada sebagai jasa. Barang ATK dapat dibuat melalui Master Data dengan jenis "Barang dagangan" tanpa mesin atau bahan produksi. Barcode opsional dan unik khusus ATK, disimpan sebagai teks agar nol di depan tidak hilang.
 - Kategori Akrilik (27 SKU) dan Stempel (30 SKU) menampilkan semua produk langsung dengan pencarian serta tombol Pilih/pengatur jumlah seperti daftar ATK, tanpa subtab. Keduanya dijual per pcs sesuai harga daftar dan dapat ditambah melalui Master Data tanpa mesin atau bahan produksi.
 - Data pelanggan dapat diisi sebelum item ditambahkan.
+- Pengatur jumlah pada daftar ATK, Akrilik, dan Stempel dapat diketik langsung; nol menghapus item dari keranjang.
+- Tab kategori POS dapat digulir dengan panah kiri/kanan oleh seluruh user. Admin/Owner dapat menyimpan urutan global lewat ikon pensil.
+- Master Data → Kategori mengelola kategori produk dan bahan. Pengubahan nama mempertahankan identitas konfigurasi khusus; penghapusan wajib memilih kategori pengganti dan memindahkan seluruh relasi produk, finishing, bahan, serta stok. Form Bahan memakai dropdown kategori; daftar Bahan dan Finishing menyediakan filter serta urutan kategori.
+- Master Data → PIC mengelola nama penugasan mandiri, terpisah dari akun User. Perubahan nama memperbarui pesanan berjalan; penghapusan menutup pilihan baru dan mempertahankan penugasan lama. Pengaturan Kategori dan PIC hanya tersedia bagi Admin/Owner.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
 - Catatan produksi tersimpan per item/file.
 - Pembulatan panjang tagihan per 50 cm, minimum 1 meter.

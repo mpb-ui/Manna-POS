@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import express from "express";
+import { addCategory, renameCategory, deleteCategory, reorderCategories, categoryKey, savePic, deletePic } from "./lib/catalog-settings.js";
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
@@ -89,6 +90,10 @@ app.use("/api", async (req, res, next) => {
 
 function requirePermission(permission) {
   return (req, res, next) => hasPermission(req.user, permission) ? next() : res.status(403).json({ error: "Anda tidak memiliki akses untuk tindakan ini" });
+}
+
+function requireCatalogAdmin(req, res, next) {
+  return ["OWNER", "ADMIN"].includes(req.user.role) ? next() : res.status(403).json({ error: "Pengaturan ini hanya dapat diakses Admin atau Owner" });
 }
 
 function now() { return new Date().toISOString(); }
@@ -204,6 +209,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
       products: canCatalog ? state.products.filter((item) => item.active !== false && !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
       allProducts: canMaster ? state.products.filter((item) => !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
       catalogOptions: canCatalog || canMaster ? state.catalogOptions : { categories: [], saleUnits: [], priceBases: [] },
+      pics: state.pics.filter((item) => item.active !== false && !item.deletedAt),
       materials, finishings: canCatalog || canMaster ? state.finishings.filter((item) => !item.deletedAt) : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines.filter((item) => !item.deletedAt) : [],
       orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => sanitizeOrder(order, req.user)),
       inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
@@ -219,7 +225,13 @@ app.post("/api/catalog-options/:kind", requirePermission("master.products"), asy
       const kind = req.params.kind;
       const label = text(req.body.label);
       if (!label) throw new Error("Nama pilihan wajib diisi");
-      if (kind === "categories" || kind === "saleUnits") {
+      if (kind === "categories") {
+        if (!["OWNER", "ADMIN"].includes(req.user.role)) throw new Error("Kategori hanya dapat dikelola Admin atau Owner");
+        const option = addCategory(state, "products", label);
+        audit(state, req.user, "CATEGORY_CREATE", `Menambahkan kategori produk ${option}`);
+        return { kind, option, options: state.catalogOptions };
+      }
+      if (kind === "saleUnits") {
         const items = state.catalogOptions[kind];
         if (items.some((item) => item.toLowerCase() === label.toLowerCase())) throw new Error("Pilihan sudah tersedia");
         items.push(label);
@@ -241,11 +253,68 @@ app.post("/api/catalog-options/:kind", requirePermission("master.products"), asy
   } catch (error) { next(error); }
 });
 
+app.put("/api/category-order", requireCatalogAdmin, async (req, res, next) => {
+  try { res.json(await store.mutate((state) => {
+    reorderCategories(state, req.body.categories);
+    audit(state, req.user, "CATEGORY_ORDER", "Mengatur urutan tab kategori POS");
+    return state.catalogOptions;
+  })); } catch (error) { next(error); }
+});
+
+app.post("/api/categories/:kind", requireCatalogAdmin, async (req, res, next) => {
+  try { res.status(201).json(await store.mutate((state) => {
+    const name = addCategory(state, req.params.kind, req.body.name);
+    audit(state, req.user, "CATEGORY_CREATE", `Menambahkan kategori ${name}`, { kind: req.params.kind });
+    return { name, options: state.catalogOptions };
+  })); } catch (error) { next(error); }
+});
+
+app.put("/api/categories/:kind/:name", requireCatalogAdmin, async (req, res, next) => {
+  try { res.json(await store.mutate((state) => {
+    const name = renameCategory(state, req.params.kind, req.params.name, req.body.name);
+    audit(state, req.user, "CATEGORY_UPDATE", `Mengubah kategori ${req.params.name} menjadi ${name}`, { kind: req.params.kind });
+    return { name, options: state.catalogOptions };
+  })); } catch (error) { next(error); }
+});
+
+app.delete("/api/categories/:kind/:name", requireCatalogAdmin, async (req, res, next) => {
+  try { res.json(await store.mutate((state) => {
+    deleteCategory(state, req.params.kind, req.params.name, req.body?.replacement);
+    audit(state, req.user, "CATEGORY_DELETE", `Menghapus kategori ${req.params.name}; dipindahkan ke ${req.body.replacement}`, { kind: req.params.kind });
+    return { ok: true, options: state.catalogOptions };
+  })); } catch (error) { next(error); }
+});
+
+app.post("/api/pics", requireCatalogAdmin, async (req, res, next) => {
+  try { res.status(201).json(await store.mutate((state) => {
+    const pic = savePic(state, req.body.name);
+    audit(state, req.user, "PIC_CREATE", `Menambahkan PIC ${pic.name}`, { picId: pic.id });
+    return pic;
+  })); } catch (error) { next(error); }
+});
+
+app.put("/api/pics/:id", requireCatalogAdmin, async (req, res, next) => {
+  try { res.json(await store.mutate((state) => {
+    const pic = savePic(state, req.body.name, req.params.id);
+    audit(state, req.user, "PIC_UPDATE", `Memperbarui PIC ${pic.name}`, { picId: pic.id });
+    return pic;
+  })); } catch (error) { next(error); }
+});
+
+app.delete("/api/pics/:id", requireCatalogAdmin, async (req, res, next) => {
+  try { res.json(await store.mutate((state) => {
+    deletePic(state, req.params.id);
+    audit(state, req.user, "PIC_DELETE", "Menghapus PIC dari pilihan penugasan baru", { picId: req.params.id });
+    return { ok: true };
+  })); } catch (error) { next(error); }
+});
+
 app.post("/api/materials", requirePermission("master.materials"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase();
       if (!name || !sku || !text(req.body.unit)) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
+      if (!state.catalogOptions.materialCategories.includes(text(req.body.category) || "Lainnya")) throw new Error("Pilih kategori bahan yang tersedia");
       unique(state, "materials", "sku", sku); unique(state, "materials", "name", name);
       const material = { id: identifier("mat", sku), sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
       state.materials.push(material);
@@ -264,6 +333,7 @@ app.put("/api/materials/:id", requirePermission("master.materials"), async (req,
       if (!material) throw new Error("Bahan tidak ditemukan");
       const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase(); const unit = text(req.body.unit);
       if (!name || !sku || !unit) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
+      if (!state.catalogOptions.materialCategories.includes(text(req.body.category) || "Lainnya")) throw new Error("Pilih kategori bahan yang tersedia");
       unique(state, "materials", "sku", sku, material.id); unique(state, "materials", "name", name, material.id);
       const oldSku = material.sku;
       Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", unit, minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false });
@@ -282,6 +352,7 @@ app.post("/api/finishings", requirePermission("master.finishings"), async (req, 
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       const categories = [...new Set(req.body.categories || [])].map(text).filter(Boolean);
       if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
+      if (categories.some((category) => !state.catalogOptions.categories.includes(category))) throw new Error("Kategori finishing tidak tersedia");
       unique(state, "finishings", "code", code); unique(state, "finishings", "name", name);
       const finishing = { id: identifier("fin", code), code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false };
       state.finishings.push(finishing); audit(state, req.user, "FINISHING_CREATE", `Menambahkan finishing ${name}`, { finishingId: finishing.id }); return finishing;
@@ -298,6 +369,7 @@ app.put("/api/finishings/:id", requirePermission("master.finishings"), async (re
       const name = text(req.body.name); const code = text(req.body.code).toUpperCase();
       const categories = [...new Set(req.body.categories || [])].map(text).filter(Boolean);
       if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
+      if (categories.some((category) => !state.catalogOptions.categories.includes(category))) throw new Error("Kategori finishing tidak tersedia");
       unique(state, "finishings", "code", code, finishing.id); unique(state, "finishings", "name", name, finishing.id);
       Object.assign(finishing, { code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false });
       audit(state, req.user, "FINISHING_UPDATE", `Memperbarui finishing ${name}`, { finishingId: finishing.id });
@@ -343,13 +415,15 @@ function saveProduct(state, body, current = null) {
   if (!name || !sku || !text(body.category) || !price) throw new Error("Nama, SKU, kategori, dan harga jual wajib diisi");
   unique(state, "products", "sku", sku, current?.id); unique(state, "products", "name", name, current?.id);
   const category = text(body.category);
-  const retailAtK = category === "ATK" && (body.retailAtK === true || body.retailAtK === "true");
-  const quickSale = ["Akrilik", "Stempel"].includes(category);
+  if (!state.catalogOptions.categories.includes(category)) throw new Error("Pilih kategori produk yang tersedia");
+  const categoryId = categoryKey(state.catalogOptions, category);
+  const retailAtK = categoryId === "atk" && (body.retailAtK === true || body.retailAtK === "true");
+  const quickSale = ["akrilik", "stempel"].includes(categoryId);
   const simpleSale = retailAtK || quickSale;
-  const atkGroup = category === "ATK" ? (ATK_GROUPS.includes(text(body.atkGroup)) ? text(body.atkGroup) : "Peralatan lainnya") : "";
-  const barcode = category === "ATK" ? text(body.barcode === undefined ? current?.barcode : body.barcode) : "";
+  const atkGroup = categoryId === "atk" ? (ATK_GROUPS.includes(text(body.atkGroup)) ? text(body.atkGroup) : "Peralatan lainnya") : "";
+  const barcode = categoryId === "atk" ? text(body.barcode === undefined ? current?.barcode : body.barcode) : "";
   if (barcode.length > 128) throw new Error("Barcode maksimal 128 karakter");
-  if (barcode && state.products.some((item) => item.id !== current?.id && item.category === "ATK" && item.barcode === barcode)) {
+  if (barcode && state.products.some((item) => item.id !== current?.id && categoryKey(state.catalogOptions, item.category) === "atk" && item.barcode === barcode)) {
     throw new Error("Barcode ATK sudah digunakan produk lain");
   }
   const basisOption = state.catalogOptions.priceBases.find((item) => item.id === body.priceBasisId || item.label === body.priceBasisLabel);
@@ -453,7 +527,7 @@ function saveProduct(state, body, current = null) {
   const machineIds = simpleSale ? [] : [...new Set(body.machineIds || [])].filter((id) => state.machines.some((machine) => machine.id === id && machine.active !== false));
   if (!machineIds.length && !current && !simpleSale) throw new Error("Pilih minimal satu mesin");
   const unitLabels = { pcs: "/pcs", lbr: "/lembar", "m²": "/m²", pack: "/pack", rim: "/rim", set: "/set", "m lari": "/m lari" };
-  const a3Kind = text(body.category) === "Print A3+" ? current?.a3Kind : null;
+  const a3Kind = categoryId === "print-a3" ? current?.a3Kind : null;
   const finishingIds = [...new Set(simpleSale ? [] : body.finishingIds || [])].filter((id) => {
     if (!state.finishings.some((item) => item.id === id && item.active !== false && item.categories.includes(text(body.category)))) return false;
     if (a3Kind === "sticker") return id.startsWith("fin-a3-sticker-");
@@ -465,7 +539,7 @@ function saveProduct(state, body, current = null) {
     return true;
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["LF Poster", "LF Sticker"].includes(category) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;
@@ -616,8 +690,10 @@ app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), as
       if (![STATUS.DESIGN, STATUS.PRINT, STATUS.FINISHING, STATUS.DONE].includes(order.status)) throw new Error("PIC hanya dapat ditetapkan pada pesanan aktif");
       const designPic = String(req.body.designPic || "").trim();
       if (!designPic) throw new Error("Nama operator wajib diisi");
-      if (!["Gema", "Qori", "Cc/Ko"].includes(designPic)) throw new Error("Nama operator tidak valid");
-      order.designPic = designPic;
+      const pic = state.pics.find((item) => item.name === designPic && item.active !== false && !item.deletedAt);
+      if (!pic) throw new Error("PIC tidak tersedia");
+      order.designPic = pic.name;
+      order.designPicId = pic.id;
       order.updatedAt = now();
       activity(state, order, `Pekerjaan diambil oleh ${designPic}`, designPic);
       return order;
@@ -672,7 +748,7 @@ app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, 
       if (state.materials.some((item) => (item.id === stock.materialId || item.sku === stock.sku) && item.deletedAt)) throw new Error("Bahan sudah dihapus");
       const change = Number(req.body.change);
       if (!Number.isFinite(change) || change === 0) throw new Error("Jumlah penyesuaian tidak valid");
-      if (stock.category === "Kaos Polos DTF") {
+      if (categoryKey(state.catalogOptions, stock.category, "materials") === "kaos-polos-dtf") {
         const reserved = shirtReservations(state).get(stock.materialId) || 0;
         if (Number(stock.quantity) + change < reserved) throw new Error(`Stok ${stock.productName} tidak boleh kurang dari ${reserved} pcs yang sudah dipesan`);
       }
