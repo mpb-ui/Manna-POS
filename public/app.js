@@ -72,7 +72,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
   const body = await response.json().catch(() => ({}));
   if (response.status === 401 && path !== "/api/login") showLogin();
-  if (!response.ok) throw new Error(body.error || "Permintaan gagal");
+  if (!response.ok) throw Object.assign(new Error(body.error || "Permintaan gagal"), { code: body.code });
   return body;
 }
 
@@ -1001,13 +1001,26 @@ function projectColumn(status, source = state.orders) {
 }
 
 function nextAction(order) {
-  return { DESAIN: "File Siap Cetak", CETAK: "Cetak Selesai", FINISHING: "Finishing Selesai", SELESAI: "Pesanan Diambil" }[order.status];
+  return { DESAIN: "Lanjut ke Proses Cetak", CETAK: "Lanjut ke Finishing", FINISHING: "Selesaikan Pesanan", SELESAI: "Pesanan Diterima" }[order.status];
 }
 
 function itemDetail(item) {
   const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}${finish.note ? ` — ${escapeHtml(finish.note)}` : ""}`).join(", ");
   const templateParts = item.templateDesign ? (can("projects.money") ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : `<small>Template: ${escapeHtml(item.templateDesign)}</small>`) : "";
   return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
+}
+
+function confirmUnpaidPickup() {
+  return new Promise((resolve) => {
+    const modal = document.createElement("dialog"); modal.className = "delete-confirm unpaid-confirm";
+    modal.innerHTML = `<div class="delete-confirm-body"><h3>Pesanan belum lunas</h3><p>Cek kembali status pembayaran. Apakah Anda yakin mau menyelesaikan pesanan?</p><div class="delete-confirm-actions"><button type="button" class="primary" data-confirm>Ya, Selesaikan Pesanan</button><button type="button" class="secondary" data-cancel>Cek Kembali</button></div></div>`;
+    document.body.append(modal);
+    const close = (accepted) => { modal.close(); modal.remove(); resolve(accepted); };
+    modal.querySelector("[data-confirm]").onclick = () => close(true);
+    modal.querySelector("[data-cancel]").onclick = () => close(false);
+    modal.oncancel = (event) => { event.preventDefault(); close(false); };
+    modal.showModal(); modal.querySelector("[data-cancel]").focus();
+  });
 }
 
 function openOrder(id, showPayment = false) {
@@ -1021,21 +1034,25 @@ function openOrder(id, showPayment = false) {
     <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
     <div class="order-items-detail">${order.items.map((item, index) => `<div class="detail-item"><span class="item-number">${index + 1}</span><div>${itemDetail(item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
     ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
-    <p class="note" style="margin-top:12px"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "Tidak ditentukan"}</p>
+    <div class="order-deadline-section"><p class="note"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) + " WITA" : "Tidak ditentukan"}</p>${["OWNER", "CASHIER"].includes(state.currentUser.role) ? `<form id="order-deadline-form"><label class="field"><span>${order.deadline ? "Ubah" : "Tambah"} deadline (WITA)</span><input name="deadline" type="datetime-local" value="${localDateTimeInput(order.deadline)}" required></label><button type="submit" class="secondary">Simpan Deadline</button></form>` : ""}</div>
     ${isDesign && can("projects.assign") ? `<div class="operator-box"><div class="field"><span>Nama Operator Design</span><div class="operator-choices">${activePics().map((pic) => `<div class="chip"><input type="radio" name="design-pic" id="operator-${escapeHtml(pic.id)}" value="${escapeHtml(pic.name)}" ${order.designPic === pic.name ? "checked" : ""}><label for="operator-${escapeHtml(pic.id)}">${escapeHtml(pic.name)}</label></div>`).join("") || '<p class="product-note">Belum ada PIC aktif. Tambahkan melalui Master Data → PIC.</p>'}</div></div><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
     ${can("pos.payment") ? `<div id="payment-form-wrap" class="payment-form-wrap hidden">${paymentFormHtml(order, outstanding)}</div>` : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
-    <div class="detail-actions">
-      ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}${isWaiting && can("pos.payment") ? '<button id="show-payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
+  </div><div class="detail-actions">
+      ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}
       ${!isWaiting && can("pos.payment") && paymentStatus(order) !== "LUNAS" ? '<button id="show-payment-form" class="secondary">Catat Pembayaran</button>' : ""}
-      ${can("projects.status") && nextAction(order) ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
       ${!isWaiting ? '<button id="print-spk" class="secondary">Cetak SPK</button>' : ""}
       ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
-    </div>
-  </div>`;
+      ${isWaiting && can("pos.payment") ? '<button id="show-payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
+      ${can("projects.status") && nextAction(order) ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
+    </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   detail.querySelector("#edit-order")?.addEventListener("click", () => startEditOrder(order));
-  detail.querySelector("#show-payment-form")?.addEventListener("click", () => detail.querySelector("#payment-form-wrap").classList.toggle("hidden"));
+  detail.querySelector("#show-payment-form")?.addEventListener("click", () => { const form = detail.querySelector("#payment-form-wrap"); form.classList.toggle("hidden"); if (!form.classList.contains("hidden")) form.scrollIntoView({ block: "start", behavior: "smooth" }); });
+  detail.querySelector("#order-deadline-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault(); const button = event.target.querySelector("button"); button.disabled = true;
+    try { await api(`/api/orders/${order.id}/deadline`, { method: "PATCH", body: JSON.stringify({ deadline: makassarInputToIso(event.target.elements.deadline.value) }) }); dialog.close(); await load(); openOrder(order.id); toast("Deadline disimpan dan dicatat di riwayat"); } catch (error) { toast(error.message, "error"); button.disabled = false; }
+  });
   bindPaymentForm(order, outstanding);
   detail.querySelector("#save-design-pic")?.addEventListener("click", async () => {
     try {
@@ -1045,12 +1062,20 @@ function openOrder(id, showPayment = false) {
       dialog.close(); await load(); toast("PIC Operator Design disimpan");
     } catch (error) { toast(error.message, "error"); }
   });
-  detail.querySelector("#advance-order")?.addEventListener("click", async () => {
+  const advance = async (confirmUnpaid = false) => {
+    const button = detail.querySelector("#advance-order"); button.disabled = true;
     try {
       const sequence = ["MENUNGGU_PEMBAYARAN", "DESAIN", "CETAK", "FINISHING", "SELESAI", "DIAMBIL"];
-      await api(`/api/orders/${order.id}/status`, { method: "PATCH", body: JSON.stringify({ status: sequence[sequence.indexOf(order.status) + 1], actor: order.designPic || "Tim Produksi" }) });
+      await api(`/api/orders/${order.id}/status`, { method: "PATCH", body: JSON.stringify({ status: sequence[sequence.indexOf(order.status) + 1], confirmUnpaid, actor: order.designPic || "Tim Produksi" }) });
       dialog.close(); await load(); toast("Status pesanan diperbarui");
-    } catch (error) { toast(error.message, "error"); }
+    } catch (error) {
+      if (error.code === "UNPAID_PICKUP_CONFIRMATION" && !confirmUnpaid) { if (await confirmUnpaidPickup()) await advance(true); }
+      else toast(error.message, "error");
+    } finally { button.disabled = false; }
+  };
+  detail.querySelector("#advance-order")?.addEventListener("click", async () => {
+    if (order.status === "SELESAI" && showMoney && paymentStatus(order) !== "LUNAS") { if (await confirmUnpaidPickup()) await advance(true); }
+    else await advance();
   });
   detail.querySelector("#print-spk")?.addEventListener("click", () => printOrder(order, "spk"));
   detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));

@@ -687,6 +687,28 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
   } catch (error) { next(error); }
 });
 
+app.patch("/api/orders/:id/deadline", async (req, res, next) => {
+  if (!["OWNER", "CASHIER"].includes(req.user.role)) return res.status(403).json({ error: "Deadline hanya dapat diubah Owner atau Kasir" });
+  try {
+    const value = req.body.deadline;
+    if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) || !Number.isFinite(Date.parse(value))) throw new Error("Tanggal dan jam deadline tidak valid");
+    const deadline = new Date(value).toISOString();
+    const result = await store.mutate((state) => {
+      const order = state.orders.find((item) => item.id === req.params.id);
+      if (!order || !orderVisibleToUser(order, req.user)) throw new Error("Pesanan tidak ditemukan");
+      normalizeOrder(order);
+      if (order.deadline && Date.parse(order.deadline) === Date.parse(deadline)) return sanitizeOrder(order, req.user);
+      const previous = order.deadline || null;
+      const format = (date) => date ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" }).format(new Date(date)) + " WITA" : "Tidak ditentukan";
+      order.deadline = deadline; order.updatedAt = now();
+      activity(state, order, `Deadline diubah: ${format(previous)} → ${format(deadline)}`, req.user.name);
+      audit(state, req.user, "ORDER_DEADLINE", `Mengubah deadline ${order.code}`, { orderId: order.id, previousDeadline: previous, deadline });
+      return sanitizeOrder(order, req.user);
+    });
+    res.json(result);
+  } catch (error) { next(error); }
+});
+
 app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
@@ -717,7 +739,12 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       const target = req.body.status;
       if (target !== allowedNextStatus(order.status)) throw new Error("Perpindahan status tidak valid");
       if (!allowedStatusForRole(req.user.role, order.status, target)) throw new Error("Role Anda tidak dapat memindahkan status ini");
+      const unpaidPickup = target === STATUS.PICKED_UP && Number(order.paidAmount || 0) < Number(order.total || 0);
+      if (unpaidPickup && req.body.confirmUnpaid !== true) {
+        const error = new Error("Pesanan belum lunas"); error.code = "UNPAID_PICKUP_CONFIRMATION"; throw error;
+      }
       if (order.status === STATUS.DESIGN && !order.designPic) throw new Error("Nama PIC Operator Design wajib diisi");
+      if (unpaidPickup) activity(state, order, "Penerimaan pesanan belum lunas dikonfirmasi; sisa pembayaran tetap tercatat", req.user.name);
       order.status = target;
       order.updatedAt = now();
       if (target === STATUS.DONE && !order.stockCommitted) {
@@ -743,7 +770,7 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       return order;
     });
     res.json(result);
-  } catch (error) { next(error); }
+  } catch (error) { if (error.code === "UNPAID_PICKUP_CONFIRMATION") return res.status(409).json({ error: error.message, code: error.code }); next(error); }
 });
 
 app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, res, next) => {
