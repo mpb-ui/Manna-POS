@@ -86,3 +86,7 @@ SKU Print A3+ baru memakai harga jual yang diberikan, tetapi sumber bahan dan HP
 SKU barang ATK dari screenshot belum memiliki barcode, HPP, atau stok awal. Pengatur jumlah menambahkannya ke pesanan, tetapi stok ATK belum dilacak atau dikurangi otomatis. Lengkapi nama/harga produk yang terpotong di screenshot dari file sumber sebelum mengimpor sisa katalog.
 
 SKU Akrilik dan Stempel juga belum memiliki HPP, bahan produksi, atau stok awal dari screenshot. Harga jual dan jumlah pesanan tercatat, tetapi pemakaian bahan dan stok kedua kategori belum dihitung otomatis.
+
+### Harga grosir finishing
+
+Tambah/Edit Finishing menyediakan **+ Tingkat Grosir** (maksimal 10 rentang). Setiap rentang berisi jumlah minimum, maksimum opsional, dan harga per satuan finishing. Rentang inklusif tidak boleh tumpang tindih; jumlah di luar rentang memakai harga biasa. Perhitungan memakai jumlah finishing per baris pesanan, sesuai dasar perhitungannya (unit, titik, m², atau meter), termasuk luas manual Kisscut LF. Preview POS dan server memakai fungsi harga yang sama. Menghapus semua tingkat mengembalikan harga biasa. Riwayat pesanan menyimpan harga saat transaksi dan tidak mengikuti perubahan master.

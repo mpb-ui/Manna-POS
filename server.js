@@ -1,3 +1,4 @@
+import { normalizeFinishingTiers } from "./public/finishing-pricing.js";
 import { registerPayrollRoutes } from "./lib/payroll-routes.js";
 import crypto from "node:crypto";
 import express from "express";
@@ -358,6 +359,7 @@ app.post("/api/finishings", requirePermission("master.finishings"), async (req, 
       if (categories.some((category) => !state.catalogOptions.categories.includes(category))) throw new Error("Kategori finishing tidak tersedia");
       unique(state, "finishings", "code", code); unique(state, "finishings", "name", name);
       const finishing = { id: identifier("fin", code), code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false };
+      finishing.priceTiers = normalizeFinishingTiers(req.body.priceTiers ?? []);
       state.finishings.push(finishing); audit(state, req.user, "FINISHING_CREATE", `Menambahkan finishing ${name}`, { finishingId: finishing.id }); return finishing;
     });
     res.status(201).json(result);
@@ -374,7 +376,8 @@ app.put("/api/finishings/:id", requirePermission("master.finishings"), async (re
       if (!name || !code || !categories.length) throw new Error("Nama, kode, dan minimal satu kategori finishing wajib diisi");
       if (categories.some((category) => !state.catalogOptions.categories.includes(category))) throw new Error("Kategori finishing tidak tersedia");
       unique(state, "finishings", "code", code, finishing.id); unique(state, "finishings", "name", name, finishing.id);
-      Object.assign(finishing, { code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false });
+      const priceTiers = normalizeFinishingTiers(req.body.priceTiers ?? finishing.priceTiers ?? []);
+      Object.assign(finishing, { priceTiers, code, name, categories, price: Math.max(0, Number(req.body.price || 0)), rule: text(req.body.rule) || "free", active: req.body.active !== false });
       audit(state, req.user, "FINISHING_UPDATE", `Memperbarui finishing ${name}`, { finishingId: finishing.id });
       return finishing;
     });

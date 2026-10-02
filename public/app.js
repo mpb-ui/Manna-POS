@@ -1,3 +1,4 @@
+import { finishingPriceForUnits, normalizeFinishingTiers } from "./finishing-pricing.js";
 import { mountEmployees, hasUnsavedPayroll, discardPayrollDrafts, clearEmployeeSession } from "./employees-ui.js";
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
@@ -172,7 +173,7 @@ function finishingHtml(product) {
     <div class="finish-option" data-finish-option="${finish.id}">
       <div class="finish-main">
         <input type="checkbox" id="f-${finish.id}" value="${finish.id}">
-        <label for="f-${finish.id}"><strong>${escapeHtml(finish.name)}</strong><small>${finish.price ? rupiah.format(finish.price) + ({ area: " /m²", point: " /titik" }[finish.rule] || " /unit") : "Gratis"}</small></label>
+        <label for="f-${finish.id}"><strong>${escapeHtml(finish.name)}</strong><small data-finishing-price="${escapeHtml(finish.id)}">${finish.price ? rupiah.format(finish.price) + ({ area: " /m²", point: " /titik" }[finish.rule] || " /unit") : "Gratis"}</small></label>
       </div>
       <div class="finish-actions">
         <button type="button" class="finish-note-toggle" data-finish-note-toggle="${finish.id}" disabled>Catatan</button>
@@ -431,13 +432,20 @@ function readCurrentLine() {
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
   const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) : 0;
   let finishTotal = 0;
+  document.querySelectorAll("[data-finishing-price]").forEach((label) => {
+    const finish = product.finishing.find((item) => item.id === label.dataset.finishingPrice);
+    if (finish) label.textContent = finish.price ? `${rupiah.format(finish.price)}${({ area: " /m²", point: " /titik" }[finish.rule] || " /unit")}` : "Gratis";
+  });
   const finishing = [...document.querySelectorAll('#finishing-grid input[type="checkbox"]:checked')].map((input) => {
     const finish = product.finishing.find((f) => f.id === input.value);
     const areaUnits = isFixedSize ? Number(fixedVariant.area || 1) * quantity : product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : product.priceBasis === "sqm" ? width * base.billed * quantity : base.billed * quantity;
     const quantityInput = document.querySelector(`[data-finish-qty="${finish.id}"]`);
     const units = manualAreaFinishing(finish) ? Math.max(1, Number(quantityInput?.value || 1)) : finish.rule === "area" ? Number(areaUnits.toFixed(4)) : Math.max(1, Number(quantityInput?.value || 1));
     if (finish.rule === "area" && quantityInput) quantityInput.value = units;
-    finishTotal += units * finish.price;
+    const unitPrice = finishingPriceForUnits(finish, units);
+    finishTotal += Math.round(units * unitPrice);
+    const priceLabel = [...document.querySelectorAll("[data-finishing-price]")].find((label) => label.dataset.finishingPrice === finish.id);
+    if (priceLabel) priceLabel.textContent = `${rupiah.format(unitPrice)}${({ area: " /m²", point: " /titik" }[finish.rule] || " /unit")}${unitPrice !== Number(finish.price) ? " · Grosir" : ""}`;
     return { id: finish.id, units, note: document.querySelector(`[data-finish-note="${finish.id}"]`)?.value.trim() || "" };
   });
   const choices = (product.choiceGroups || []).map((group) => ({ groupId: group.id, optionId: document.querySelector(`input[name="choice-${group.id}"]:checked`)?.value || "" }));
@@ -1348,17 +1356,30 @@ function openMaterialForm(material = null) {
   detail.querySelector("#material-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.active = event.target.elements.active.checked; try { await api(material ? `/api/materials/${material.id}` : "/api/materials", { method: material ? "PUT" : "POST", body: JSON.stringify(values) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "materials"; render(); toast("Bahan berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
+function finishingTierRowHtml(tier = {}) {
+  return `<div class="builder-row" data-finishing-tier><label class="field"><span>Jumlah minimum</span><input data-finishing-min type="number" min="0.0001" step="any" value="${tier.min ?? ""}" required></label><label class="field"><span>Jumlah maksimum</span><input data-finishing-max type="number" min="0.0001" step="any" value="${tier.max ?? ""}" placeholder="Tanpa batas"></label><label class="field"><span>Harga / unit</span><span class="money-input"><b>Rp</b><input data-finishing-tier-price type="text" inputmode="numeric" value="${tier.price == null ? "" : formatMoneyValue(tier.price)}" required></span></label><button type="button" class="text-button" data-remove-finishing-tier aria-label="Hapus tingkat grosir">×</button></div>`;
+}
+
 function openFinishingForm(finishing = null) {
   const categories = productCategories().filter(([id]) => id !== "all").map(([, label]) => label);
   const rules = [["free", "Per unit"], ["area", "Per m²"], ["point", "Per titik"], ["perimeter", "Keliling"], ["top_bottom", "Atas–bawah"], ["left_right", "Kanan–kiri"], ["length", "Meter lari"]];
   const detail = showMasterDialog(finishing ? "Edit Finishing" : "Tambah Finishing", `<form id="finishing-form" class="master-form"><div class="form-grid">
     <label class="field"><span>Nama finishing *</span><input name="name" value="${escapeHtml(finishing?.name || "")}" required></label><label class="field"><span>Kode finishing *</span><input name="code" value="${escapeHtml(finishing?.code || "")}" required></label>
     <label class="field"><span>Harga / unit</span>${moneyField("price", finishing?.price || 0)}</label><label class="field"><span>Dasar perhitungan</span><select name="rule">${rules.map(([value, label]) => `<option value="${value}" ${finishing?.rule === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+    <div class="field full"><div class="builder-head"><span>Harga grosir finishing (opsional)</span><button type="button" class="text-button" id="add-finishing-tier">+ Tingkat Grosir</button></div><small>Berdasarkan jumlah finishing per item pesanan, sesuai dasar perhitungan. Di luar rentang grosir, gunakan harga biasa. Maksimal 10 tingkat.</small><div id="finishing-tiers">${(finishing?.priceTiers || []).map(finishingTierRowHtml).join("")}</div></div>
     <div class="field full"><span>Kategori yang sesuai *</span><div class="category-checks">${categories.map((category) => `<label><input type="checkbox" name="category" value="${category}" ${(finishing?.categories || []).includes(category) ? "checked" : ""}><span>${category}</span></label>`).join("")}</div><small>Finishing hanya akan muncul saat menambahkan produk dalam kategori yang dipilih.</small></div>
   </div><div class="form-footer">${switchHtml("active", finishing?.active !== false)}${deleteButtonHtml(finishing, "Finishing")}<button class="primary" type="submit">Simpan Finishing</button></div></form>`);
   bindDeleteRecord(detail, finishing, "finishings", "Finishing", "finishings");
+  const tierList = detail.querySelector("#finishing-tiers");
+  tierList.onclick = (event) => { const button = event.target.closest("[data-remove-finishing-tier]"); if (button) button.closest("[data-finishing-tier]").remove(); };
+  detail.querySelector("#add-finishing-tier").onclick = () => {
+    if (tierList.children.length >= 10) return toast("Maksimal 10 tingkat grosir", "error");
+    tierList.insertAdjacentHTML("beforeend", finishingTierRowHtml());
+    bindMoneyInputs(tierList.lastElementChild);
+    tierList.lastElementChild.querySelector("[data-finishing-min]").focus();
+  };
   bindMoneyInputs(detail);
-  detail.querySelector("#finishing-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); const payload = { ...values, price: parseMoney(values.price), active: event.target.elements.active.checked, categories: [...event.target.querySelectorAll('input[name="category"]:checked')].map((input) => input.value) }; try { await api(finishing ? `/api/finishings/${finishing.id}` : "/api/finishings", { method: finishing ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "finishings"; render(); toast("Finishing berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
+  detail.querySelector("#finishing-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); const payload = { ...values, price: parseMoney(values.price), active: event.target.elements.active.checked, categories: [...event.target.querySelectorAll('input[name="category"]:checked')].map((input) => input.value) }; try { payload.priceTiers = normalizeFinishingTiers([...tierList.querySelectorAll("[data-finishing-tier]")].map((row) => ({ min: row.querySelector("[data-finishing-min]").value, max: row.querySelector("[data-finishing-max]").value, price: row.querySelector("[data-finishing-tier-price]").value.trim() === "" ? "" : parseMoney(row.querySelector("[data-finishing-tier-price]").value) }))); await api(finishing ? `/api/finishings/${finishing.id}` : "/api/finishings", { method: finishing ? "PUT" : "POST", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "finishings"; render(); toast("Finishing berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
 }
 
 function openMachineForm(machine = null) {
