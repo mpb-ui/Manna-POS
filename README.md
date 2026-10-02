@@ -90,3 +90,7 @@ SKU Akrilik dan Stempel juga belum memiliki HPP, bahan produksi, atau stok awal 
 ### Harga grosir finishing
 
 Tambah/Edit Finishing menyediakan **+ Tingkat Grosir** (maksimal 10 rentang). Setiap rentang berisi jumlah minimum, maksimum opsional, dan harga per satuan finishing. Rentang inklusif tidak boleh tumpang tindih; jumlah di luar rentang memakai harga biasa. Perhitungan memakai jumlah finishing per baris pesanan, sesuai dasar perhitungannya (unit, titik, m², atau meter), termasuk luas manual Kisscut LF. Preview POS dan server memakai fungsi harga yang sama. Menghapus semua tingkat mengembalikan harga biasa. Riwayat pesanan menyimpan harga saat transaksi dan tidak mengikuti perubahan master.
+
+### Jumlah dan catatan biaya design
+
+Pada bagian File, Biaya Design A–D memiliki tombol Catatan dan quantity selector (minimal 1, kelipatan 1, dapat diketik). Hanya kontrol pilihan aktif yang ditampilkan. Biaya design dihitung harga per design × jumlah design, terpisah dari jumlah cetak. File Siap Cetak tidak memiliki kontrol tersebut dan tetap tanpa biaya. Jumlah serta catatan tersimpan pada `fileService.quantity` dan `fileService.note`, ditampilkan pada ringkasan, detail, invoice, dan SPK, serta dipertahankan saat edit draft. Pesanan lama tanpa jumlah design memakai default 1.

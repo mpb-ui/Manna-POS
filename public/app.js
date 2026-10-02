@@ -290,7 +290,7 @@ function flatCatalogHtml(products, category) {
 }
 
 function fileServicesHtml() {
-  return `<div class="file-service-grid">${fileServices.map((service, index) => `<div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${index === 0 ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name}</strong><small>${service.price ? rupiah.format(service.price) : "Tanpa biaya"}</small></label></div>`).join("")}</div>`;
+  return `<div class="file-service-grid">${fileServices.map((service, index) => `<div class="file-service-option"><div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${index === 0 ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name}</strong><small>${service.price ? rupiah.format(service.price) : "Tanpa biaya"}</small></label></div>${service.price ? `<div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="1" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row hidden" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div>` : ""}</div>`).join("")}</div>`;
 }
 
 function templateOptionsHtml(product) {
@@ -385,7 +385,7 @@ function cartHtml() {
     const product = state.products.find((item) => item.id === line.productId);
     const detail = (product?.retailAtK || product?.quickSale) && !product?.hasMaterialVariants ? "" : product?.a3Kind === "ready"
       ? `${line.finishingNames ? `<p>${escapeHtml(line.finishingNames)}</p>` : ""}<p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`
-      : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`;
+      : `<p>${line.templateDesign ? "" : escapeHtml(line.fileServiceName || "File Siap Cetak") + (line.fileServicePrice ? ` × ${line.fileServiceQuantity || 1}${line.fileServiceNote ? ` (${escapeHtml(line.fileServiceNote)})` : ""}` : "")}${line.finishingNames ? `${line.templateDesign ? "" : " · "}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : " · Tanpa finishing tambahan"}</p><p class="item-note">Catatan: ${escapeHtml(line.productionNote || "—")}</p>`;
     return `<div class="cart-item"><div><h4>${escapeHtml(line.productName)}</h4><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}${detail}<strong>${rupiah.format(line.previewTotal)}</strong></div><button data-remove="${i}">Hapus</button></div>`;
   }).join("");
 }
@@ -429,6 +429,8 @@ function readCurrentLine() {
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity, fixedVariant, materialVariant, combination);
   const fileService = product.templateProduct ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
+  const fileServiceQuantity = fileService.price ? Math.max(1, Math.floor(Number(document.querySelector(`[data-design-qty="${fileService.id}"]`)?.value || 1))) : 1;
+  const fileServiceNote = fileService.price ? document.querySelector(`[data-design-note="${fileService.id}"]`)?.value.trim() || "" : "";
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
   const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) : 0;
   let finishTotal = 0;
@@ -454,7 +456,7 @@ function readCurrentLine() {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed, templateDesign,
     sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "", materialVariantId: materialVariant?.id || "", materialVariantLabel: materialVariant?.label || "", subVariantId: subVariant?.id || "", subVariantLabel: subVariant?.label || "", choices,
     baseTotal: base.total, templateDesignTotal,
-    fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price,
+    fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price, fileServiceQuantity, fileServiceNote,
     quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
     finishingNames: finishing.map((f) => {
       const finish = product.finishing.find((x) => x.id === f.id);
@@ -462,7 +464,7 @@ function readCurrentLine() {
     }).join(", "),
     displaySize: `${isFixedSize ? `${fixedVariant.label} · ${quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lbr"}` : isUnit ? `${quantity} ${product.unitName || "unit"}` : `${width} × ${base.billed} m · ${quantity} Lbr${templateDesign ? ` · ${templateDesign}` : ""}`}${materialVariant ? ` · ${materialVariant.label}` : ""}${subVariant ? ` · ${subVariant.label}` : ""}${choiceLabels.length ? ` · ${choiceLabels.join(" · ")}` : ""}`,
     productionNote: document.querySelector("#production-note")?.value.trim() || "",
-    previewTotal: base.total + finishTotal + fileService.price + templateDesignTotal
+    previewTotal: base.total + finishTotal + fileService.price * fileServiceQuantity + templateDesignTotal
   };
 }
 
@@ -485,7 +487,7 @@ function updatePreview() {
     ? `${line.sizeVariantLabel} × ${line.quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lbr"} · ${rupiah.format(line.unitPrice)}/${product.groupedProduct ? product.unitName || "unit" : "lembar"}`
     : product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
-    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
+    : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName} × ${line.fileServiceQuantity || 1}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
 }
 
 function syncFixedSizeUi() {
@@ -638,6 +640,28 @@ function bindProductConfiguration(onAdd) {
     const input = document.querySelector(`[data-finish-qty="${button.dataset.plus}"]`);
     input.value = Number(input.value || 0) + 1; updatePreview();
   });
+  const syncDesignControls = () => {
+    const selected = document.querySelector('input[name="file-service"]:checked')?.value;
+    if (!selected) return;
+    document.querySelectorAll("[data-design-controls]").forEach((control) => control.classList.toggle("hidden", control.dataset.designControls !== selected));
+    updatePreview();
+  };
+  document.querySelectorAll('input[name="file-service"]').forEach((input) => input.addEventListener("change", syncDesignControls));
+  document.querySelectorAll("[data-design-qty]").forEach((input) => {
+    input.addEventListener("input", updatePreview);
+    input.addEventListener("change", () => { input.value = Math.max(1, Math.floor(Number(input.value) || 1)); updatePreview(); });
+  });
+  document.querySelectorAll("[data-design-minus],[data-design-plus]").forEach((button) => button.onclick = () => {
+    const id = button.dataset.designMinus || button.dataset.designPlus;
+    const input = document.querySelector(`[data-design-qty="${id}"]`);
+    input.value = Math.max(1, Math.floor(Number(input.value) || 1) + (button.dataset.designPlus ? 1 : -1));
+    updatePreview();
+  });
+  document.querySelectorAll("[data-design-note-toggle]").forEach((button) => button.onclick = () => {
+    const row = document.querySelector(`[data-design-note-row="${button.dataset.designNoteToggle}"]`);
+    row.classList.toggle("hidden"); if (!row.classList.contains("hidden")) row.querySelector("input").focus();
+  });
+  syncDesignControls();
   document.querySelector("#add-item")?.addEventListener("click", () => onAdd(readCurrentLine()));
 }
 
@@ -983,7 +1007,7 @@ function nextAction(order) {
 function itemDetail(item) {
   const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}${finish.note ? ` — ${escapeHtml(finish.note)}` : ""}`).join(", ");
   const templateParts = item.templateDesign ? (can("projects.money") ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : `<small>Template: ${escapeHtml(item.templateDesign)}</small>`) : "";
-  return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
+  return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
 }
 
 function openOrder(id, showPayment = false) {
@@ -1091,7 +1115,7 @@ function startEditOrder(order) {
     finishing: (item.finishing || []).map((finish) => ({ id: finish.id, units: finish.units, note: finish.note || "" })),
     finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}${finish.note ? ` (${finish.note})` : ""}`).join(", "),
     displaySize: item.displaySize, templateDesign: item.templateDesign || "", fileServiceId: item.fileService?.id || "READY",
-    fileServiceName: item.fileService?.name || "File Siap Cetak", fileServicePrice: item.fileService?.price || 0,
+    fileServiceName: item.fileService?.name || "File Siap Cetak", fileServicePrice: item.fileService?.price || 0, fileServiceQuantity: item.fileService?.quantity || 1, fileServiceNote: item.fileService?.note || "",
     baseTotal: item.baseTotal, templateDesignTotal: item.templateDesignTotal || 0,
     productionNote: item.productionNote || "", previewTotal: item.subtotal
   }));
@@ -1109,7 +1133,7 @@ function printOrder(order, type) {
   printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : "TANDA TERIMA PESANAN"}</div><hr>
     <div class="print-meta"><b>${order.code}</b><span>${dateFormat.format(new Date(order.createdAt))}</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
-    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
+    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
     ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div><div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
     <hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
   document.body.classList.add("printing");

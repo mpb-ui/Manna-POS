@@ -300,3 +300,9 @@ body{font-size:15.5px}
 #finishing-tiers .builder-row { grid-template-columns: 1fr 1fr 1.3fr 28px; align-items: end; }
 #finishing-tiers .builder-row > button { height: 36px; }
 @media (max-width: 620px) { #finishing-tiers .builder-row { grid-template-columns: 1fr 1fr; } }
+
+.file-service-option { min-width: 0; }
+.file-service-option .file-service-chip > label { width: 100%; }
+.file-design-controls { padding: 9px 10px; background: var(--blue-soft); border: 1px solid #cbd4e2; border-radius: 8px; margin-top: 6px; }
+.file-design-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.file-design-controls .finish-note-row { margin-top: 8px; }
