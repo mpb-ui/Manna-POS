@@ -64,6 +64,8 @@ Setelah login sebagai Owner, buka **Master Data → User & Akses** untuk membuat
 
 Menu **Laporan** mengikuti permission server-side. User tanpa akses nilai uang tidak menerima field omzet, pembayaran, HPP, laba, atau margin dari API maupun file CSV.
 
+Dashboard menyediakan periode cepat dalam WITA, filter sumber pembayaran Tunai/QRIS/Transfer, notifikasi Perlu Perhatian saat hover/fokus, serta grafik yang tersembunyi sampai dibuka. Omzet mengikuti tanggal pesanan; Uang Masuk mengikuti tanggal setiap pembayaran, termasuk pembayaran atas pesanan bulan sebelumnya. Pada pembayaran campuran, filter sumber hanya menjumlahkan penerimaan dari metode terpilih; omzet menghitung pesanan yang memakai metode tersebut satu kali. Piutang mencakup pesanan sampai tanggal akhir periode dan mengurangi pembayaran yang tercatat sampai tanggal itu. Filter kategori/mesin mengalokasikan pembayaran menurut proporsi nilai item. Ekspor tab Pembayaran berisi penerimaan, dan tab Piutang berisi saldo pesanan. Data lama tanpa riwayat pembayaran bertanggal tidak dibuatkan tanggal penerimaan fiktif; saldo lama tetap memakai total pembayaran tersimpan.
+
 Tanpa `DATABASE_URL`, aplikasi memakai penyimpanan memory untuk development. Untuk production gunakan PostgreSQL.
 
 ## Environment variables
