@@ -96,3 +96,7 @@ Tambah/Edit Finishing menyediakan **+ Tingkat Grosir** (maksimal 10 rentang). Se
 ### Jumlah dan catatan biaya design
 
 Pada bagian File, Biaya Design A–D memiliki tombol Catatan dan quantity selector (minimal 1, kelipatan 1, dapat diketik). Hanya kontrol pilihan aktif yang ditampilkan. Biaya design dihitung harga per design × jumlah design, terpisah dari jumlah cetak. File Siap Cetak tidak memiliki kontrol tersebut dan tetap tanpa biaya. Jumlah serta catatan tersimpan pada `fileService.quantity` dan `fileService.note`, ditampilkan pada ringkasan, detail, invoice, dan SPK, serta dipertahankan saat edit draft. Pesanan lama tanpa jumlah design memakai default 1.
+
+## Aset dan penyusutan
+
+Admin/Owner dapat mencatat aset di **Master Data → Aset**, menghubungkannya dengan mesin operasional, dan melihat penyusutan garis lurus bulanan. Komputer, UPS, AC, furnitur, dan peralatan lain dicatat terpisah dari Daftar Mesin. Data awal kosong. Panduan, kebijakan perhitungan, aturan riwayat, dan batas cakupan tersedia di [docs/assets.md](docs/assets.md).

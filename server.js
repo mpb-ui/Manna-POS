@@ -1,3 +1,5 @@
+import { registerAssetRoutes } from "./lib/asset-routes.js";
+import { assetReport } from "./lib/assets.js";
 import { aggregateReport } from "./lib/reports.js";
 import { normalizeFinishingTiers } from "./public/finishing-pricing.js";
 import { registerPayrollRoutes } from "./lib/payroll-routes.js";
@@ -208,6 +210,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
     if (!permissions.includes("stock.value") && !permissions.includes("master.materials")) materials.forEach((item) => { delete item.cost; delete item.supplier; });
     res.json({
       currentUser: publicUser(req.user), permissions,
+      assetLinks: ["OWNER", "ADMIN"].includes(req.user.role) ? assetReport(state).rows.filter(row => row.machineId && !row.cancelled).map(row => ({ id: row.id, machineId: row.machineId, name: row.name, archivedAt: row.archivedAt, disposedAt: row.disposal?.date || null, acquisitionCost: row.acquisitionCost, ...row.calculation })) : [],
       permissionCatalog: permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: permissions.includes("users.manage") ? ROLE_PRESETS : {},
       products: canCatalog ? state.products.filter((item) => item.active !== false && !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
       allProducts: canMaster ? state.products.filter((item) => !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
@@ -223,6 +226,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
 });
 
 registerPayrollRoutes(app, store, requireCatalogAdmin, audit);
+registerAssetRoutes(app, store, requireCatalogAdmin, audit);
 
 app.post("/api/catalog-options/:kind", requirePermission("master.products"), async (req, res, next) => {
   try {
