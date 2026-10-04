@@ -103,4 +103,4 @@ Admin/Owner dapat mencatat aset di **Master Data → Aset**, menghubungkannya de
 
 ## Pendamping pekerjaan
 
-Dashboard dan Briefing Hari Ini menampilkan pekerjaan sesuai peran, dengan prioritas deadline dan pencatatan harian per akun. POS menyediakan pemeriksaan kelengkapan, saran repeat order memakai harga terbaru, dan kesiapan bahan. Detail Pesanan menyediakan penanda tertahan, checklist per produk, serta pengingat sisa pembayaran saat Diambil. Aturan akses, pemisahan draft/tagihan, dan perilaku data lama dijelaskan di [docs/order-assistance.md](docs/order-assistance.md).
+Briefing Hari Ini menampilkan seluruh pekerjaan sesuai peran dalam popup ringkas, dengan prioritas deadline dan pencatatan harian per akun. Ikon floating di kanan bawah membuka ulang popup tersebut. POS menyediakan pemeriksaan kelengkapan, saran repeat order memakai harga terbaru, dan kesiapan bahan. Detail Pesanan menyediakan penanda tertahan, checklist per produk, serta pengingat sisa pembayaran saat Diambil. Aturan akses, pemisahan draft/tagihan, dan perilaku data lama dijelaskan di [docs/order-assistance.md](docs/order-assistance.md).

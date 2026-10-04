@@ -60,8 +60,6 @@ const printDocument = document.querySelector("#print-document");
 const assistance = createOrderAssistance({
   state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, deadlineLabel: formatProjectDeadline, canAuto: () => !hasUnsavedPayroll(),
   openOrder: async id => { await load(); if (state.orders.some(o=>o.id===id)) openOrder(id); else toast("Pesanan tidak lagi tersedia untuk akun ini", "error"); },
-  goDashboard: () => { if (!allowLeavePayroll()) return; state.view = "dashboard"; render(); },
-  goDrafts: () => { if (!allowLeavePayroll()) return; state.projectCategory = "waiting"; state.projectWaitingType = "drafts"; state.projectStatus = "all"; state.projectSearch = ""; state.projectDeadline = "all"; state.view = "projects"; render(); },
   useRepeat: quote => {
     state.cart = quote.items.map(cartLineFromPricedItem); state.editingOrderId = null;
     state.draft = { customerName: quote.customerName, phone: quote.phone, deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
@@ -122,7 +120,7 @@ function showApp() {
 
 function can(permission) { return state.permissions.includes(permission); }
 const viewPermissions = { pos: "pos.view", projects: "projects.orders", stock: "stock.view", reports: "reports.view", master: "master.view" };
-function canView(view) { return view === "dashboard" ? can("projects.orders") || can("projects.waiting") : view === "employees" ? canManageSettings() : can(viewPermissions[view]); }
+function canView(view) { return view === "employees" ? canManageSettings() : can(viewPermissions[view]); }
 function firstAllowedView() { return Object.keys(viewPermissions).find((view) => can(viewPermissions[view])) || "none"; }
 
 async function load() {
@@ -139,8 +137,7 @@ async function load() {
 
 function render() {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  document.querySelector("#page-title").textContent = { dashboard: "Dashboard", pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan", reports: "Laporan", master: "Master Data", employees: "Karyawan", none: "Akses Terbatas" }[state.view];
-  if (state.view === "dashboard") assistance.mountDashboard();
+  document.querySelector("#page-title").textContent = { pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan", reports: "Laporan", master: "Master Data", employees: "Karyawan", none: "Akses Terbatas" }[state.view];
   if (state.view === "none") root.innerHTML = '<div class="category-empty"><strong>Belum ada menu yang dapat diakses</strong><p>Hubungi Admin atau Owner untuk mengatur permission akun ini.</p></div>';
   if (state.view === "pos") renderPos();
   if (state.view === "projects") renderProjects();
@@ -148,12 +145,6 @@ function render() {
   if (state.view === "reports") renderReports();
   if (state.view === "master") renderMaster();
   if (state.view === "employees" && canManageSettings()) mountEmployees({ root, dialog, printDocument, api, toast, escapeHtml, moneyField, parseMoney, bindMoneyInputs, rupiah, isActive: () => state.view === "employees" && canManageSettings() });
-}
-
-function allowLeavePayroll() {
-  if (state.view !== "employees" || !hasUnsavedPayroll()) return true;
-  if (!window.confirm("Buang perubahan payroll yang belum disimpan?")) return false;
-  discardPayrollDrafts(); return true;
 }
 
 function selectedProduct() { return state.products.find((p) => p.id === state.selectedProduct); }

@@ -9,7 +9,7 @@ export function createOrderAssistance(c) {
   const qty = n => Number(n).toLocaleString("id-ID", { maximumFractionDigits:4 });
   const can = permission => c.state.permissions.includes(permission);
   const identity = () => c.state.currentUser?.id;
-  let epoch = 0, checkedAuto = new Set(), dashboardLimit = 5, dashboardRequest = 0;
+  let epoch = 0, checkedAuto = new Set(), briefingLoading = false;
   const dialogs = new Set();
   function modal(title, content, onClose) {
     const uid = identity(), element = document.createElement("dialog");
@@ -43,53 +43,38 @@ export function createOrderAssistance(c) {
   }
   function briefingRow(order) {
     const priority = order.priority === 0 ? "late" : order.priority === 1 ? "today" : "";
-    return `<article class="assist-job"><div><strong>${h(order.customerName)}</strong><div class="assist-invoice">${h(order.code)}</div><p class="assist-product-summary">${h(order.summary)}</p><div class="assist-job-meta"><span class="assist-chip blue">${h(c.state.statusLabels[order.status] || order.status)}</span><span>PIC: ${h(order.pic)}</span></div>${order.hold ? `<span class="assist-chip held">Ⅱ ${h(order.hold.reason)} ${h(since(order.hold.since))}</span>` : ""}</div><div class="assist-job-action"><span class="assist-chip ${priority}">${order.priority===0?"Lewat deadline · ":""}${h(order.deadline ? c.deadlineLabel(order) : "Tanpa deadline")}</span>${order.outstanding > 0 ? `<strong class="assist-balance">Sisa ${money(order.outstanding)}</strong>` : ""}<button type="button" class="secondary" data-brief-order="${h(order.id)}">Buka Pesanan ↗</button></div></article>`;
+    return `<article class="assist-job"><div class="assist-job-info"><div class="assist-job-heading"><strong title="${h(order.customerName)}">${h(order.customerName)}</strong><span class="assist-invoice">${h(order.code)}</span></div><p class="assist-product-summary" title="${h(order.summary)}">${h(order.summary)}</p><div class="assist-job-meta"><span class="assist-chip blue">${h(c.state.statusLabels[order.status] || order.status)}</span><span title="PIC: ${h(order.pic)}">PIC: ${h(order.pic)}</span>${order.hold ? `<span class="assist-held-note" title="${h(order.hold.reason)} ${h(since(order.hold.since))}">Ⅱ ${h(order.hold.reason)} ${h(since(order.hold.since))}</span>` : ""}</div></div><div class="assist-job-action"><span class="assist-chip ${priority}">${order.priority===0?"Lewat · ":""}${h(order.deadline ? c.deadlineLabel(order) : "Tanpa deadline")}</span>${order.outstanding > 0 ? `<strong class="assist-balance">Sisa ${money(order.outstanding)}</strong>` : ""}<button type="button" class="secondary" data-brief-order="${h(order.id)}">Buka Pesanan ↗</button></div></article>`;
   }
   function bindRows(element, close) { element.querySelectorAll("[data-brief-order]").forEach(button => button.onclick = () => { close?.(); c.openOrder(button.dataset.briefOrder); }); }
   async function showBriefing(manual = true) {
     const uid = identity(), version = epoch;
-    if (!uid || dialogs.size || !manual && (c.dialog.open || !c.canAuto())) return;
+    if (!uid || briefingLoading || dialogs.size || !manual && (c.dialog.open || !c.canAuto())) return;
+    briefingLoading = true;
     try {
       const data = await c.api(manual ? "/api/briefing" : "/api/briefing/open", manual ? {} : { method:"POST", body:"{}" });
       if (uid !== identity() || version !== epoch || dialogs.size || !manual && (c.dialog.open || !c.canAuto() || !data.show)) return;
-      const limit = window.innerWidth < 560 ? 2 : 4;
       const markRead = () => c.api("/api/briefing/read",{method:"POST",body:JSON.stringify({date:data.date})}).catch(error => { if (uid === identity()) c.toast(error.message,"error"); });
-      const m = modal(`Halo, ${data.userName}, ${greeting()} 👋`, `<p class="assist-brief-intro">Berikut pekerjaan yang perlu dicek hari ini.</p><div class="assist-brief-sub"><span>Briefing Pagi · ${h(data.date)} · ${data.count} pesanan</span>${data.overdueCount ? `<span class="assist-chip late">${data.overdueCount} lewat deadline</span>` : ""}</div>${data.count ? data.orders.slice(0,limit).map(briefingRow).join("") : '<div class="assist-empty">Semua pekerjaan outstanding sudah ditangani.</div>'}<div class="assist-modal-actions"><div><button type="button" class="assist-text-button" data-all>Lihat Semua →</button>${data.count>limit?`<small>${data.count-limit} pesanan lainnya</small>`:""}</div><button type="button" class="primary" data-read>✓ Sudah Dibaca</button></div>`,markRead);
+      const dayLabel = new Intl.DateTimeFormat("id-ID",{timeZone:"Asia/Makassar",day:"numeric",month:"long",year:"numeric"}).format(new Date(`${data.date}T00:00:00+08:00`));
+      const m = modal(`Halo, ${data.userName}, ${greeting()} 👋`, `<p class="assist-brief-intro">Berikut pekerjaan yang perlu dicek hari ini.</p><div class="assist-brief-sub"><span>Pekerjaan yang perlu dicek <strong>· ${data.count}</strong></span>${data.overdueCount ? `<span class="assist-chip late">${data.overdueCount} lewat deadline</span>` : ""}</div><div class="assist-brief-list" aria-label="Pekerjaan yang perlu dicek" tabindex="0">${data.count ? data.orders.map(briefingRow).join("") : '<div class="assist-empty">Semua pekerjaan outstanding sudah ditangani.</div>'}</div><div class="assist-modal-actions"><span class="assist-brief-date">${h(dayLabel)} · WITA</span><button type="button" class="primary" data-read>✓ Sudah Dibaca</button></div>`,markRead);
       m.element.classList.add("briefing-dialog");
       bindRows(m.element,m.close);
       m.element.querySelector("[data-read]").onclick = m.close;
-      m.element.querySelector("[data-all]").onclick = () => { dashboardLimit = 25; m.close(); c.goDashboard(); };
     } catch (error) { if (manual && uid===identity()) c.toast(error.message,"error"); }
+    finally { if (version === epoch) briefingLoading = false; }
   }
-  function updateToolbar() {
-    const toolbar = document.querySelector("#assistance-toolbar");
+  function updateFloatingButton() {
+    const button = document.querySelector("#briefing-fab");
     const available = can("projects.orders") || can("projects.waiting");
-    toolbar.classList.toggle("hidden", !available);
-    toolbar.innerHTML = available ? '<button type="button" class="secondary assist-brief-button">☀ Briefing Hari Ini</button>' : "";
-    toolbar.querySelector("button")?.addEventListener("click", () => showBriefing(true));
+    button.classList.toggle("hidden", !identity() || !available);
+    button.onclick = () => showBriefing(true);
   }
   function onLoad() {
-    updateToolbar(); const key = `${identity()}:${witaDay()}`;
+    updateFloatingButton(); const key = `${identity()}:${witaDay()}`;
     if (identity() && !checkedAuto.has(key) && !c.dialog.open && !dialogs.size && c.canAuto()) { checkedAuto.add(key); showBriefing(false); }
   }
   document.addEventListener("visibilitychange", () => { if(document.visibilityState === "visible" && identity()) onLoad(); });
   setInterval(() => { if (document.visibilityState === "visible" && identity()) onLoad(); },60000);
-  function resetSession() { epoch++; dashboardRequest++; checkedAuto = new Set(); dashboardLimit = 5; for(const element of dialogs){element.close();element.remove();}dialogs.clear(); }
-
-  async function mountDashboard() {
-    const uid = identity(), request = ++dashboardRequest;
-    c.root.innerHTML = '<section class="panel"><div class="panel-body assist-empty">Memuat pekerjaan hari ini…</div></section>';
-    try {
-      const data = await c.api("/api/briefing");
-      if (identity() !== uid || request !== dashboardRequest || c.state.view !== "dashboard") return;
-      const heldCount = data.orders.filter(o=>o.hold).length;
-      c.root.innerHTML = `<div class="assist-dashboard-title"><div><h1>Halo, ${h(data.userName)} 👋</h1><p>${h(new Intl.DateTimeFormat("id-ID",{timeZone:"Asia/Makassar",weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(new Date()))}</p></div></div><section class="panel"><div class="panel-head"><h2>Pekerjaan yang perlu dicek <span class="assist-count">${data.count}</span></h2>${data.overdueCount||heldCount?`<details class="assist-attention"><summary aria-label="Perlu perhatian">ⓘ</summary><div><p>${data.overdueCount} pesanan melewati deadline.</p><p>${heldCount} pesanan tertahan.</p></div></details>`:""}</div><div class="panel-body">${data.count?data.orders.slice(0,dashboardLimit).map(briefingRow).join(""):'<div class="assist-empty">Tidak ada pekerjaan outstanding untuk akun ini.</div>'}${data.count>dashboardLimit?`<div class="assist-show-more"><span>${data.count-dashboardLimit} pesanan lainnya</span><button class="assist-text-button" data-more type="button">${dashboardLimit===5?'Lihat Semua':'Tampilkan 25 Berikutnya'} →</button></div>`:""}</div></section>${data.draftCount?`<div class="assist-drafts"><span>Draft belum dikonfirmasi · <b>${data.draftCount}</b></span><button class="assist-text-button" type="button" data-drafts>Buka Draft →</button></div>`:""}`;
-      c.root.querySelector("[data-brief]")?.addEventListener("click", () => showBriefing());
-      c.root.querySelector("[data-more]")?.addEventListener("click",()=>{dashboardLimit=dashboardLimit===5?25:dashboardLimit+25;mountDashboard();});
-      c.root.querySelector("[data-drafts]")?.addEventListener("click",c.goDrafts);
-      bindRows(c.root);
-    } catch(error){if(uid===identity()&&request===dashboardRequest)c.root.innerHTML=`<div class="assist-empty">${h(error.message)} <button class="secondary" data-retry type="button">Coba Lagi</button></div>`;c.root.querySelector("[data-retry]")?.addEventListener("click",mountDashboard);}
-  }
+  function resetSession() { epoch++; briefingLoading = false; checkedAuto = new Set(); document.querySelector("#briefing-fab").classList.add("hidden"); for(const element of dialogs){element.close();element.remove();}dialogs.clear(); }
 
   function stockTable(stock) {
     return stock.rows.length ? `<div class="assist-stock-table"><table><thead><tr><th>Bahan</th><th>Fisik</th><th>Alokasi lain</th><th>Tersedia</th><th>Kebutuhan</th><th>Kurang</th></tr></thead><tbody>${stock.rows.map(row=>`<tr><td><strong>${h(row.name)}</strong><small>${h(row.unit)}</small></td><td>${row.physical==null?'—':qty(row.physical)}</td><td>${qty(row.reserved)}</td><td>${row.available==null?'—':qty(row.available)}</td><td>${qty(row.required)}</td><td class="${row.untracked||row.shortage>0?'assist-balance':''}">${row.untracked?'Belum terhubung':qty(row.shortage)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="assist-muted">${stock.committed?'Stok pesanan sudah diproses saat Selesai.':'Produk ini belum memiliki kebutuhan bahan yang terhubung.'}</p>`;
@@ -189,5 +174,5 @@ export function createOrderAssistance(c) {
       return {allow:true,confirmChecklist:false,outstanding:data.outstanding};
     }catch(error){c.toast(error.message,'error');return {allow:false};}
   }
-  return {onLoad,resetSession,mountDashboard,mountCheckout,mountOrder,checkBeforeAdvance,showBriefing};
+  return {onLoad,resetSession,mountCheckout,mountOrder,checkBeforeAdvance,showBriefing};
 }

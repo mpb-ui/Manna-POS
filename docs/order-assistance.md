@@ -2,9 +2,9 @@
 
 ## Briefing harian
 
-Briefing memakai tanggal WITA (`Asia/Makassar`). Popup otomatis tampil satu kali per akun pada hari itu apabila ada pekerjaan outstanding. Waktu tampil dan dibaca disimpan di data akun pada PostgreSQL, sehingga sesi/perangkat lain tidak menampilkan ulang popup. Menutup melalui ×, Escape, atau Sudah Dibaca menandainya dibaca. Tombol **Briefing Hari Ini** membuka ulang secara manual. Popup tidak mengambil alih Detail Pesanan yang terbuka atau payroll yang belum disimpan.
+Briefing memakai tanggal WITA (`Asia/Makassar`). Popup otomatis tampil satu kali per akun pada hari itu apabila ada pekerjaan outstanding. Waktu tampil dan dibaca disimpan di data akun pada PostgreSQL, sehingga sesi/perangkat lain tidak menampilkan ulang popup. Menutup melalui ×, Escape, atau Sudah Dibaca menandainya dibaca. Ikon floating **Briefing Hari Ini** di kanan bawah membuka popup yang sama secara manual. Popup tidak mengambil alih Detail Pesanan yang terbuka atau payroll yang belum disimpan.
 
-Urutan: deadline sudah lewat, deadline hari ini, lalu pekerjaan lain. Dalam setiap kelompok, pekerjaan paling lama menunggu didahulukan; penanda tertahan memakai waktu mulai tertahan. Popup menampilkan empat pesanan teratas (dua pada layar kecil), jumlah sisanya, dan jalan menuju Dashboard atau Detail Pesanan. Dashboard menampilkan lima pesanan awal dan dapat diperluas bertahap.
+Urutan: deadline sudah lewat, deadline hari ini, lalu pekerjaan lain. Dalam setiap kelompok, pekerjaan paling lama menunggu didahulukan; penanda tertahan memakai waktu mulai tertahan. Semua pesanan ditampilkan sebagai baris ringkas dalam popup, tanpa halaman Dashboard atau tombol Lihat Semua. Nama, invoice, ringkasan produk, status, PIC, deadline, penanda tertahan, serta sisa pembayaran sesuai izin tetap tersedia. Ringkasan produk panjang dibatasi dua baris dengan isi lengkap pada tooltip dan Detail Pesanan. Untuk daftar panjang, hanya bagian list yang digulir; judul dan tombol Sudah Dibaca tetap terlihat. Draft tetap terpisah dari tagihan aktif di Project Management.
 
 | Profil awal | Pesanan |
 | --- | --- |

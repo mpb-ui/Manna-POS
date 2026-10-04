@@ -32,7 +32,6 @@
         <strong id="page-title">Point of Sale</strong>
       </div>
       <nav>
-        <button class="nav-item hidden" data-view="dashboard"><span>☀</span><b>Dashboard</b></button>
         <button class="nav-item active" data-view="pos"><span>▦</span><b>POS</b></button>
         <button class="nav-item" data-view="projects"><span>▤</span><b>Project Management</b><em id="active-count">0</em></button>
         <button class="nav-item" data-view="stock"><span>◫</span><b>Stok Bahan</b></button>
@@ -47,10 +46,13 @@
       </div>
     </aside>
     <main class="main-content">
-      <div id="assistance-toolbar" class="assistance-toolbar hidden"></div>
       <div id="view-root"></div>
     </main>
   </div>
+
+  <button id="briefing-fab" class="briefing-fab hidden" type="button" aria-label="Buka Briefing Hari Ini" title="Briefing Hari Ini" aria-haspopup="dialog">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="8" y="2" width="8" height="5" rx="1.5"/><path d="m8 12 1 1 2-2m-3 6 1 1 2-2m3-4h3m-3 5h3"/></svg>
+  </button>
 
   <dialog id="order-dialog" class="order-dialog"><div id="order-detail"></div></dialog>
   <section id="print-document" class="print-document"></section>
