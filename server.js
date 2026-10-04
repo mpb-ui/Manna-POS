@@ -1,4 +1,7 @@
 import { registerAssetRoutes } from "./lib/asset-routes.js";
+import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
+import { workflowSnapshot, pendingChecks, checklistForOrder } from "./lib/order-assistance.js";
+import { FILE_READINESS, completeness } from "./public/order-rules.js";
 import { assetReport } from "./lib/assets.js";
 import { aggregateReport } from "./lib/reports.js";
 import { normalizeFinishingTiers } from "./public/finishing-pricing.js";
@@ -11,7 +14,7 @@ import { Store } from "./lib/store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
 import { DTF_COLORS, DTF_SIZES, DTF_SHIRT_MATERIALS } from "./lib/dtf-catalog.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
-import { PERMISSIONS, ROLE_PRESETS, allowedStatusForRole, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
+import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRole, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -186,6 +189,7 @@ function normalizeOrder(order) {
   order.paidAmount = Number(order.paidAmount || 0);
   order.payments ||= [];
   order.paymentConfirmed = Boolean(order.paymentConfirmed);
+  order.confirmed = Boolean(order.confirmed || order.confirmedAt || order.paymentConfirmed);
   order.paymentStatus = order.paidAmount >= Number(order.total || 0) && order.total > 0
     ? "LUNAS"
     : order.paymentConfirmed ? "BELUM_LUNAS" : "BELUM_BAYAR";
@@ -217,7 +221,13 @@ app.get("/api/bootstrap", async (req, res, next) => {
       catalogOptions: canCatalog || canMaster ? state.catalogOptions : { categories: [], saleUnits: [], priceBases: [] },
       pics: state.pics.filter((item) => item.active !== false && !item.deletedAt),
       materials, finishings: canCatalog || canMaster ? state.finishings.filter((item) => !item.deletedAt) : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines.filter((item) => !item.deletedAt) : [],
-      orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => sanitizeOrder(order, req.user)),
+      orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => {
+        const result = sanitizeOrder(order, req.user);
+        // Compact metadata for list signifiers; detailed stock/checklists are lazy.
+        const checklist = checklistForOrder(order, state.products);
+        result.assistanceSummary = { issueCount: completeness(order, state.products).length, checklistDone: checklist.reduce((n, i) => n + i.steps.filter(s => s.done).length, 0), checklistTotal: checklist.reduce((n, i) => n + i.steps.length, 0) };
+        return result;
+      }),
       inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
       users: permissions.includes("users.manage") ? state.users.filter((item) => !item.deletedAt).map(publicUser) : [],
       auditLogs: permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
@@ -227,6 +237,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
 
 registerPayrollRoutes(app, store, requireCatalogAdmin, audit);
 registerAssetRoutes(app, store, requireCatalogAdmin, audit);
+registerAssistanceRoutes(app, store, { activity, audit, normalizeOrder });
 
 app.post("/api/catalog-options/:kind", requirePermission("master.products"), async (req, res, next) => {
   try {
@@ -606,6 +617,9 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         phone: String(req.body.phone || "").trim(),
         deadline: req.body.deadline || null,
         fileStatus: req.body.fileStatus || "SIAP_CETAK",
+        fileReadiness: FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED",
+        confirmed: req.body.confirmed === true,
+        confirmedAt: req.body.confirmed === true ? now() : null,
         designPic: "",
         paidAmount: 0,
         payments: [],
@@ -615,9 +629,10 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         createdById: req.user.id,
         createdByName: req.user.name,
         stockCommitted: false,
-        items: priced.items,
+        items: workflowSnapshot(priced.items, state.products),
         total: priced.total,
         createdAt: now(),
+        statusEnteredAt: now(),
         updatedAt: now(),
         timeline: []
       };
@@ -644,7 +659,10 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       order.phone = String(req.body.phone || "").trim();
       order.deadline = req.body.deadline || null;
       order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
-      order.items = priced.items;
+      order.fileReadiness = FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED";
+      if (req.body.confirmed === true) { order.confirmed = true; order.confirmedAt ||= now(); }
+      order.items = workflowSnapshot(priced.items, state.products);
+      order.productionChecks = {};
       order.total = priced.total;
       order.updatedAt = now();
       activity(state, order, "Draft pesanan diperbarui", req.user.name);
@@ -681,8 +699,9 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       order.payments.push(payment);
       order.paidAmount += amount;
       order.paymentConfirmed = true;
+      order.confirmed = true; order.confirmedAt ||= now();
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
-      if (order.status === STATUS.WAITING_PAYMENT) order.status = STATUS.DESIGN;
+      if (order.status === STATUS.WAITING_PAYMENT) { order.status = STATUS.DESIGN; order.statusEnteredAt = now(); }
       order.updatedAt = now();
       activity(state, order, `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
       audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount });
@@ -693,7 +712,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
 });
 
 app.patch("/api/orders/:id/deadline", async (req, res, next) => {
-  if (!["OWNER", "CASHIER"].includes(req.user.role)) return res.status(403).json({ error: "Deadline hanya dapat diubah Owner atau Kasir" });
+  if (!["OWNER", "CASHIER", "MANAGER"].includes(req.user.role) || req.user.role === "MANAGER" && !hasPermission(req.user, "pos.edit")) return res.status(403).json({ error: "Deadline hanya dapat diubah Owner, Kasir, atau Manager dengan akses edit pesanan" });
   try {
     const value = req.body.deadline;
     if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) || !Number.isFinite(Date.parse(value))) throw new Error("Tanggal dan jam deadline tidak valid");
@@ -742,6 +761,7 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       if (!order) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
       const target = req.body.status;
+      if (order.hold) { const error = new Error("Pesanan masih tertahan. Lepaskan penanda setelah kendala selesai."); error.code = "ORDER_HELD"; throw error; }
       if (target !== allowedNextStatus(order.status)) throw new Error("Perpindahan status tidak valid");
       if (!allowedStatusForRole(req.user.role, order.status, target)) throw new Error("Role Anda tidak dapat memindahkan status ini");
       const unpaidPickup = target === STATUS.PICKED_UP && Number(order.paidAmount || 0) < Number(order.total || 0);
@@ -749,8 +769,11 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
         const error = new Error("Pesanan belum lunas"); error.code = "UNPAID_PICKUP_CONFIRMATION"; throw error;
       }
       if (order.status === STATUS.DESIGN && !order.designPic) throw new Error("Nama PIC Operator Design wajib diisi");
+      const unchecked = pendingChecks(order, state.products);
+      if (req.body.confirmChecklist === true && unchecked.length) activity(state, order, `${unchecked.length} langkah checklist belum diperiksa; kelanjutan dikonfirmasi`, req.user.name);
       if (unpaidPickup) activity(state, order, "Penerimaan pesanan belum lunas dikonfirmasi; sisa pembayaran tetap tercatat", req.user.name);
       order.status = target;
+      order.statusEnteredAt = now();
       order.updatedAt = now();
       if (target === STATUS.DONE && !order.stockCommitted) {
         ensureShirtStock(state, order, { physical: true });
@@ -772,10 +795,10 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       }
       activity(state, order, `Status berubah menjadi ${STATUS_LABEL[target]}`, req.user.name);
       audit(state, req.user, "ORDER_STATUS", `Mengubah ${order.code} menjadi ${STATUS_LABEL[target]}`, { orderId: order.id, status: target });
-      return order;
+      return sanitizeOrder(order, req.user);
     });
     res.json(result);
-  } catch (error) { if (error.code === "UNPAID_PICKUP_CONFIRMATION") return res.status(409).json({ error: error.message, code: error.code }); next(error); }
+  } catch (error) { if (["UNPAID_PICKUP_CONFIRMATION", "ORDER_HELD"].includes(error.code)) return res.status(409).json({ error: error.message, code: error.code }); next(error); }
 });
 
 app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, res, next) => {
@@ -817,7 +840,7 @@ app.post("/api/users", requirePermission("users.manage"), async (req, res, next)
       if (!name || !username || pin.length < 4) throw new Error("Nama, username, dan PIN minimal 4 digit wajib diisi");
       if (state.users.some((item) => item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
       const pinSalt = crypto.randomBytes(16).toString("hex");
-      const user = { id: crypto.randomUUID(), name, username, role, permissions: normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions), reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, pinSalt, pinHash: hashPin(pin, pinSalt), active: req.body.active !== false, sessionVersion: 1, createdAt: now(), lastLoginAt: null };
+      const user = { id: crypto.randomUUID(), name, username, role, permissions: normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions), reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile), pinSalt, pinHash: hashPin(pin, pinSalt), active: req.body.active !== false, sessionVersion: 1, createdAt: now(), lastLoginAt: null };
       state.users.push(user); audit(state, req.user, "USER_CREATE", `Membuat user ${name}`, { targetUserId: user.id, role });
       return publicUser(user);
     });
@@ -837,7 +860,7 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
       if (user.role === "OWNER" && role !== "OWNER" && state.users.filter((item) => item.role === "OWNER" && item.active !== false).length <= 1) throw new Error("Minimal satu Owner aktif harus tersedia");
       const permissions = normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions);
       if (user.id === req.user.id && !permissions.includes("users.manage")) throw new Error("Akses kelola user tidak dapat dicabut dari akun yang sedang digunakan");
-      Object.assign(user, { name, username, role, permissions, reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, active: req.body.active !== false });
+      Object.assign(user, { name, username, role, permissions, reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile ?? user.briefingProfile), active: req.body.active !== false });
       const pin = String(req.body.pin || "");
       if (pin) { if (pin.length < 4) throw new Error("PIN minimal 4 digit"); user.pinSalt = crypto.randomBytes(16).toString("hex"); user.pinHash = hashPin(pin, user.pinSalt); user.sessionVersion = Number(user.sessionVersion || 1) + 1; }
       audit(state, req.user, "USER_UPDATE", `Memperbarui user ${name}`, { targetUserId: user.id, role, pinChanged: Boolean(pin) });

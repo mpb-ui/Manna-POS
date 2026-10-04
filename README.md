@@ -60,7 +60,7 @@ npm start
 - Username: `admin`
 - PIN: nilai `APP_PIN`, atau `1234` jika `APP_PIN` tidak diatur pada lingkungan lokal.
 
-Setelah login sebagai Owner, buka **Master Data → User & Akses** untuk membuat akun Admin, Kasir, Operator Design, Operator Cetak, dan Staff Gudang. Setiap user dapat memakai permission khusus di luar template role-nya.
+Setelah login sebagai Owner, buka **Master Data → User & Akses** untuk membuat akun Admin, Manager, Kasir, Operator Design, Operator Cetak, dan Staff Gudang. Manager memakai gabungan awal Kasir, Operator Design, Operator Cetak, dan Staff Gudang. Setiap user dapat memakai permission khusus di luar template role-nya.
 
 Menu **Laporan** mengikuti permission server-side. User tanpa akses nilai uang tidak menerima field omzet, pembayaran, HPP, laba, atau margin dari API maupun file CSV.
 
@@ -100,3 +100,7 @@ Pada bagian File, Biaya Design A–D memiliki tombol Catatan dan quantity select
 ## Aset dan penyusutan
 
 Admin/Owner dapat mencatat aset di **Master Data → Aset**, menghubungkannya dengan mesin operasional, dan melihat penyusutan garis lurus bulanan. Komputer, UPS, AC, furnitur, dan peralatan lain dicatat terpisah dari Daftar Mesin. Data awal kosong. Panduan, kebijakan perhitungan, aturan riwayat, dan batas cakupan tersedia di [docs/assets.md](docs/assets.md).
+
+## Pendamping pekerjaan
+
+Dashboard dan Briefing Hari Ini menampilkan pekerjaan sesuai peran, dengan prioritas deadline dan pencatatan harian per akun. POS menyediakan pemeriksaan kelengkapan, saran repeat order memakai harga terbaru, dan kesiapan bahan. Detail Pesanan menyediakan penanda tertahan, checklist per produk, serta pengingat sisa pembayaran saat Diambil. Aturan akses, pemisahan draft/tagihan, dan perilaku data lama dijelaskan di [docs/order-assistance.md](docs/order-assistance.md).
