@@ -1,6 +1,7 @@
+import { requiredPhone } from "./public/customer-validation.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
-import { workflowSnapshot, pendingChecks, checklistForOrder } from "./lib/order-assistance.js";
+import { workflowSnapshot, checklistForOrder } from "./lib/order-assistance.js";
 import { FILE_READINESS, completeness } from "./public/order-rules.js";
 import { assetReport } from "./lib/assets.js";
 import { aggregateReport } from "./lib/reports.js";
@@ -614,7 +615,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         id: crypto.randomUUID(),
         code: orderCode(state.nextOrderNumber++),
         customerName: String(req.body.customerName).trim(),
-        phone: String(req.body.phone || "").trim(),
+        phone: requiredPhone(req.body.phone),
         deadline: req.body.deadline || null,
         fileStatus: req.body.fileStatus || "SIAP_CETAK",
         fileReadiness: FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED",
@@ -656,7 +657,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       order.customerName = String(req.body.customerName).trim();
-      order.phone = String(req.body.phone || "").trim();
+      order.phone = requiredPhone(req.body.phone);
       order.deadline = req.body.deadline || null;
       order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
       order.fileReadiness = FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED";
@@ -769,8 +770,6 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
         const error = new Error("Pesanan belum lunas"); error.code = "UNPAID_PICKUP_CONFIRMATION"; throw error;
       }
       if (order.status === STATUS.DESIGN && !order.designPic) throw new Error("Nama PIC Operator Design wajib diisi");
-      const unchecked = pendingChecks(order, state.products);
-      if (req.body.confirmChecklist === true && unchecked.length) activity(state, order, `${unchecked.length} langkah checklist belum diperiksa; kelanjutan dikonfirmasi`, req.user.name);
       if (unpaidPickup) activity(state, order, "Penerimaan pesanan belum lunas dikonfirmasi; sisa pembayaran tetap tercatat", req.user.name);
       order.status = target;
       order.statusEnteredAt = now();
@@ -947,6 +946,7 @@ app.get("/api/reports", requirePermission("reports.view"), async (req, res, next
   try { const state = await store.read(); res.json(aggregateReport(state, req.user, req.query)); } catch (error) { next(error); }
 });
 
+app.get("/vendor/pdf-lib.min.js", (_req, res) => res.sendFile(new URL("./node_modules/pdf-lib/dist/pdf-lib.min.js", import.meta.url).pathname));
 app.use(express.static("public"));
 app.get("/{*path}", (_req, res) => res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
 app.use((error, _req, res, _next) => {

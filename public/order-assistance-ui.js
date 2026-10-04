@@ -1,7 +1,6 @@
-import { completeness, needsFile, witaDay } from "./order-rules.js";
+import { witaDay } from "./order-rules.js";
 
 export const briefingProfileOptions = [["auto","Otomatis sesuai role"],["cashier","CS / Kasir"],["design","Operator Design"],["print","Operator Cetak"],["finishing","Tim Finishing"],["all","Seluruh outstanding"],["none","Tanpa briefing otomatis"]];
-const fileNames = { UNCONFIRMED: "Belum dikonfirmasi", MISSING: "Belum ada file", RECEIVED: "Sudah diterima", READY: "Siap cetak" };
 
 export function createOrderAssistance(c) {
   const h = c.escapeHtml, money = n => c.rupiah.format(Number(n || 0));
@@ -90,15 +89,10 @@ export function createOrderAssistance(c) {
     const names=[...new Set(c.state.orders.filter(o=>o.confirmed||o.paymentConfirmed).map(o=>o.customerName))];
     const list=document.createElement("datalist");list.id="assist-customers";list.innerHTML=names.map(name=>`<option value="${h(name)}"></option>`).join("");form.append(list);customerField.setAttribute("list",list.id);
     const repeat=document.createElement("div");repeat.className="assist-repeat hidden";customerField.closest("label").after(repeat);
-    const production=c.state.cart.some(item=>needsFile(item,c.state.products.find(p=>p.id===item.productId)));
     const assistance=document.createElement("div");assistance.className="assist-checkout";
-    assistance.innerHTML=`${production?`<label class="field"><span>Kesiapan file (opsional)</span><select name="fileReadiness">${Object.entries(fileNames).map(([value,label])=>`<option value="${value}" ${c.state.draft.fileReadiness===value?'selected':''}>${label}</option>`).join("")}</select></label>`:""}<div data-completeness></div><div data-stock-warning></div>`;
+    assistance.innerHTML='<div data-stock-warning></div>';
     form.querySelector(".checkout-actions").before(assistance);
     function valid(){return form.isConnected&&uid===identity()&&version===epoch;}
-    function drawIssues(){
-      const issues=completeness({...c.state.draft,items:c.state.cart},c.state.products);
-      assistance.querySelector('[data-completeness]').innerHTML=c.state.cart.length?`<details class="assist-completeness"><summary>Kelengkapan <span class="assist-chip ${issues.length?'held':'blue'}">${issues.length?`${issues.length} perlu dicek`:'Lengkap'}</span></summary><ul>${issues.map(issue=>`<li>${h(issue.label)}</li>`).join('')||'<li>Detail pesanan sudah lengkap.</li>'}</ul></details>`:'';
-    }
     const lookup=async()=>{
       const request=++lookupVersion;
       const name=form.elements.customerName.value.trim(),phone=form.elements.phone.value;
@@ -113,9 +107,8 @@ export function createOrderAssistance(c) {
         repeat.querySelector('button').onclick=()=>openRepeat(result.order.id);
       }catch{if(valid()&&request===lookupVersion)repeat.classList.add('hidden');}
     };
-    form.addEventListener('input',event=>{drawIssues();if(['customerName','phone'].includes(event.target.name)){clearTimeout(lookupTimer);lookupTimer=setTimeout(lookup,250);}});
-    form.addEventListener('change',event=>{if(event.target.name==='fileReadiness')c.state.draft.fileReadiness=event.target.value;drawIssues();});
-    drawIssues(); if(form.elements.customerName.value.trim())lookup();
+    form.addEventListener('input',event=>{if(['customerName','phone'].includes(event.target.name)){clearTimeout(lookupTimer);lookupTimer=setTimeout(lookup,250);}});
+    if(form.elements.customerName.value.trim())lookup();
     if(c.state.cart.length&&can('pos.create')){
       const request=++stockVersion;
       c.api('/api/orders/check',{method:'POST',body:JSON.stringify({items:c.state.cart,editingOrderId:c.state.editingOrderId})}).then(data=>{
@@ -145,23 +138,19 @@ export function createOrderAssistance(c) {
   }
   async function mountOrder(order,element){
     const uid=identity(),version=epoch;if(!element)return;
-    let latest, painted=false, expanded=new Set();
     const editable=['projects.assign','projects.status','pos.edit'].some(can);
     const live=()=>element.isConnected&&uid===identity()&&version===epoch;
     const update=async(path,body)=>{const data=await c.api(`/api/orders/${order.id}/${path}`,{method:'PATCH',body:JSON.stringify(body)});if(live())paint(data);return data;};
     function paint(data){
       const holdChanged = JSON.stringify(order.hold || null) !== JSON.stringify(data.hold || null);
-      latest=data;order.hold=data.hold;order.fileReadiness=data.fileReadiness;
-      const open=expanded;expanded=new Set([...element.querySelectorAll('details[open]')].map(d=>d.dataset.assistExpand).filter(Boolean));if(!expanded.size)expanded=open;
-      element.innerHTML=`${data.hold?`<div class="assist-inline-alert assist-hold"><div><strong>Ⅱ ${h(data.hold.reason)} ${h(since(data.hold.since))}</strong><small>${h(data.hold.note||'')} · ${h(data.hold.actor)} · ${h(stamp(data.hold.since))}</small></div>${editable?'<button class="assist-text-button" type="button" data-release>Lepaskan Penanda</button>':''}</div>`:''}<div class="assist-order-tools">${['DESAIN','CETAK','FINISHING'].includes(order.status)&&editable?`<button type="button" class="secondary" data-hold>Ⅱ ${data.hold?'Ubah Penanda':'Tandai Tertahan'}</button>`:''}</div>${stockAlert(data.stock)}${data.checklist.length?`<div class="assist-checklist"><h3>Checklist produksi per produk</h3>${data.checklist.map(item=>`<details data-assist-expand="item-${item.index}" ${expanded.has('item-'+item.index)||!painted&&order.status==='FINISHING'?'open':''}><summary><span>${h(item.productName)}</span><span class="assist-chip">${item.steps.filter(s=>s.done).length}/${item.steps.length}</span></summary><p class="assist-muted">${h(item.specification)}</p>${item.steps.map(step=>`<label class="assist-check"><input type="checkbox" data-check-index="${item.index}" data-check-key="${h(step.key)}" ${step.done?'checked':''} ${can('projects.status')?'':'disabled'}><span>${h(step.label)}${step.checkedAt?`<small>${h(step.actor)} · ${h(stamp(step.checkedAt))}</small>`:''}</span></label>`).join('')}</details>`).join('')}</div>`:''}`;
-      painted=true;
+      order.hold=data.hold;order.fileReadiness=data.fileReadiness;
+      element.innerHTML=`${data.hold?`<div class="assist-inline-alert assist-hold"><div><strong>Ⅱ ${h(data.hold.reason)} ${h(since(data.hold.since))}</strong><small>${h(data.hold.note||'')} · ${h(data.hold.actor)} · ${h(stamp(data.hold.since))}</small></div>${editable?'<button class="assist-text-button" type="button" data-release>Lepaskan Penanda</button>':''}</div>`:''}<div class="assist-order-tools">${['DESAIN','CETAK','FINISHING'].includes(order.status)&&editable?`<button type="button" class="secondary" data-hold>Ⅱ ${data.hold?'Ubah Penanda':'Tandai Tertahan'}</button>`:''}</div>${stockAlert(data.stock)}`;
       if (holdChanged) c.refreshProjects();
       element.querySelector('[data-stock]')?.addEventListener('click',()=>showStock(data.stock));
       element.querySelector('[data-hold]')?.addEventListener('click',()=>holdDialog(order,data.hold,result=>{if(live())paint(result);}));
       element.querySelector('[data-release]')?.addEventListener('click',async()=>{if(!await confirm('Lepaskan penanda tertahan?','Pastikan kendala pesanan sudah selesai.','Ya, Lepaskan Penanda'))return;try{await update('hold',{release:true});c.toast('Penanda tertahan dilepas.');}catch(error){c.toast(error.message,'error');}});
-      element.querySelectorAll('[data-check-index]').forEach(input=>input.onchange=async()=>{input.disabled=true;try{await update('checklist',{index:Number(input.dataset.checkIndex),key:input.dataset.checkKey,done:input.checked});}catch(error){c.toast(error.message,'error');if(live())paint(data);}});
+
       const timeline=c.dialog.querySelector('.timeline');if(timeline&&data.timeline)timeline.innerHTML=data.timeline.map(item=>`<div class="timeline-item"><p>${h(item.message)}</p><small>${h(item.actor)} · ${h(stamp(item.createdAt))}</small></div>`).join('');
-      element.querySelectorAll('details').forEach(d=>d.addEventListener('toggle',()=>{if(d.open)expanded.add(d.dataset.assistExpand);else expanded.delete(d.dataset.assistExpand);}));
     }
     element.innerHTML='<p class="assist-muted">Memuat kesiapan pesanan…</p>';
     try{const data=await c.api(`/api/orders/${order.id}/assistance`);if(live())paint(data);}catch(error){if(live())element.innerHTML=`<p class="assist-muted">${h(error.message)}</p>`;}
@@ -170,8 +159,7 @@ export function createOrderAssistance(c) {
     try{
       const data=await c.api(`/api/orders/${id}/assistance`);
       if(data.hold){c.toast('Pesanan masih tertahan: '+data.hold.reason+'. Lepaskan penanda setelah kendala selesai.','error');return {allow:false};}
-      if(data.pending.length){const accepted=await confirm('Checklist belum lengkap',`${data.pending.length} langkah belum diperiksa. Pastikan pekerjaan sudah sesuai pesanan sebelum melanjutkan.`);return {allow:accepted,confirmChecklist:accepted};}
-      return {allow:true,confirmChecklist:false,outstanding:data.outstanding};
+      return {allow:true,outstanding:data.outstanding};
     }catch(error){c.toast(error.message,'error');return {allow:false};}
   }
   return {onLoad,resetSession,mountCheckout,mountOrder,checkBeforeAdvance,showBriefing};

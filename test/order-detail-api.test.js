@@ -38,7 +38,7 @@ test("deadline semua status dibatasi Owner/Kasir dan pickup belum lunas memerluk
       assert.ok(response.status >= 200 && response.status < 300, JSON.stringify(response.body));
       return response.body;
     };
-    const order = await ok("/api/orders", "POST", { customerName: "Deadline Test", items: [{ productId: "poster-albatros", width: 0.9, length: 1, quantity: 1, finishing: [] }] });
+    const order = await ok("/api/orders", "POST", { customerName: "Deadline Test", phone: "081234567890", items: [{ productId: "poster-albatros", width: 0.9, length: 1, quantity: 1, finishing: [] }] });
     for (const [role, username] of [["CASHIER", "kasir-deadline"], ["ADMIN", "admin-deadline"], ["PRINT", "print-deadline"]]) {
       await ok("/api/users", "POST", { name: username, username, pin: "5678", role });
     }

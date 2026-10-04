@@ -34,3 +34,14 @@ test('PO bukan kas masuk, catatan lama tanpa tanggal tidak menciptakan penerimaa
 test('filter tanggal dan metode tidak valid ditolak',()=>{
  assert.throws(()=>aggregateReport(data(),owner,{from:'invalid'}),/tanggal/);assert.throws(()=>aggregateReport(data(),owner,{from:'2026-10-02',to:'2026-10-01'}),/tanggal/);assert.throws(()=>aggregateReport(data(),owner,{...period,paymentMethod:'other'}),/Sumber/);
 });
+
+test('nota PO lengkap tanpa HPP, tetap terikat scope dan izin uang', () => {
+ const state=data(); const order=state.orders[0]; order.createdAt='2026-10-01T03:00:00Z';
+ order.payments=[{type:'PO',amount:0,poNumber:'PO-TEST',createdAt:order.createdAt,poAttachment:{type:'image/png',dataUrl:'data:image/png;base64,abc'}}];
+ order.items[0].materials=[{cost:999}];order.items[0].baseCost=999;order.items[0].fileService={id:'DESIGN_A',name:'Biaya Design A',price:25000,quantity:2,note:'Dua logo'};
+ const result=aggregateReport(state,owner,period);assert.equal(result.purchaseOrders.length,1);
+ const row=result.purchaseOrders[0];assert.equal(row.nota.code,order.code);assert.equal(row.nota.total,100000);
+ assert.equal(row.nota.items[0].fileService.note,'Dua logo');assert.ok(!('materials' in row.nota.items[0]));assert.ok(!('baseCost' in row.nota.items[0]));
+ assert.deepEqual(aggregateReport(state,{role:'WAREHOUSE'},period).purchaseOrders,[]);
+ assert.deepEqual(aggregateReport(state,{role:'OWNER',id:'other',name:'Other User',reportScope:'own'},period).purchaseOrders,[]);
+});

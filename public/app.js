@@ -1,3 +1,5 @@
+import { requiredPhone } from "./customer-validation.js";
+import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
 import { createOrderAssistance, briefingProfileOptions } from "./order-assistance-ui.js";
 import { needsFile, unconfirmedDraft } from "./order-rules.js";
@@ -309,8 +311,11 @@ function flatCatalogHtml(products, category) {
     <div class="atk-list">${visible.length ? `<div class="atk-list-head"><span>Produk</span><span>Harga</span><span>Jumlah</span></div>${rows}` : '<p class="atk-empty">Produk tidak ditemukan. Coba kata lain atau pilih Semua.</p>'}</div>`;
 }
 
-function fileServicesHtml() {
-  return `<div class="file-service-grid">${fileServices.map((service, index) => `<div class="file-service-option"><div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${index === 0 ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name}</strong><small>${service.price ? rupiah.format(service.price) : "Tanpa biaya"}</small></label></div>${service.price ? `<div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="1" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row hidden" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div>` : ""}</div>`).join("")}</div>`;
+function fileServicesHtml(product) {
+  const saved = state.cart.find(line => line.productId === product.id && line.fileServicePrice > 0);
+  const selected = saved?.fileServiceId || "DESIGN_A";
+  return `<section class="design-service"><label class="design-toggle"><input id="design-enabled" type="checkbox" role="switch" aria-controls="design-options" aria-expanded="${Boolean(saved)}" ${saved ? "checked" : ""}><span class="design-switch" aria-hidden="true"></span><strong>Biaya Design</strong></label>
+    <div id="design-options" class="file-service-grid ${saved ? "" : "hidden"}">${fileServices.filter(service => service.price > 0).map(service => `<div class="file-service-option"><div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${service.id === selected ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name}</strong><small>${rupiah.format(service.price)}</small></label></div><div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="${service.id === selected ? saved?.fileServiceQuantity || 1 : 1}" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row ${service.id === selected && saved?.fileServiceNote ? "" : "hidden"}" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" value="${escapeHtml(service.id === selected ? saved?.fileServiceNote || "" : "")}" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div></div>`).join("")}</div></section>`;
 }
 
 function templateOptionsHtml(product) {
@@ -347,13 +352,13 @@ function productConfigurationHtml(product, popup = false) {
     : `<div class="form-grid three"><div class="field full"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div>
       <label class="field"><span>Panjang aktual</span><span class="input-with-unit"><input id="length" type="number" min="0.1" step="0.1" value="1"><b>m</b></span></label>${hasMaterialChoice ? "" : `<label class="field"><span>Jumlah produk</span><span class="input-with-unit"><input id="quantity" type="number" min="1" step="1" value="1"><b>Lbr</b></span></label>`}<div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>`;
   const measurementTitle = product.templateProduct ? "Pilihan varian" : "Ukuran & jumlah";
-  const fileSection = product.templateProduct || product.a3Kind === "ready" ? "" : `<hr class="divider"><p class="section-label">${popup ? "File" : "3 · File"}</p>${fileServicesHtml()}`;
-  const finishStep = product.templateProduct || product.a3Kind === "ready" ? 3 : 4;
-  const noteStep = finishStep + 1;
+  const fileSection = product.templateProduct || product.a3Kind === "ready" ? "" : `<hr class="divider">${fileServicesHtml(product)}`;
+  const finishStep = 3;
+  const noteStep = 4;
   return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${measurement}${materialVariantOptionsHtml(product)}${subVariantOptionsHtml(product)}${hasMaterialChoice ? isUnit ? unitQuantity : areaQuantity : ""}${choiceGroupsHtml(product)}
     <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
-    ${fileSection}
     <hr class="divider"><p class="section-label">${popup ? "Finishing" : `${finishStep} · Finishing`}</p><div class="finishing-grid" id="finishing-grid">${finishingHtml(product)}</div>
+    ${fileSection}
     <hr class="divider"><label class="field"><span class="section-label">${popup ? "Catatan" : `${noteStep} · Catatan`}</span><textarea id="production-note" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label>
     <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary">+ Tambah ke Pesanan</button></div>`;
 }
@@ -415,7 +420,7 @@ function checkoutHtml() {
   const total = state.cart.reduce((sum, item) => sum + item.previewTotal, 0);
   return `<div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><form id="checkout" class="order-form"><div class="form-grid">
     <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
-    <label class="field"><span>No. WhatsApp</span><input name="phone" value="${escapeHtml(state.draft.phone)}"></label>
+    <label class="field"><span>No. WhatsApp *</span><input name="phone" type="tel" autocomplete="tel" inputmode="tel" required value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
   </div><div class="checkout-actions"><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft Pesanan"}</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></form>`;
 }
@@ -449,7 +454,7 @@ function readCurrentLine() {
   const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : Number(document.querySelector("#length")?.value || 1);
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity, fixedVariant, materialVariant, combination);
-  const fileService = product.templateProduct ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
+  const fileService = product.templateProduct || !document.querySelector("#design-enabled")?.checked ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
   const fileServiceQuantity = fileService.price ? Math.max(1, Math.floor(Number(document.querySelector(`[data-design-qty="${fileService.id}"]`)?.value || 1))) : 1;
   const fileServiceNote = fileService.price ? document.querySelector(`[data-design-note="${fileService.id}"]`)?.value.trim() || "" : "";
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
@@ -662,9 +667,13 @@ function bindProductConfiguration(onAdd) {
     input.value = Number(input.value || 0) + 1; updatePreview();
   });
   const syncDesignControls = () => {
+    const toggle = document.querySelector("#design-enabled");
+    const active = Boolean(toggle?.checked);
+    toggle?.setAttribute("aria-expanded", String(active));
+    document.querySelector("#design-options")?.classList.toggle("hidden", !active);
     const selected = document.querySelector('input[name="file-service"]:checked')?.value;
     if (!selected) return;
-    document.querySelectorAll("[data-design-controls]").forEach((control) => control.classList.toggle("hidden", control.dataset.designControls !== selected));
+    document.querySelectorAll("[data-design-controls]").forEach((control) => control.classList.toggle("hidden", !active || control.dataset.designControls !== selected));
     updatePreview();
   };
   document.querySelectorAll('input[name="file-service"]').forEach((input) => input.addEventListener("change", syncDesignControls));
@@ -682,6 +691,7 @@ function bindProductConfiguration(onAdd) {
     const row = document.querySelector(`[data-design-note-row="${button.dataset.designNoteToggle}"]`);
     row.classList.toggle("hidden"); if (!row.classList.contains("hidden")) row.querySelector("input").focus();
   });
+  document.querySelector("#design-enabled")?.addEventListener("change", syncDesignControls);
   syncDesignControls();
   document.querySelector("#add-item")?.addEventListener("click", () => onAdd(readCurrentLine()));
 }
@@ -841,6 +851,7 @@ function bindPos() {
   async function savePosOrder(openPayment = false) {
     syncDraft(checkout);
     try {
+      state.draft.phone = requiredPhone(state.draft.phone);
       const payload = { ...state.draft, confirmed: openPayment, items: state.cart };
       const order = state.editingOrderId
         ? await api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
@@ -1104,12 +1115,11 @@ function openOrder(id, showPayment = false) {
       dialog.close(); await load(); toast("PIC Operator Design disimpan");
     } catch (error) { toast(error.message, "error"); }
   });
-  let confirmChecklist = false;
   const advance = async (confirmUnpaid = false) => {
     const button = detail.querySelector("#advance-order"); button.disabled = true;
     try {
       const sequence = ["MENUNGGU_PEMBAYARAN", "DESAIN", "CETAK", "FINISHING", "SELESAI", "DIAMBIL"];
-      await api(`/api/orders/${order.id}/status`, { method: "PATCH", body: JSON.stringify({ status: sequence[sequence.indexOf(order.status) + 1], confirmUnpaid, confirmChecklist, actor: order.designPic || "Tim Produksi" }) });
+      await api(`/api/orders/${order.id}/status`, { method: "PATCH", body: JSON.stringify({ status: sequence[sequence.indexOf(order.status) + 1], confirmUnpaid, actor: order.designPic || "Tim Produksi" }) });
       dialog.close(); await load(); toast("Status pesanan diperbarui");
     } catch (error) {
       if (error.code === "UNPAID_PICKUP_CONFIRMATION" && !confirmUnpaid) { if (await confirmUnpaidPickup(order)) await advance(true); }
@@ -1120,7 +1130,7 @@ function openOrder(id, showPayment = false) {
     const button = event.currentTarget; if (button.disabled) return; button.disabled = true;
     try {
       const checked = await assistance.checkBeforeAdvance(order.id);
-      if (!checked.allow) return; confirmChecklist = checked.confirmChecklist;
+      if (!checked.allow) return;
       if (checked.outstanding != null) order.outstanding = checked.outstanding;
       if (order.status === "SELESAI" && showMoney && (checked.outstanding ?? Math.max(0, order.total - Number(order.paidAmount || 0))) > 0) { if (await confirmUnpaidPickup(order)) await advance(true); }
       else await advance();
@@ -1283,6 +1293,10 @@ function drawReports() {
   document.querySelector("#apply-report").onclick = () => { state.reportFilters = { from: document.querySelector("#report-from").value, to: document.querySelector("#report-to").value, category: document.querySelector("#report-category").value, machineId: document.querySelector("#report-machine").value, paymentStatus: document.querySelector("#report-payment").value, paymentMethod: document.querySelector("#report-method")?.value || "" }; state.reportPeriod = "custom"; renderReports(); };
   document.querySelector("#report-export")?.addEventListener("click", () => state.reportTab === "assets" ? document.querySelector("[data-asset-report-export]")?.click() : exportReportCsv());
   document.querySelector("#report-print")?.addEventListener("click", () => state.reportTab === "assets" ? document.querySelector("[data-asset-report-print]")?.click() : printReport());
+  root.querySelectorAll("[data-po-open]").forEach(button => button.onclick = () => openPurchaseOrder({
+    row: report.purchaseOrders[Number(button.dataset.poOpen)], dialog, escapeHtml,
+    canDownload: capabilities.export, toast
+  }));
   bindReportSorting();
 }
 
@@ -1297,7 +1311,7 @@ function reportSalesTable(report) {
 }
 
 function purchaseOrderReport(rows) {
-  return `<section class="panel report-ranking po-report"><div class="panel-head"><div><h2>Dokumen Pembayaran PO</h2><span>${rows.length} surat PO pada periode</span></div></div><div class="po-report-grid">${rows.length ? rows.map((row) => `<article><div class="po-report-image">${row.attachment?.dataUrl ? `<img src="${escapeHtml(row.attachment.dataUrl)}" alt="PO ${escapeHtml(row.poNumber)}">` : '<span>Dokumen<br>belum diunggah</span>'}</div><div><strong>${escapeHtml(row.poNumber)}</strong><p>${escapeHtml(row.customer)} · ${escapeHtml(row.code)}</p><small>${dateFormat.format(new Date(row.createdAt))}${row.attachment?.name ? ` · ${escapeHtml(row.attachment.name)}` : ""}</small></div></article>`).join("") : '<div class="cart-empty">Belum ada pembayaran PO pada periode ini.</div>'}</div></section>`;
+  return `<section class="panel report-ranking po-report"><div class="panel-head"><div><h2>Dokumen Pembayaran PO</h2><span>${rows.length} surat PO pada periode</span></div></div><div class="po-report-grid">${rows.length ? rows.map((row, index) => `<article><button type="button" class="po-report-image" data-po-open="${index}" aria-label="Buka dokumen PO ${escapeHtml(row.poNumber)}">${row.attachment?.dataUrl ? `<img src="${escapeHtml(row.attachment.dataUrl)}" alt="PO ${escapeHtml(row.poNumber)}">` : '<span>Dokumen<br>belum diunggah</span>'}</button><div><strong>${escapeHtml(row.poNumber)}</strong><p>${escapeHtml(row.customer)} · ${escapeHtml(row.code)}</p><small>${dateFormat.format(new Date(row.createdAt))}${row.attachment?.name ? ` · ${escapeHtml(row.attachment.name)}` : ""}</small></div></article>`).join("") : '<div class="cart-empty">Belum ada pembayaran PO pada periode ini.</div>'}</div></section>`;
 }
 
 function bindReportSorting() { document.querySelectorAll("[data-report-sort]").forEach((button) => button.onclick = () => { const key = button.dataset.reportSort; state.reportSort = { key, direction: state.reportSort.key === key && state.reportSort.direction === "desc" ? "asc" : "desc" }; drawReports(); }); }

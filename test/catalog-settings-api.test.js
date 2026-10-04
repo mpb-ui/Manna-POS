@@ -65,7 +65,7 @@ test("pengaturan kategori dan PIC menjaga relasi dan akses API", async () => {
     assert.equal(state.inventory.find((item) => item.materialId === material.id).category, "Lainnya");
     const pic = await ok("/api/pics", "POST", { name: "PIC Mandiri Uji" });
     assert.ok(!state.users.some((user) => user.name === pic.name));
-    const order = await ok("/api/orders", "POST", { customerName: "Tes PIC", items: [{ productId: direct.id, quantity: 25, finishing: [] }] });
+    const order = await ok("/api/orders", "POST", { customerName: "Tes PIC", phone: "081234567890", items: [{ productId: direct.id, quantity: 25, finishing: [] }] });
     assert.equal(order.items[0].quantity, 25);
     await ok(`/api/orders/${order.id}/payments`, "POST", { method: "Tunai", amount: order.total });
     const assigned = await ok(`/api/orders/${order.id}/design-pic`, "PATCH", { designPic: pic.name });

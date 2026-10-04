@@ -18,15 +18,21 @@ Urutan: deadline sudah lewat, deadline hari ini, lalu pekerjaan lain. Dalam seti
 
 Draft yang disimpan tanpa konfirmasi dipisahkan dari tagihan aktif; tombol Pembayaran mengonfirmasi invoice, dan pencatatan pembayaran juga mengonfirmasinya. Pesanan batal tidak masuk briefing. Pesanan Diambil yang masih memiliki sisa pembayaran tetap muncul bagi profil penagihan/seluruh outstanding. Data lama memakai penanda konfirmasi yang tersedia; tidak dibuatkan pembayaran baru.
 
-## Kelengkapan, tertahan, dan checklist
+## Biaya design dan penanda tertahan
 
-Deadline dan kesiapan file bersifat opsional dan tidak memunculkan warning kelengkapan. Pemeriksaan POS hanya mencakup spesifikasi produk yang memang dibutuhkan, seperti ukuran dan jumlah. Project Management tidak menampilkan badge jumlah detail yang perlu dicek; Detail Pesanan tidak memiliki section Kelengkapan. Pilihan layanan File Siap Cetak/Biaya Design tetap mengatur harga; kesiapan file merupakan konfirmasi operasional opsional tersendiri pada POS. Data lama tanpa konfirmasi memakai **Belum dikonfirmasi**.
+Deadline tetap opsional. POS tidak menampilkan Kesiapan file atau Kelengkapan; Detail Pesanan juga tidak menampilkan Kelengkapan. Layanan File kini menjadi toggle **Biaya Design** di bawah Finishing, nonaktif untuk item baru. Toggle aktif membuka empat pilihan A–D (Rp25.000/Rp35.000/Rp50.000/Rp80.000) beserta quantity bulat dan catatan; toggle nonaktif mengeluarkan biaya dari estimasi dan payload item. Draft dengan biaya design tetap mempertahankan pilihan, quantity, dan catatan. Produk Template dan Produk Jadi mempertahankan alur biaya khusus yang sudah ada.
+
+Nama pelanggan dan No. WhatsApp wajib saat membuat pesanan/menyimpan draft/mengedit draft, divalidasi pada POS dan server. Nomor 8–15 digit dengan prefix 08 atau kode negara (misalnya +62) diterima; spasi/tanda pemisah tetap boleh. Pesanan lama tanpa nomor tetap dapat diproses lewat status, pembayaran, dan pengubahan deadline tanpa migrasi wajib.
 
 Penanda tertahan menyimpan alasan, catatan, waktu mulai, dan pelaku tanpa mengganti status produksi. Perubahan masuk riwayat. Status produksi tidak dapat dilanjutkan selama penanda belum dilepas. Pengguna dengan akses edit pesanan, penugasan, atau status dapat mengelola penanda dan kesiapan file sesuai visibilitas pesanan.
 
 List Project Management memakai baris ringkas dengan dua baris informasi utama, font yang tetap terbaca, dan spesifikasi panjang pada tooltip/Detail Pesanan. Nomor WA tetap bold dan jumlah item tambahan tetap bold biru. Pesanan tertahan tetap memiliki badge alasan; Menunggu approval customer ditampilkan sebagai **Menunggu Approval**. Akun yang hanya memiliki akses Order tidak melihat bar tab kategori; akun yang dapat melihat Menunggu Pembayaran tetap memiliki kedua tab. Filter status, PIC, deadline, search, List/Kanban, dan expand/collapse kelompok tetap tersedia.
 
-Checklist tersimpan per baris produk, mengikuti konfigurasi dan finishing yang benar-benar dipilih, termasuk jumlah kelompok finishing. Akun dengan `projects.status` dapat mencentang. Sebelum pindah tahap, UI mengingatkan checklist tahap saat ini yang belum lengkap; pengguna dapat melanjutkan dengan konfirmasi yang dicatat di riwayat. Pemeriksaan ini membantu pekerjaan tanpa mengubah aturan perpindahan status pada API lama. Edit isi draft menyusun ulang checklist; riwayat perubahan tetap disimpan.
+Checklist produksi dan popup konfirmasi checklist tidak ditampilkan atau digunakan saat pindah tahap. Data checklist lama tidak dihapus; endpoint lama tetap tersedia demi kompatibilitas. Penanda tertahan, pengingat pembayaran belum lunas, riwayat, stok, dan otorisasi perpindahan status tetap berlaku.
+
+## Dokumen pembayaran PO
+
+Thumbnail pada Laporan Pembayaran membuka gambar penuh. Akun dengan izin export dapat mengunduh gambar asli dan satu PDF berisi nota POS lengkap lalu lampiran PO di halaman terpisah. JPG/PNG/WebP didukung; WebP dikonversi hanya untuk penyisipan PDF, gambar asli tetap sama. Nota panjang berlanjut ke halaman berikutnya. Tanpa gambar, PDF nota tetap tersedia. Data nota mengikuti scope laporan dan izin nominal serta hanya mencakup field pelanggan/penjualan, tanpa HPP atau pemakaian bahan. PO bernilai nol tidak menciptakan kas masuk atau dianggap lunas; PDF menampilkan total, pembayaran aktual, dan sisa.
 
 ## Repeat order dan stok
 

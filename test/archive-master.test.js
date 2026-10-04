@@ -40,13 +40,13 @@ test("hapus master mengamankan relasi stok, pesanan, mesin, finishing, dan akses
     };
     const initial = await ok("/api/bootstrap");
     const direct = initial.products.find((item) => item.category === "ATK" && item.retailAtK);
-    const order = await ok("/api/orders", "POST", { customerName: "Uji Riwayat", items: [{ productId: direct.id, quantity: 1, finishing: [] }] });
+    const order = await ok("/api/orders", "POST", { phone: "081234567890", customerName: "Uji Riwayat", items: [{ productId: direct.id, quantity: 1, finishing: [] }] });
     await ok(`/api/products/${direct.id}`, "DELETE");
     let bootstrap = await ok("/api/bootstrap");
     assert.ok(!bootstrap.products.some((item) => item.id === direct.id));
     assert.ok(!bootstrap.allProducts.some((item) => item.id === direct.id));
     assert.ok(bootstrap.orders.some((item) => item.id === order.id && item.items[0].productId === direct.id));
-    assert.equal((await request("/api/orders", "POST", { customerName: "Ditolak", items: [{ productId: direct.id, quantity: 1 }] })).status, 400);
+    assert.equal((await request("/api/orders", "POST", { phone: "081234567890", customerName: "Ditolak", items: [{ productId: direct.id, quantity: 1 }] })).status, 400);
     assert.equal((await request(`/api/products/${direct.id}`, "PUT", direct)).status, 400);
 
     const material = await ok("/api/materials", "POST", { sku: "TEST-ARCHIVE-MAT", name: "Bahan Arsip Uji", unit: "pcs", stock: 3 });

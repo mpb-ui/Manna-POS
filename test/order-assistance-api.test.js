@@ -20,7 +20,7 @@ test("akses Manager, briefing lintas sesi, hold, file, checklist, dan repeat ter
     assert.equal((await request("/api/users","POST",{name:"bad",username:"bad",pin:"5678",role:"OWNER"},manager)).status,403);
     assert.equal((await request("/api/employees","GET",undefined,manager)).status,403);
     assert.equal((await request("/api/assets","GET",undefined,manager)).status,403);
-    const draft=await ok("/api/orders","POST",{customerName:"Draft Only",items:[{productId:"poster-albatros",width:.9,length:1,quantity:1,finishing:[]}]},manager);
+    const draft=await ok("/api/orders","POST",{customerName:"Draft Only", phone: "081234567890",items:[{productId:"poster-albatros",width:.9,length:1,quantity:1,finishing:[]}]},manager);
     const active=await ok("/api/orders","POST",{customerName:"Active Invoice",phone:"08123456789",confirmed:true,deadline:"2026-10-04T17:00:00+08:00",items:[{productId:"a3-ready-kartu-nama-ap260-2s",quantity:2,finishing:[{id:"fin-a3-card-lam-2",units:1}]}]},manager);
     let briefing=await ok("/api/briefing",undefined,undefined,manager);assert.equal(briefing.draftCount,1);assert.ok(!briefing.orders.some(o=>o.id===draft.id));assert.ok(briefing.orders.some(o=>o.id===active.id));
     const opened=await ok("/api/briefing/open","POST",{},manager);assert.equal(opened.show,true);assert.equal((await ok("/api/briefing/open","POST",{},await login("manager"))).show,false);
@@ -44,8 +44,8 @@ test("akses Manager, briefing lintas sesi, hold, file, checklist, dan repeat ter
     assert.equal((await request(`/api/orders/${active.id}/checklist`,"PATCH",{index:0,key:"finish:fin-a3-card-rounded:1",done:true},manager)).status,400);
     assert.equal((await request(`/api/orders/${active.id}/checklist`,"PATCH",{index:0,key:"file",done:false},await login("cashier"))).status,403);
     await ok(`/api/orders/${active.id}/deadline`,"PATCH",{deadline:"2026-10-05T17:00:00+08:00"},manager);
-    await ok(`/api/orders/${active.id}/status`,"PATCH",{status:"CETAK",confirmChecklist:true},manager);
-    const response=await ok(`/api/orders/${active.id}/status`,"PATCH",{status:"FINISHING",confirmChecklist:true},printer);assert.ok(!("total" in response));assert.equal(response.status,"FINISHING");
+    await ok(`/api/orders/${active.id}/status`,"PATCH",{status:"CETAK"},manager);
+    const response=await ok(`/api/orders/${active.id}/status`,"PATCH",{status:"FINISHING"},printer);assert.ok(!("total" in response));assert.equal(response.status,"FINISHING");
     briefing=await ok("/api/briefing",undefined,undefined,finishing);assert.equal(briefing.count,1);assert.ok(!("outstanding" in briefing.orders[0]));
     const repeat=await ok(`/api/orders/${active.id}/repeat`,"POST",{},manager);assert.equal(repeat.canRepeat,true);assert.ok(repeat.stock);assert.equal(repeat.inputs[0].finishing[0].id,"fin-a3-card-lam-2");assert.equal(repeat.inputs[0].fileServiceId,"READY");assert.equal(repeat.paidAmount,undefined);
     assert.equal((await request(`/api/orders/${active.id}/repeat`,"POST",{},printer)).status,403);
