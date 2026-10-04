@@ -369,9 +369,9 @@ body{font-size:15.5px}
 .file-design-controls .finish-note-row { margin-top: 8px; }
 
 /* Project list readability: status filters and collapsible groups remain separate. */
-.project-status-filter-section { border-bottom: 1px solid var(--line); padding: 12px 14px; }
-.project-status-filter-label { color: #475569; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
-.project-status-filter-section .project-status-filters { padding: 0; border-bottom: 0; }
+.project-status-filter-section { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.project-status-filter-label { flex-shrink: 0; color: #475569; font-size: 13px; font-weight: 700; margin: 0; }
+.project-status-filter-section .project-status-filters { flex: 1; min-width: 0; padding: 0; border-bottom: 0; }
 .project-status-filters button { color: #475569; }
 .project-order-row td > small { color: #475569; font-size: 14px; line-height: 1.45; max-width: 340px; }
 .project-phone { font-weight: 700; }
@@ -381,6 +381,24 @@ body{font-size:15.5px}
 .project-group-row button { border-left-width: 5px !important; }
 .project-group-row .project-overdue-summary { display: inline-flex; align-items: center; gap: 6px; }
 .project-overdue-summary svg { flex-shrink: 0; }
+
+/* Compact rows preserve readable fonts and the held-order marker. */
+.project-single-category{margin-top:16px}
+.project-toolbar{padding:9px 12px}.project-table{table-layout:fixed}
+.project-table th:first-child{width:35%}.project-table th:nth-child(3){width:145px}.project-table th:nth-child(4){width:125px}.project-table th:last-child{width:76px}
+.project-table.waiting-table th:nth-child(3){width:155px}.project-table.waiting-table th:last-child{width:76px}
+.project-table th{padding:9px 12px}.project-table td{padding:8px 12px}
+.project-order-row td>small{margin-top:2px;max-width:none;line-height:1.4}
+.project-order-heading{display:flex;align-items:center;gap:8px;min-width:0}
+.project-order-heading>strong{min-width:0;flex:1;font-size:15.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-order-identity>small{overflow:hidden;text-overflow:ellipsis}
+.project-order-heading .assist-order-signifier{flex:0 1 auto;display:inline-block;margin:0;padding:2px 6px;border-radius:5px;background:#fff6e5;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4}
+.project-order-heading .assist-order-signifier.ready{background:var(--blue-soft)}
+.project-product-cell>strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.project-order-row td>.project-product-summary{display:flex;align-items:center;gap:6px;min-width:0}
+.project-product-summary>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.project-product-summary>.project-extra-items{flex-shrink:0;margin:0;white-space:nowrap}
+.project-pic-select{min-width:0;max-width:100%;width:100%;height:34px}.project-detail-button{padding:7px 10px}
+.project-group-row button{padding:8px 12px}.project-list-footer{padding:9px 12px}
 
 /* Detail content scrolls independently while actions stay visible. */
 #order-detail:has(> .detail-actions) { display: flex; flex-direction: column; max-height: 90vh; overflow: hidden; }

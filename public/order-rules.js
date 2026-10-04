@@ -20,21 +20,14 @@ export function needsFile(item, product = {}) {
 }
 export function completeness(order, products = []) {
   const issues = [], items = order.items || [];
-  let production = false, files = false;
   items.forEach((item, index) => {
     const product = products.find(p => p.id === item.productId) || {};
     if (!needsProduction(item, product)) return;
-    production = true; files ||= needsFile(item, product);
     if ((item.priceBasis || product.priceBasis) !== "unit" && !item.sizeVariantId && (!(Number(item.width) > 0) || !(Number(item.actualLength ?? item.length) > 0))) {
       issues.push({ key: `size-${index}`, label: `Ukuran belum diisi: ${item.productName || product.name || "produk"}`, type: "specification" });
     }
     if (!(Number(item.quantity) > 0)) issues.push({ key: `quantity-${index}`, label: "Jumlah produk belum diisi", type: "specification" });
   });
-  if (files && order.fileReadiness !== "READY") {
-    const label = { MISSING: "File desain belum ada", RECEIVED: "File belum diperiksa" }[order.fileReadiness] || "File belum dikonfirmasi";
-    issues.push({ key: "file", label, type: "file" });
-  }
-  if (production && !order.deadline) issues.push({ key: "deadline", label: "Deadline belum ditentukan", type: "deadline" });
   return issues;
 }
 export function itemChecklist(item, product = {}) {

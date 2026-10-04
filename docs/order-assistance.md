@@ -20,9 +20,11 @@ Draft yang disimpan tanpa konfirmasi dipisahkan dari tagihan aktif; tombol Pemba
 
 ## Kelengkapan, tertahan, dan checklist
 
-Kelengkapan memeriksa ukuran yang memang dibutuhkan, kesiapan file, dan deadline. ATK, Akrilik, dan Stempel yang dijual langsung tidak diminta file/deadline. Pilihan layanan File Siap Cetak/Biaya Design tetap mengatur harga; kesiapan file merupakan konfirmasi operasional tersendiri. Data lama tanpa konfirmasi memakai **Belum dikonfirmasi**.
+Deadline dan kesiapan file bersifat opsional dan tidak memunculkan warning kelengkapan. Pemeriksaan POS hanya mencakup spesifikasi produk yang memang dibutuhkan, seperti ukuran dan jumlah. Project Management tidak menampilkan badge jumlah detail yang perlu dicek; Detail Pesanan tidak memiliki section Kelengkapan. Pilihan layanan File Siap Cetak/Biaya Design tetap mengatur harga; kesiapan file merupakan konfirmasi operasional opsional tersendiri pada POS. Data lama tanpa konfirmasi memakai **Belum dikonfirmasi**.
 
 Penanda tertahan menyimpan alasan, catatan, waktu mulai, dan pelaku tanpa mengganti status produksi. Perubahan masuk riwayat. Status produksi tidak dapat dilanjutkan selama penanda belum dilepas. Pengguna dengan akses edit pesanan, penugasan, atau status dapat mengelola penanda dan kesiapan file sesuai visibilitas pesanan.
+
+List Project Management memakai baris ringkas dengan dua baris informasi utama, font yang tetap terbaca, dan spesifikasi panjang pada tooltip/Detail Pesanan. Nomor WA tetap bold dan jumlah item tambahan tetap bold biru. Pesanan tertahan tetap memiliki badge alasan; Menunggu approval customer ditampilkan sebagai **Menunggu Approval**. Akun yang hanya memiliki akses Order tidak melihat bar tab kategori; akun yang dapat melihat Menunggu Pembayaran tetap memiliki kedua tab. Filter status, PIC, deadline, search, List/Kanban, dan expand/collapse kelompok tetap tersedia.
 
 Checklist tersimpan per baris produk, mengikuti konfigurasi dan finishing yang benar-benar dipilih, termasuk jumlah kelompok finishing. Akun dengan `projects.status` dapat mencentang. Sebelum pindah tahap, UI mengingatkan checklist tahap saat ini yang belum lengkap; pengguna dapat melanjutkan dengan konfirmasi yang dicatat di riwayat. Pemeriksaan ini membantu pekerjaan tanpa mengubah aturan perpindahan status pada API lama. Edit isi draft menyusun ulang checklist; riwayat perubahan tetap disimpan.
 

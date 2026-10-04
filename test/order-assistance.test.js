@@ -63,13 +63,12 @@ test("briefing otomatis sekali per akun per tanggal WITA; akun kedua dan hari ba
   state.orders=[];assert.equal(claimBriefing(state,"MANAGER",new Date("2026-10-05T16:01:00Z")).show,false);
 });
 
-test("kelengkapan mengikuti produk; ATK tidak perlu file/deadline dan DTF tidak meminta ukuran meter", () => {
+test("deadline dan kesiapan file opsional; pemeriksaan hanya spesifikasi produk yang dibutuhkan", () => {
   const atk={id:"atk",category:"ATK",retailAtK:true,priceBasis:"unit"};
   assert.deepEqual(completeness({items:[{productId:"atk",quantity:1}]},[atk]),[]);
   const dtf={id:"dtf",category:"Sablon DTF",dtfShirt:true,priceBasis:"unit"};
   const issues=completeness({items:[{productId:"dtf",quantity:1}],fileReadiness:"MISSING"},[dtf]);
-  assert.deepEqual(issues.map(i=>i.key),["file","deadline"]);
-  assert.equal(issues[0].label,"File desain belum ada");
+  assert.deepEqual(issues,[]);
   const print={id:"print",category:"Outdoor",priceBasis:"sqm"};
   const size=completeness({items:[{productId:"print",quantity:1,width:1,length:0}],fileReadiness:"READY",deadline:at.toISOString()},[print]);
   assert.equal(size[0].type,"specification");
