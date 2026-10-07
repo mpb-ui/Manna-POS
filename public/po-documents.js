@@ -69,6 +69,7 @@ export async function buildPurchaseOrderPdf(lib, row, imageData) {
   for (const [index, item] of order.items.entries()) {
     line(`${index + 1}. ${item.productName}`, { font: bold, size: 12 });
     line(item.displaySize || `${item.quantity} unit`, { color: muted });
+    if (item.imageWidthCm > 0 && item.imageLengthCm > 0) line(`Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm`, { color: muted });
     if (item.templateDesign) {
       line(`Harga spanduk: ${money.format(item.baseTotal)}`);
       line(`Design Template ${item.templateDesign}: ${money.format(item.templateDesignTotal || 35000)}`);

@@ -41,7 +41,7 @@ test("varian A1 memakai harga tetap dan hanya quantity", () => {
   const albatros = PRODUCTS.find((item) => item.id === "poster-albatros");
   const line = calculateLine(albatros, { sizeVariantId: "a1", quantity: 2, fileServiceId: "READY", finishing: [] });
   assert.equal(line.baseTotal, 200000);
-  assert.equal(line.displaySize, "A1 · 2 Lbr");
+  assert.equal(line.displaySize, "A1 · 2 Lembar");
   assert.equal(line.stockConsumption, 1);
 });
 
@@ -50,7 +50,7 @@ test("Backlite Film memakai satu produk dengan empat varian ukuran", () => {
   assert.deepEqual(backlite.fixedSizeVariants.map((item) => item.label), ["A4", "A3", "A2", "A1"]);
   const line = calculateLine(backlite, { sizeVariantId: "a2", quantity: 3, fileServiceId: "READY", finishing: [] });
   assert.equal(line.baseTotal, 450000);
-  assert.equal(line.displaySize, "A2 · 3 Lbr");
+  assert.equal(line.displaySize, "A2 · 3 Lembar");
 });
 
 test("Display & Banner memakai tujuh produk induk dengan varian harga tetap", () => {

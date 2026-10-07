@@ -440,3 +440,90 @@ body{font-size:15.5px}
 .po-document-full{display:block;width:100%;height:auto;object-fit:contain}
 .po-document-actions{position:sticky;bottom:0;background:#fff;padding:14px 20px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--line)}
 @media(max-width:620px){.po-document-actions{flex-wrap:wrap}.po-document-actions button{flex:1}}
+
+/* Compact POS: catalog stays quiet while the centered modal has focus. */
+.view-grid{grid-template-columns:minmax(0,62fr) minmax(360px,38fr)}
+.view-grid .product-grid,.view-grid .catalog-grid{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.view-grid .choice-card label{min-height:70px;padding:10px}
+.view-grid .choice-card strong{font-size:13px;line-height:1.35}
+.view-grid .choice-card small{font-size:12px;line-height:1.4}
+.view-grid .catalog-card{min-height:80px;padding:10px}
+.view-grid .catalog-card-title{align-items:flex-start;flex-direction:column;gap:4px}
+.view-grid .catalog-card-title>strong{font-size:13px;white-space:normal;line-height:1.35}
+.view-grid .catalog-card-title>span{font-size:10px}
+.view-grid .catalog-price>strong,.view-grid .catalog-price>small{font-size:12px}
+.sticky-summary{background:#fbfaf8;overflow:hidden}
+.sticky-summary>.panel-head{background:#123759;color:#fff;padding:17px}
+.sticky-summary>.panel-head h2{font-size:18px}
+.sticky-summary>.panel-head>span{font-weight:700}
+.sticky-summary .cart-item{background:white;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px}
+.sticky-summary .cart-item>div{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
+.sticky-summary .cart-item h4{grid-column:1;grid-row:1;font-size:14px;margin:0}
+.sticky-summary .cart-item>div>strong{grid-column:2;grid-row:1;font-size:14px}
+.sticky-summary .cart-item p,.sticky-summary .cart-price-parts{grid-column:1/-1;margin:0;font-size:12px;line-height:1.5}
+.sticky-summary .cart-item>button{align-self:end;font-size:12px}
+.sticky-summary .summary-row.total{background:#e9f3ff;color:var(--blue);border:0;border-radius:10px;padding:15px 12px;margin-top:16px;font-size:23px}
+.sticky-summary .order-form .form-grid{grid-template-columns:1fr}
+.image-size-note{color:#264e79!important;font-weight:600}
+@keyframes cart-total-blink{0%,100%{background:#e9f3ff;box-shadow:none}40%{background:#c6e1ff;box-shadow:0 0 0 3px rgba(23,105,234,.17)}}
+.summary-row.total.total-added{animation:cart-total-blink .55s ease-out}
+.configurator-dialog{width:min(840px,95vw);max-height:90dvh;overflow:auto;margin:auto}
+.configurator-dialog::backdrop{background:rgba(15,25,41,.58);backdrop-filter:blur(2px)}
+.configurator-dialog .configurator-head{position:sticky;top:0;z-index:3;background:#fff;padding:18px 22px;align-items:flex-start}
+.configurator-head h2{font-size:22px;margin:4px 0}
+.configurator-head p{font-size:13px}
+.configurator-dialog .configurator-body{padding:18px 22px 0}
+.configurator-body .section-label{font-size:12px;margin-bottom:12px}
+.configurator-body .field>span,.quantity-field>span{font-size:13px;font-weight:600;color:#47566d}
+.image-measurements{display:grid;gap:14px}
+.measurement-row{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap}
+.measurement-row>.field:first-child{width:180px;flex:0 0 180px}
+.measurement-row>.field:last-child{min-width:180px;max-width:420px}
+.measurement-row #billed-length{width:180px}
+.measurement-row .chips{gap:6px}
+.measurement-row .chip label{padding:10px 12px;font-size:13px}
+.configurator-body .quantity-field{display:grid;gap:7px;margin-top:14px;max-width:240px}
+.image-measurements .quantity-field{margin-top:0}
+.quantity-control{display:flex;align-items:center;gap:12px}
+.quantity-control>b{font-size:13px;color:#536279;font-weight:600}
+.quantity-control .qty-stepper{grid-template-columns:36px 54px 36px}
+.quantity-control .qty-stepper input{width:54px}
+.quantity-control .qty-stepper input,.quantity-control .qty-stepper button{height:36px;font-size:14px}
+.configurator-body .form-grid.variant-quantity{max-width:240px}
+.configurator-body .variant-choice-group,.configurator-body .material-sub-options{margin-top:16px}
+.finishing-dropdowns{display:grid;gap:10px}
+.finish-dropdown-row{border:1px solid var(--line);padding:9px;border-radius:9px;background:#fff}
+.finish-dropdown-main{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.finish-dropdown-main select{border:1px solid #d9dee7;padding:9px;border-radius:8px;background:white;color:var(--ink);flex:1 1 220px;min-width:0;font-size:13px}
+.finish-dropdown-main small{color:#536279;font-size:12px;min-width:95px}
+.finish-dropdown-main .qty-stepper{grid-template-columns:30px 46px 30px}
+.finish-dropdown-main .qty-stepper input{width:46px}
+.finish-dropdown-main .finish-remove{border:1px solid var(--line);background:white;border-radius:8px;width:32px;height:32px;color:#a93232;font-size:20px}
+.finish-dropdown-main .finish-note-toggle{font-size:12px;padding:8px}
+.add-finishing{margin-top:10px;color:var(--blue);background:#edf5ff;border:1px solid #c6daf8}
+.production-note-details{border:1px solid var(--line);border-radius:9px;margin:14px 0}
+.production-note-details summary{cursor:pointer;padding:12px;color:#536279;font-size:13px;font-weight:600}
+.production-note-details>.field{padding:0 12px 12px}
+.configurator-body .item-action-bar{position:sticky;bottom:0;z-index:2;background:#fff;border-top:1px solid var(--line);margin:18px -22px 0;padding:12px 22px;display:flex;gap:16px;align-items:center;justify-content:space-between}
+.configurator-body .item-action-bar .price-preview{background:none;padding:0;margin:0;display:grid;gap:4px}
+.configurator-body .item-action-bar .price-preview>strong{font-size:22px}
+.configurator-body .item-action-bar .price-preview>div>span{font-size:12px}
+.configurator-body .item-action-bar #formula-text{font-size:11px;max-width:360px;margin:4px 0 0;color:#65748b}
+.configurator-body .item-action-bar #add-item{width:auto;min-width:210px;padding:13px 16px;font-size:14px}
+.configurator-body .design-service{margin-top:14px}
+@media(max-width:1400px){.view-grid .product-grid,.view-grid .catalog-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media(max-width:1150px){.view-grid .product-grid,.view-grid .catalog-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.view-grid{grid-template-columns:minmax(0,1fr) minmax(320px,38%)}}
+@media(max-width:980px){.view-grid{grid-template-columns:1fr}.view-grid .product-grid,.view-grid .catalog-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(max-width:760px){.view-grid .product-grid,.view-grid .catalog-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.configurator-dialog .configurator-head{padding:15px}.configurator-dialog .configurator-body{padding:15px 15px 0}.configurator-body .item-action-bar{margin:18px -15px 0;padding:12px 15px}.configurator-body .item-action-bar #add-item{min-width:0;font-size:12px}.measurement-row{gap:14px}.configurator-head h2{font-size:19px}}
+@media(max-width:480px){.view-grid .product-grid,.view-grid .catalog-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.measurement-row>.field:first-child{width:150px;flex-basis:150px}.measurement-row>.field:last-child{min-width:150px}.measurement-row #billed-length{width:150px}.measurement-row .chip label{padding:8px}.finish-dropdown-main small{min-width:70px}.sticky-summary .summary-row.total{font-size:20px}}
+@media(prefers-reduced-motion:reduce){.summary-row.total.total-added{animation:none;outline:2px solid #a9d1ff}}
+.view-grid>section,.view-grid>aside{min-width:0}
+@media(max-width:980px){.view-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:620px){
+  .app-shell:not(.sidebar-collapsed) .main-content{margin-left:72px}
+  .app-shell:not(.sidebar-collapsed) .brand{padding:2px 5px 16px;justify-content:center}
+  .app-shell:not(.sidebar-collapsed) .brand-full{display:none}
+  .app-shell:not(.sidebar-collapsed) .brand-mark{display:block;width:44px;height:44px;object-fit:contain}
+  .app-shell:not(.sidebar-collapsed) .sidebar-context,.app-shell:not(.sidebar-collapsed) .sidebar-foot,.app-shell:not(.sidebar-collapsed) .nav-item b,.app-shell:not(.sidebar-collapsed) .nav-item em{display:none}
+  .app-shell:not(.sidebar-collapsed) .nav-item{grid-template-columns:1fr;justify-items:center;padding:12px 8px;text-align:center}
+}

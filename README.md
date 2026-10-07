@@ -20,6 +20,10 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Tab kategori POS dapat digulir dengan panah kiri/kanan oleh seluruh user. Admin/Owner dapat menyimpan urutan global lewat ikon pensil.
 - Master Data → Kategori mengelola kategori produk dan bahan. Pengubahan nama mempertahankan identitas konfigurasi khusus; penghapusan wajib memilih kategori pengganti dan memindahkan seluruh relasi produk, finishing, bahan, serta stok. Form Bahan memakai dropdown kategori; daftar Bahan dan Finishing menyediakan filter serta urutan kategori.
 - Master Data → PIC mengelola nama penugasan mandiri, terpisah dari akun User. Perubahan nama memperbarui pesanan berjalan; penghapusan menutup pilihan baru dan mempertahankan penugasan lama. Pengaturan Kategori dan PIC hanya tersedia bagi Admin/Owner.
+- POS compact: katalog bahan lima kolom pada desktop lebar, Ringkasan Pesanan lebih lebar dengan header navy, dan semua konfigurasi produk melalui popup di tengah layar. Overlay meliputi seluruh halaman; klik di luar/Escape menutup popup dan menyimpan input sementara selama sesi. Header dan tombol tambah tetap terlihat saat digulir.
+- Ukuran gambar diinput dalam cm, disimpan per item dan tampil pada keranjang, Detail Pesanan, SPK, tanda terima, serta PDF Nota + PO. Harga dan pemakaian bahan tetap memakai lebar bahan × panjang ditagihkan; pesanan lama tanpa ukuran gambar tetap kompatibel.
+- Finishing dipilih melalui dropdown dengan + Tambah Finishing, quantity, dan catatan. Satu jenis finishing hanya tampil sekali; permintaan finishing identik digabung sebelum menghitung harga grosir.
+- Total menampilkan satu highlight lembut selama 0,55 detik setiap kali produk ditambahkan, termasuk penambahan quantity pada produk jual langsung.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
 - Catatan produksi tersimpan per item/file.
 - Pembulatan panjang tagihan per 50 cm, minimum 1 meter.
