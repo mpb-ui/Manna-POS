@@ -59,7 +59,7 @@ test("migrasi kertas A3+ menambah stok tanpa mengubah pemetaan khusus dan pesana
   assert.equal(first.orders[0].items[0].materials[0].units, 2);
   await store.mutate(() => {});
   const second = await store.read();
-  assert.equal(second.catalogVersion, 15);
+  assert.equal(second.catalogVersion, 16);
   assert.equal(second.materials.filter((item) => newIds.has(item.id)).length, newIds.size);
   assert.equal(second.inventory.filter((item) => newIds.has(item.materialId)).length, newIds.size);
 });

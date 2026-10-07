@@ -42,9 +42,11 @@ test("jumlah dan catatan biaya design tersimpan pada pesanan dan edit draft", as
     const missingPhone = await request("/api/orders", "POST", { customerName: "Tanpa WA", items: [item] });
     assert.equal(missingPhone.status, 400);
     assert.match(missingPhone.body.error, /WhatsApp wajib/);
-    const invalidPhone = await request("/api/orders", "POST", { customerName: "WA Salah", phone: "abc", items: [item] });
-    assert.equal(invalidPhone.status, 400);
-    assert.match(invalidPhone.body.error, /WhatsApp yang valid/);
+    const freeTextPhone = await ok("/api/orders", "POST", { customerName: "WA Bebas", phone: "abc", items: [item] });
+    assert.equal(freeTextPhone.phone, "abc");
+    const shortPhone = await ok("/api/orders", "POST", { customerName: "WA Pendek", phone: "8988", items: [item] });
+    assert.equal(shortPhone.phone, "8988");
+    assert.equal((await request("/api/orders", "POST", { customerName: "WA Kosong", phone: "   ", items: [item] })).status, 400);
     const order = await ok("/api/orders", "POST", { customerName: "Tes Design", phone: "081234567890", items: [item] });
     assert.equal(order.items[0].fileServiceTotal, 150000);
     assert.equal(order.items[0].fileService.quantity, 3);

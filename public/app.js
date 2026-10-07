@@ -1,3 +1,4 @@
+import { imageGeometry, supportsOutdoorAllowance, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
 import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
@@ -194,7 +195,7 @@ function quantitySelectorHtml(unit = "Lembar") {
 }
 
 function imageMeasurementHtml(product, includeQuantity = true) {
-  return `<div class="image-measurements"><div class="measurement-row"><label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label><div class="field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter</label></div>`).join("")}</div></div></div><div class="measurement-row"><label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>${includeQuantity ? quantitySelectorHtml() : ""}</div>`;
+  return `<div class="image-measurements"><div class="measurement-row"><label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label><div class="field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${supportsOutdoorAllowance(product) ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div>${supportsOutdoorAllowance(product) ? '<label class="field allowance-field"><span>Lebihan / sisi</span><span class="input-with-unit"><input id="allowance" type="number" min="0" step="any" value="0" required aria-label="Lebihan per sisi"><b>cm</b></span></label>' : ""}</div><div class="measurement-row"><label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>${includeQuantity ? quantitySelectorHtml() : ""}${supportsOutdoorAllowance(product) ? '<small id="final-image-size" class="final-image-size"></small>' : ""}</div>`;
 }
 
 function posFinishingRowHtml(product, selected = null) {
@@ -348,7 +349,7 @@ function flatCatalogHtml(products, category) {
   return `<label class="field atk-search"><span>Cari produk ${escapeHtml(category)}</span><input id="flat-search" type="search" value="${escapeHtml(searchValue)}" placeholder="${isAtK ? "Nama, merek, warna, ukuran, atau barcode…" : "Cari nama atau ukuran produk…"}" autocomplete="off"></label>
     ${isAtK ? `<div class="atk-tabs" role="group" aria-label="Jenis produk ATK">${tabs}</div>` : ""}
     <div class="atk-count">${visible.length} produk${query ? " ditemukan" : ""}</div>
-    <div class="atk-list">${visible.length ? `<div class="atk-list-head"><span>Produk</span><span>Harga</span><span>Jumlah</span></div>${rows}` : '<p class="atk-empty">Produk tidak ditemukan. Coba kata lain atau pilih Semua.</p>'}</div>`;
+    <div class="atk-list ${["atk","akrilik"].includes(state.selectedCategory) ? "compact-retail-list" : ""}">${visible.length ? `<div class="atk-list-head"><span>Produk</span><span>Harga</span><span>Jumlah</span></div>${rows}` : '<p class="atk-empty">Produk tidak ditemukan. Coba kata lain atau pilih Semua.</p>'}</div>`;
 }
 
 function fileServicesHtml(product) {
@@ -442,7 +443,7 @@ function renderPos() {
 }
 
 function imageSizeNote(item) {
-  return item.imageWidthCm > 0 && item.imageLengthCm > 0 ? `Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm` : "";
+  return item.imageWidthCm > 0 && item.imageLengthCm > 0 ? `Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm${item.allowanceCm > 0 ? ` · Lebihan ${Number(item.allowanceCm).toLocaleString("id-ID")} cm/sisi · Ukuran akhir ${Number(item.finalImageWidthCm).toLocaleString("id-ID")} × ${Number(item.finalImageLengthCm).toLocaleString("id-ID")} cm` : ""}` : "";
 }
 
 function cartHtml() {
@@ -460,7 +461,7 @@ function checkoutHtml() {
   const total = state.cart.reduce((sum, item) => sum + item.previewTotal, 0);
   return `<div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><form id="checkout" class="order-form"><div class="form-grid">
     <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
-    <label class="field"><span>No. WhatsApp *</span><input name="phone" type="tel" autocomplete="tel" inputmode="tel" required value="${escapeHtml(state.draft.phone)}"></label>
+    <label class="field"><span>No. WhatsApp *</span><input name="phone" type="text" autocomplete="tel" required value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
   </div><div class="checkout-actions"><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft Pesanan"}</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></form>`;
 }
@@ -491,7 +492,12 @@ function readCurrentLine() {
   const isUnit = product.priceBasis === "unit" || isFixedSize;
   const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
   const width = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
-  const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : Number(document.querySelector("#image-length")?.value || 100) / 100;
+  let geometry = null;
+  if (!isUnit && !product.templateProduct) {
+    const input = { imageWidthCm: Number(document.querySelector("#image-width")?.value), imageLengthCm: Number(document.querySelector("#image-length")?.value), allowanceCm: Number(document.querySelector("#allowance")?.value || 0) };
+    try { geometry = imageGeometry(product,input); } catch { geometry = { ...input, billingLength: NaN }; }
+  }
+  const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : geometry.billingLength;
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity, fixedVariant, materialVariant, combination);
   const fileService = product.templateProduct || !document.querySelector("#design-enabled")?.checked ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
@@ -521,7 +527,8 @@ function readCurrentLine() {
   return {
     productId: product.id, productName: product.name, width, length, billedLength: base.billed, templateDesign,
     imageWidthCm: !isUnit && !product.templateProduct ? Number(document.querySelector("#image-width")?.value) : null,
-    imageLengthCm: !isUnit && !product.templateProduct ? Number(document.querySelector("#image-length")?.value) : null,
+    imageLengthCm: geometry?.imageLengthCm ?? null,
+    allowanceCm: geometry?.allowanceCm ?? 0, finalImageWidthCm: geometry?.finalImageWidthCm ?? null, finalImageLengthCm: geometry?.finalImageLengthCm ?? null,
     sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "", materialVariantId: materialVariant?.id || "", materialVariantLabel: materialVariant?.label || "", subVariantId: subVariant?.id || "", subVariantLabel: subVariant?.label || "", choices,
     baseTotal: base.total, templateDesignTotal,
     fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price, fileServiceQuantity, fileServiceNote,
@@ -548,6 +555,8 @@ function updatePreview() {
     });
     return;
   }
+  const finalSize = document.querySelector("#final-image-size");
+  if (finalSize) finalSize.textContent = Number.isFinite(line.finalImageWidthCm) ? `Ukuran termasuk lebihan: ${line.finalImageWidthCm.toLocaleString("id-ID")} × ${line.finalImageLengthCm.toLocaleString("id-ID")} cm${line.allowanceCm > 0 && line.allowanceCm <= 5 ? " · Lebihan tidak menambah panjang tagihan" : ""}` : "";
   const billedInput = document.querySelector("#billed-length");
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
@@ -688,7 +697,13 @@ function bindProductConfiguration(onAdd) {
     };
     return;
   }
-  document.querySelectorAll('#image-width,#image-length,#quantity,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll("#image-width,#allowance").forEach(input => input.addEventListener("input", () => {
+    const product = selectedProduct(); if (!supportsOutdoorAllowance(product)) return;
+    const width = suggestedOutdoorWidth(product,document.querySelector("#image-width").value,document.querySelector("#allowance")?.value || 0);
+    const radio = document.querySelector(`input[name="width"][value="${width}"]`); if (radio) radio.checked = true;
+    updatePreview();
+  }));
+  document.querySelectorAll('#image-width,#image-length,#allowance,#quantity,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   bindFinishingDropdown(selectedProduct());
@@ -739,7 +754,7 @@ function blinkCartTotal() {
   if (!total) return;
   total.classList.remove("total-added"); void total.offsetWidth; total.classList.add("total-added");
   total.addEventListener("animationend", () => total.classList.remove("total-added"), { once: true });
-  setTimeout(() => total.classList.remove("total-added"), 600);
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) setTimeout(() => total.classList.remove("total-added"), 600);
 }
 function openProductConfigurator(productId, carryDraft = null) {
   const product = state.products.find((item) => item.id === productId);
@@ -791,8 +806,15 @@ function openProductConfigurator(productId, carryDraft = null) {
   updatePreview();
 }
 
+function bindDeadlinePicker(scope = document) {
+  scope.querySelectorAll('input[name="deadline"]').forEach(input => input.addEventListener("click", () => {
+    try { input.showPicker?.(); } catch { /* Keyboard entry remains available where the native picker is unsupported. */ }
+  }));
+}
+
 function bindPos() {
   bindProductSearch();
+  bindDeadlinePicker();
   const tabs = document.querySelector(".category-tabs");
   tabs.scrollLeft = state.categoryScroll;
   tabs.addEventListener("scroll", () => { state.categoryScroll = tabs.scrollLeft; });
@@ -915,8 +937,8 @@ function bindPos() {
       state.cart = []; configurationDrafts.clear(); state.editingOrderId = null;
       state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
       await load(); toast(`${order.code} berhasil disimpan`);
-      state.view = "projects"; render();
-      if (openPayment) openOrder(order.id, true);
+      state.view = openPayment ? "pos" : "projects"; render();
+      if (openPayment) openPaymentDialog(order);
     } catch (error) { toast(error.message, "error"); }
   }
   checkout.addEventListener("submit", async (event) => {
@@ -1145,19 +1167,19 @@ function openOrder(id, showPayment = false) {
     <div id="order-assistance" class="order-assistance"></div>
     <div class="order-deadline-section"><p class="note"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) + " WITA" : "Tidak ditentukan"}</p>${["OWNER", "CASHIER"].includes(state.currentUser.role) || state.currentUser.role === "MANAGER" && can("pos.edit") ? `<form id="order-deadline-form"><label class="field"><span>${order.deadline ? "Ubah" : "Tambah"} deadline (WITA)</span><input name="deadline" type="datetime-local" value="${localDateTimeInput(order.deadline)}" required></label><button type="submit" class="secondary">Simpan Deadline</button></form>` : ""}</div>
     ${isDesign && can("projects.assign") ? `<div class="operator-box"><div class="field"><span>Nama Operator Design</span><div class="operator-choices">${activePics().map((pic) => `<div class="chip"><input type="radio" name="design-pic" id="operator-${escapeHtml(pic.id)}" value="${escapeHtml(pic.name)}" ${order.designPic === pic.name ? "checked" : ""}><label for="operator-${escapeHtml(pic.id)}">${escapeHtml(pic.name)}</label></div>`).join("") || '<p class="product-note">Belum ada PIC aktif. Tambahkan melalui Master Data → PIC.</p>'}</div></div><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
-    ${can("pos.payment") ? `<div id="payment-form-wrap" class="payment-form-wrap hidden">${paymentFormHtml(order, outstanding)}</div>` : ""}
+    ${can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
   </div><div class="detail-actions">
       ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}
-      ${!isWaiting && can("pos.payment") && paymentStatus(order) !== "LUNAS" ? '<button id="show-payment-form" class="secondary">Catat Pembayaran</button>' : ""}
+      ${!isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="secondary">Konfirmasi Pembayaran</button>' : ""}
       ${!isWaiting ? '<button id="print-spk" class="secondary">Cetak SPK</button>' : ""}
       ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
-      ${isWaiting && can("pos.payment") ? '<button id="show-payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
+      ${isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
       ${can("projects.status") && nextAction(order) ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
     </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   detail.querySelector("#edit-order")?.addEventListener("click", () => startEditOrder(order));
-  detail.querySelector("#show-payment-form")?.addEventListener("click", () => { const form = detail.querySelector("#payment-form-wrap"); form.classList.toggle("hidden"); if (!form.classList.contains("hidden")) form.scrollIntoView({ block: "start", behavior: "smooth" }); });
+  bindDeadlinePicker(detail);
   detail.querySelector("#order-deadline-form")?.addEventListener("submit", async (event) => {
     event.preventDefault(); const button = event.target.querySelector("button"); button.disabled = true;
     try { await api(`/api/orders/${order.id}/deadline`, { method: "PATCH", body: JSON.stringify({ deadline: makassarInputToIso(event.target.elements.deadline.value) }) }); dialog.close(); await load(); openOrder(order.id); toast("Deadline disimpan dan dicatat di riwayat"); } catch (error) { toast(error.message, "error"); button.disabled = false; }
@@ -1199,42 +1221,69 @@ function openOrder(id, showPayment = false) {
   if (showPayment) detail.querySelector("#payment-form-wrap")?.classList.remove("hidden");
 }
 
+function openPaymentDialog(order) {
+  const outstanding = Math.max(0, Number(order.total) - Number(order.paidAmount || 0));
+  const detail = document.querySelector("#order-detail");
+  dialog.classList.add("payment-dialog");
+  detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${escapeHtml(order.code)}</span><h2>Pembayaran</h2><p>${escapeHtml(order.customerName)}</p></div><button class="detail-close" aria-label="Tutup pembayaran">×</button></div><div class="detail-body"><div class="payment-order-summary">${order.items.map(item => `<div><strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize)}</small>${imageSizeNote(item) ? `<small>${escapeHtml(imageSizeNote(item))}</small>` : ""}</div>`).join("")}<div class="summary-row total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div></div>${paymentFormHtml(order,outstanding)}</div><div class="detail-actions"><button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button></div>`;
+  detail.querySelector(".detail-close").onclick = () => dialog.close();
+  dialog.onclose = () => { dialog.classList.remove("payment-dialog"); dialog.onclose = null; detail.replaceChildren(); };
+  bindPaymentForm(order,outstanding); dialog.showModal();
+}
+
 function paymentFormHtml(order, outstanding) {
   return `<form id="payment-form"><h3>Form Pembayaran</h3><div class="form-grid">
     <div class="field full"><span>Jenis pembayaran</span><div class="payment-tabs"><label><input type="radio" name="type" value="PAYMENT" checked><span>Pembayaran</span></label><label><input type="radio" name="type" value="PO"><span>Pembayaran PO</span></label></div></div>
-    <div id="payment-fields" class="payment-tab-panel full"><label class="field"><span>Metode</span><select name="method"><option value="">Pilih metode</option><option value="TUNAI">Tunai</option><option value="TRANSFER">Transfer</option><option value="QRIS">QRIS</option></select></label>
-    <label class="field"><span>Nominal diterima</span><div class="payment-amount-field">${moneyField("amount", outstanding, "required")}<button type="button" id="payment-half" class="payment-half">50%</button></div></label></div>
+    <div id="payment-fields" class="payment-tab-panel full"><div class="field"><span>Metode</span><div class="chips payment-method-chips">${[["TUNAI","Tunai"],["QRIS","QRIS"],["TRANSFER","Transfer"]].map(([value,label]) => `<div class="chip"><input type="radio" name="method" id="pay-method-${value}" value="${value}" required><label for="pay-method-${value}">${label}</label></div>`).join("")}</div></div>
+    <label class="field"><span>Nominal diterima</span><div class="payment-amount-field">${moneyField("amount", outstanding, "required")}</div></label>
+    <div class="payment-dp-options"><label class="design-toggle"><input id="payment-dp" type="checkbox" role="switch" aria-controls="payment-half" aria-expanded="false"><span class="design-switch" aria-hidden="true"></span><strong>Pembayaran DP</strong></label><button type="button" id="payment-half" class="payment-half hidden">50%</button></div></div>
     <div id="po-fields" class="payment-tab-panel full hidden"><label class="field"><span>Nomor PO *</span><input name="poNumber" placeholder="Contoh: PO/0924/001"></label><label class="field"><span>Upload PO <small>(opsional)</small></span><input name="poFile" type="file" accept="image/png,image/jpeg,image/webp"></label><div id="po-preview" class="po-preview hidden"></div></div>
-  </div><div class="payment-balance"><span>Sudah dibayar: ${rupiah.format(order.paidAmount || 0)}</span><strong>Sisa: ${rupiah.format(outstanding)}</strong></div><button class="primary full" type="submit">Simpan Pembayaran</button></form>`;
+  </div><div class="payment-balance"><span>Sudah dibayar: ${rupiah.format(order.paidAmount || 0)}</span><strong>Sisa: ${rupiah.format(outstanding)}</strong></div></form>`;
 }
 
 function bindPaymentForm(order, outstanding) {
   const form = document.querySelector("#payment-form");
   if (!form) return;
   const halfButton = form.querySelector("#payment-half");
-  form.elements.method.required = true;
-  const applyHalfPayment = () => {
-    form.elements.amount.value = formatMoneyValue(Math.min(outstanding, Math.round(Number(order.total || 0) * 0.5)));
-  };
+  const methods = [...form.querySelectorAll('input[name="method"]')];
   bindMoneyInputs(form);
-  form.querySelectorAll('input[name="type"]').forEach((input) => input.addEventListener("change", () => {
+  form.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener("change", () => {
     if (!input.checked) return;
     const po = input.value === "PO";
     form.querySelector("#payment-fields").classList.toggle("hidden", po);
     form.querySelector("#po-fields").classList.toggle("hidden", !po);
-    form.elements.method.required = !po; form.elements.amount.required = !po; form.elements.poNumber.required = po;
+    methods.forEach(method => { method.required = !po; method.disabled = po; });
+    form.elements.amount.required = !po; form.elements.amount.disabled = po; form.elements.poNumber.required = po;
   }));
-  halfButton.addEventListener("click", applyHalfPayment);
-  form.elements.poFile.addEventListener("change", () => { const file = form.elements.poFile.files[0]; const preview = form.querySelector("#po-preview"); if (!file) return preview.classList.add("hidden"); const url = URL.createObjectURL(file); preview.innerHTML = `<img src="${url}" alt="Preview PO"><span>${escapeHtml(file.name)}</span>`; preview.classList.remove("hidden"); });
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  form.querySelector("#payment-dp").onchange = event => {
+    halfButton.classList.toggle("hidden",!event.target.checked);
+    event.target.setAttribute("aria-expanded",String(event.target.checked));
+    if (!event.target.checked) form.elements.amount.value = formatMoneyValue(outstanding);
+  };
+  halfButton.onclick = () => { form.elements.amount.value = formatMoneyValue(Math.min(outstanding,Math.round(Number(order.total || 0)*0.5))); };
+  let previewUrl;
+  dialog.addEventListener("close", () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, { once: true });
+  form.elements.poFile.addEventListener("change", () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const file = form.elements.poFile.files[0], preview = form.querySelector("#po-preview");
+    if (!file) return preview.classList.add("hidden");
+    previewUrl = URL.createObjectURL(file); preview.innerHTML = `<img src="${previewUrl}" alt="Preview PO"><span>${escapeHtml(file.name)}</span>`; preview.classList.remove("hidden");
+  });
+  let submitting = false;
+  form.addEventListener("submit", async event => {
+    event.preventDefault(); if (submitting) return;
+    if (!form.reportValidity()) return;
+    submitting = true;
+    const button = document.querySelector('#confirm-payment'); if (button) button.disabled = true;
     try {
       const values = Object.fromEntries(new FormData(form)); values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
       const file = form.elements.poFile.files[0];
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);
       await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify(values) });
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       dialog.close(); await load(); toast("Pembayaran berhasil dicatat");
     } catch (error) { toast(error.message, "error"); }
+    finally { submitting = false; if (button) button.disabled = false; }
   });
 }
 
@@ -1245,10 +1294,10 @@ function readPoAttachment(file) {
 }
 
 function cartLineFromPricedItem(item) {
-  return {
+  const line = {
     productId: item.productId, productName: item.productName, width: item.width,
     dtfPackageId: item.dtfPackageId || "", shirtVariants: (item.shirtVariants || []).map((variant) => ({ ...variant })),
-    length: item.actualLength, imageWidthCm: item.imageWidthCm ?? null, imageLengthCm: item.imageLengthCm ?? null, billedLength: item.billedLength, quantity: item.quantity,
+    length: item.actualLength, imageWidthCm: item.imageWidthCm ?? null, imageLengthCm: item.imageLengthCm ?? null, allowanceCm: item.allowanceCm || 0, finalImageWidthCm: item.finalImageWidthCm ?? null, finalImageLengthCm: item.finalImageLengthCm ?? null, billedLength: item.billedLength, quantity: item.quantity,
     sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
     materialVariantId: item.materialVariantId || "", materialVariantLabel: item.materialVariantLabel || "",
     subVariantId: item.subVariantId || "", subVariantLabel: item.subVariantLabel || "",
@@ -1260,6 +1309,17 @@ function cartLineFromPricedItem(item) {
     baseTotal: item.baseTotal, templateDesignTotal: item.templateDesignTotal || 0,
     productionNote: item.productionNote || "", previewTotal: item.subtotal
   };
+  const product = state.products.find(product => product.id === item.productId);
+  if (product && supportsOutdoorAllowance(product) && !product.widths.includes(item.width)) {
+    line.width = suggestedOutdoorWidth(product, item.imageWidthCm || Number(item.width) * 100, item.allowanceCm || 0);
+    const materialVariant = product.materialVariants?.find(variant => variant.id === item.materialVariantId);
+    const combination = materialVariant?.combinations?.find(combination => combination.subVariantId === item.subVariantId);
+    const base = productBase(product, line.width, line.length, line.quantity, null, materialVariant, combination);
+    line.baseTotal = base.total; line.billedLength = base.billed;
+    line.previewTotal = base.total + Number(item.subtotal) - Number(item.baseTotal);
+    line.displaySize = `${line.width} × ${base.billed} m · ${line.quantity} ${product.unitName || "Lembar"}`;
+  }
+  return line;
 }
 
 function startEditOrder(order) {

@@ -43,6 +43,6 @@ test("migrasi dua kategori menjaga produk dan pesanan lama serta tidak mengganda
   assert.equal(first.orders[0].items[0].unitPrice, 1000);
   await store.mutate(() => {});
   const second = await store.read();
-  assert.equal(second.catalogVersion, 15);
+  assert.equal(second.catalogVersion, 16);
   assert.equal(second.products.filter((item) => item.quickSale).length, 57);
 });

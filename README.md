@@ -22,14 +22,16 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Master Data → PIC mengelola nama penugasan mandiri, terpisah dari akun User. Perubahan nama memperbarui pesanan berjalan; penghapusan menutup pilihan baru dan mempertahankan penugasan lama. Pengaturan Kategori dan PIC hanya tersedia bagi Admin/Owner.
 - POS compact: katalog bahan lima kolom pada desktop lebar, Ringkasan Pesanan lebih lebar dengan header navy, dan semua konfigurasi produk melalui popup di tengah layar. Overlay meliputi seluruh halaman; klik di luar/Escape menutup popup dan menyimpan input sementara selama sesi. Header dan tombol tambah tetap terlihat saat digulir.
 - Ukuran gambar diinput dalam cm, disimpan per item dan tampil pada keranjang, Detail Pesanan, SPK, tanda terima, serta PDF Nota + PO. Harga dan pemakaian bahan tetap memakai lebar bahan × panjang ditagihkan; pesanan lama tanpa ukuran gambar tetap kompatibel.
+- Outdoor memiliki input Lebihan dalam cm per sisi. Hingga 5 cm gratis untuk panjang tagihan; di atas 5 cm kedua sisi ditambahkan sebelum pembulatan. FL 280/380: 1/2/3 meter berkapasitas 110/220/320 cm; FL 410 hanya 2 meter; FL 440 dan NB Backlite hanya 3 meter; Cloth Banner tetap 1/1,5 meter. Lebar bahan otomatis dipilih dari lebar gambar + kedua sisi lebihan, dapat diubah manual, dan memilih opsi terbesar tanpa warning jika ukuran melebihi kapasitas. Ukuran asli, lebihan, dan ukuran akhir tetap tersimpan; harga tetap memakai lebar nominal bahan × panjang ditagihkan.
 - Finishing dipilih melalui dropdown dengan + Tambah Finishing, quantity, dan catatan. Satu jenis finishing hanya tampil sekali; permintaan finishing identik digabung sebelum menghitung harga grosir.
-- Total menampilkan satu highlight lembut selama 0,55 detik setiap kali produk ditambahkan, termasuk penambahan quantity pada produk jual langsung.
+- Total menampilkan tiga highlight lembut (0,55 detik per siklus) setiap kali produk ditambahkan, termasuk penambahan quantity pada produk jual langsung.
 - Quantity finishing manual dengan saran awal berdasarkan ukuran.
-- Catatan produksi tersimpan per item/file.
+- Catatan produksi tersimpan per item/file; judul opsional memakai huruf miring.
+- No. WhatsApp wajib diisi tetapi menerima teks bebas, termasuk nomor pendek, tanpa batas format atau panjang. Seluruh area input deadline dapat membuka kalender.
 - Pembulatan panjang tagihan per 50 cm, minimum 1 meter.
 - Alur kerja: Menunggu Pembayaran → Design → Cetak → Finishing → Selesai → Diambil.
 - Draft dapat diedit selama masih Menunggu Pembayaran.
-- Form **Pembayaran** tunggal untuk pelunasan/DP, shortcut 50%, serta format nominal Rupiah.
+- Popup **Pembayaran** dari POS tetap berada di atas POS, dengan form selalu terbuka dan tombol floating **Konfirmasi Pembayaran**. Metode Tunai/QRIS/Transfer berupa chips; toggle **Pembayaran DP** membuka shortcut 50%. Nominal tetap bisa diketik manual dan tab PO tetap tersedia.
 - Tab **Pembayaran PO** dengan nomor PO dan unggahan gambar PO opsional yang dapat ditelusuri dari Laporan.
 - PIC Operator Design baru diisi setelah pembayaran dikonfirmasi.
 - Tampilan operator menyembunyikan harga dan fokus ke spesifikasi kerja.

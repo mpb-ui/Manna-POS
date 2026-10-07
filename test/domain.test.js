@@ -173,7 +173,7 @@ test("migrasi LMO Paper menjaga stok dan pemetaan X-Banner yang telah diedit", a
   assert.deepEqual(first.products.find((item) => item.id === "display-x-banner").fixedSizeVariants.find((item) => item.id === "mini").materialSources.map((item) => [item.materialId, item.quantity]), [["mat-mini-xstand", 2], ["mat-lmo-paper", 1]]);
   await store.mutate(() => {});
   const second = await store.read();
-  assert.equal(second.catalogVersion, 15);
+  assert.equal(second.catalogVersion, 16);
   assert.equal(second.materials.filter((item) => item.id === "mat-lmo-paper").length, 1);
 });
 

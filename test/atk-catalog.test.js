@@ -31,7 +31,7 @@ test("migrasi ATK menambah SKU tanpa menimpa produk lama dan dapat dibaca berula
   await store.mutate(() => {});
   const second = await store.read();
   assert.equal(second.products.filter((item) => item.retailAtK).length, 78);
-  assert.equal(second.catalogVersion, 15);
+  assert.equal(second.catalogVersion, 16);
 });
 
 test("state baru memuat ATK retail tanpa barcode dan mempertahankan jasa Kartu Nama", () => {
