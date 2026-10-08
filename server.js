@@ -1,4 +1,6 @@
 import { requiredPhone } from "./public/customer-validation.js";
+import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
+import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
 import { workflowSnapshot, checklistForOrder } from "./lib/order-assistance.js";
@@ -110,8 +112,8 @@ function orderCode(number) {
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()).replaceAll("-", "");
   return `MP-${date}-${String(number).padStart(4, "0")}`;
 }
-function activity(state, order, message, actor = "Kasir") {
-  const entry = { id: crypto.randomUUID(), orderId: order.id, orderCode: order.code, message, actor, createdAt: now() };
+function activity(state, order, message, actor = "Kasir", metadata = {}) {
+  const entry = { id: crypto.randomUUID(), orderId: order.id, orderCode: order.code, message, actor, createdAt: now(), ...metadata };
   order.timeline.unshift(entry);
   state.activities.unshift(entry);
 }
@@ -199,6 +201,7 @@ function normalizeOrder(order) {
     if (item.productionNote == null) item.productionNote = index === 0 ? String(order.notes || "") : "";
   });
   order.timeline ||= [];
+  initializeOrderItems(order);
   return order;
 }
 
@@ -637,6 +640,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         updatedAt: now(),
         timeline: []
       };
+      initializeOrderItems(order);
       activity(state, order, "Pesanan dibuat di POS", req.user.name);
       audit(state, req.user, "ORDER_CREATE", `Membuat pesanan ${order.code}`, { orderId: order.id, total: order.total });
       state.orders.unshift(order);
@@ -662,7 +666,17 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
       order.fileReadiness = FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED";
       if (req.body.confirmed === true) { order.confirmed = true; order.confirmedAt ||= now(); }
-      order.items = workflowSnapshot(priced.items, state.products);
+      const oldItems = order.items;
+      const usedIds = new Set();
+      order.items = workflowSnapshot(priced.items, state.products).map((item, index) => {
+        const source = req.body.items[index];
+        const existing = oldItems.find(old => old.itemId === source.itemId && old.productId === item.productId);
+        item.itemId = existing && !usedIds.has(existing.itemId) ? existing.itemId : `${order.id}-item-${crypto.randomUUID()}`;
+        usedIds.add(item.itemId);
+        if (existing) { item.designPic = existing.designPic; item.designPicId = existing.designPicId; item.designPicColor = existing.designPicColor; }
+        return item;
+      });
+      initializeOrderItems(order);
       order.productionChecks = {};
       order.total = priced.total;
       order.updatedAt = now();
@@ -702,7 +716,10 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       order.paymentConfirmed = true;
       order.confirmed = true; order.confirmedAt ||= now();
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
-      if (order.status === STATUS.WAITING_PAYMENT) { order.status = STATUS.DESIGN; order.statusEnteredAt = now(); }
+      if (order.status === STATUS.WAITING_PAYMENT) {
+        order.items.forEach(item => { item.status = STATUS.DESIGN; item.statusEnteredAt = now(); item.updatedAt = now(); });
+        refreshOrderWorkflow(order, now());
+      }
       order.updatedAt = now();
       activity(state, order, `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
       audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount });
@@ -722,10 +739,11 @@ app.patch("/api/orders/:id/deadline", async (req, res, next) => {
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order || !orderVisibleToUser(order, req.user)) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
-      if (order.deadline && Date.parse(order.deadline) === Date.parse(deadline)) return sanitizeOrder(order, req.user);
+      if (order.items.every(item => item.deadline && Date.parse(item.deadline) === Date.parse(deadline))) return sanitizeOrder(order, req.user);
       const previous = order.deadline || null;
       const format = (date) => date ? new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" }).format(new Date(date)) + " WITA" : "Tidak ditentukan";
       order.deadline = deadline; order.updatedAt = now();
+      order.items.forEach(item => { item.deadline = deadline; item.updatedAt = now(); });
       activity(state, order, `Deadline diubah: ${format(previous)} → ${format(deadline)}`, req.user.name);
       audit(state, req.user, "ORDER_DEADLINE", `Mengubah deadline ${order.code}`, { orderId: order.id, previousDeadline: previous, deadline });
       return sanitizeOrder(order, req.user);
@@ -747,13 +765,16 @@ app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), as
       if (!pic) throw new Error("PIC tidak tersedia");
       order.designPic = pic.name;
       order.designPicId = pic.id;
+      order.items.filter(item => [STATUS.DESIGN, STATUS.PRINT, STATUS.FINISHING, STATUS.DONE].includes(item.status)).forEach(item => { item.designPic = pic.name; item.designPicId = pic.id; item.designPicColor = pic.color; item.updatedAt = now(); });
       order.updatedAt = now();
       activity(state, order, `Pekerjaan diambil oleh ${designPic}`, designPic);
-      return order;
+      return sanitizeOrder(order, req.user);
     });
     res.json(result);
   } catch (error) { next(error); }
 });
+
+registerItemWorkflowRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder, activity, audit, now });
 
 app.patch("/api/orders/:id/status", requirePermission("projects.status"), async (req, res, next) => {
   try {
@@ -765,33 +786,19 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       if (order.hold) { const error = new Error("Pesanan masih tertahan. Lepaskan penanda setelah kendala selesai."); error.code = "ORDER_HELD"; throw error; }
       if (target !== allowedNextStatus(order.status)) throw new Error("Perpindahan status tidak valid");
       if (!allowedStatusForRole(req.user.role, order.status, target)) throw new Error("Role Anda tidak dapat memindahkan status ini");
+      if (order.items.some(item => item.status !== order.status)) throw new Error("Tahapan produk berbeda. Lanjutkan status masing-masing produk melalui detail pesanan.");
       const unpaidPickup = target === STATUS.PICKED_UP && Number(order.paidAmount || 0) < Number(order.total || 0);
       if (unpaidPickup && req.body.confirmUnpaid !== true) {
         const error = new Error("Pesanan belum lunas"); error.code = "UNPAID_PICKUP_CONFIRMATION"; throw error;
       }
-      if (order.status === STATUS.DESIGN && !order.designPic) throw new Error("Nama PIC Operator Design wajib diisi");
+      if (order.status === STATUS.DESIGN && order.items.some(item => !item.designPic)) throw new Error("Nama PIC Operator Design wajib diisi");
       if (unpaidPickup) activity(state, order, "Penerimaan pesanan belum lunas dikonfirmasi; sisa pembayaran tetap tercatat", req.user.name);
       order.status = target;
       order.statusEnteredAt = now();
       order.updatedAt = now();
-      if (target === STATUS.DONE && !order.stockCommitted) {
-        ensureShirtStock(state, order, { physical: true });
-        for (const line of order.items) {
-          const consumptions = line.materials?.length ? line.materials : [{ sku: line.stockSku, name: line.productName, units: line.stockConsumption }];
-          for (const consumption of consumptions) {
-            const stock = state.inventory.find((item) => item.sku === consumption.sku || item.materialId === consumption.materialId);
-            if (!stock) continue;
-            stock.quantity = Number(stock.quantity) - Number(consumption.units || 0);
-            stock.updatedAt = now();
-            state.stockMovements.unshift({
-              id: crypto.randomUUID(), sku: stock.sku, productName: stock.productName,
-              change: -Number(consumption.units || 0), balance: stock.quantity, orderCode: order.code,
-              reason: "Pemakaian produksi selesai", createdAt: now()
-            });
-          }
-        }
-        order.stockCommitted = true;
-      }
+      order.items.forEach(item => { item.status = target; item.statusEnteredAt = now(); item.updatedAt = now(); });
+      refreshOrderWorkflow(order, now());
+      commitOrderStock(state, order, now);
       activity(state, order, `Status berubah menjadi ${STATUS_LABEL[target]}`, req.user.name);
       audit(state, req.user, "ORDER_STATUS", `Mengubah ${order.code} menjadi ${STATUS_LABEL[target]}`, { orderId: order.id, status: target });
       return sanitizeOrder(order, req.user);

@@ -551,3 +551,72 @@ input[name="deadline"]{cursor:pointer}
   .app-shell:not(.sidebar-collapsed) .sidebar-context,.app-shell:not(.sidebar-collapsed) .sidebar-foot,.app-shell:not(.sidebar-collapsed) .nav-item b,.app-shell:not(.sidebar-collapsed) .nav-item em{display:none}
   .app-shell:not(.sidebar-collapsed) .nav-item{grid-template-columns:1fr;justify-items:center;padding:12px 8px;text-align:center}
 }
+
+/* Per-product project workflow */
+.project-panel{min-width:0}
+.project-toolbar{display:block}
+.project-toolbar-main{display:flex;align-items:center;gap:10px;min-width:0}
+.project-toolbar-main .search{width:180px;min-width:130px;flex:1;order:0}
+.project-toolbar-main .project-status-filters{display:flex;flex-wrap:nowrap;gap:4px;padding:0;border:0;margin:0}
+.project-toolbar-main .project-status-filters button{font-size:11px;white-space:nowrap;padding:8px 7px}
+.project-toolbar-main .project-view-toggle{flex-shrink:0;margin:0}
+.project-toolbar-main .project-view-toggle button{font-size:11px;padding:8px}
+.project-toolbar-secondary{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.project-toolbar-secondary .project-filter{width:auto;min-width:130px;height:34px;font-size:12px}
+.project-toolbar-secondary #reload-projects{margin-left:auto;padding:8px 12px}
+.project-table,.project-table.waiting-table{min-width:780px;width:100%;table-layout:fixed}
+.project-table th:first-child,.project-table.waiting-table th:first-child{width:28%}
+.project-table th:nth-child(2){width:auto}
+.project-table th:nth-child(3),.project-table.waiting-table th:nth-child(3){width:100px}
+.project-table th:nth-child(4){width:150px}
+.project-table th:last-child,.project-table.waiting-table th:last-child{width:130px}
+.project-product-cell>strong,.project-table .project-quantity{font-size:14px;font-weight:700}
+.project-table-wrap{max-width:100%;overflow-x:auto}
+.status-desain{--job-bg:#f0f8ee;--job-head:#e1f0dc;--job-accent:#75a568}
+.status-cetak{--job-bg:#eef5fc;--job-head:#dfedfa;--job-accent:#6c9dce}
+.status-finishing{--job-bg:#f6f0fb;--job-head:#eee1f7;--job-accent:#ae88c7}
+.status-selesai{--job-bg:#fffbeb;--job-head:#faf1ce;--job-accent:#c6ac4f}
+.project-order-row td{background:var(--job-bg,#fff)}
+.project-order-row td:first-child{border-left:5px solid var(--job-accent,#bac6d5)}
+.project-group-row td,.project-group-row button{background:var(--job-head,#f4f6fa)!important}
+.project-group-row button{border-left-color:var(--job-accent,#bac6d5)!important}
+.project-group-row strong,.column-head h3{color:var(--blue)}
+.project-order-row:hover td{filter:brightness(.975)}
+.project-order-row:focus-visible,.order-card:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.kanban-column{background:var(--job-head,#f7f9fc);min-width:0}
+.order-card{background:var(--job-bg,#fff);border-left:4px solid var(--job-accent,#bac6d5);cursor:pointer}
+.order-card>p{margin:9px 0;overflow-wrap:anywhere}
+.project-pic-static{display:inline-block;padding:6px 9px;border-radius:7px;font-weight:700}
+.pic-yellow{background:#faedb8!important;color:#66500c!important;border-color:#e2cd74!important}
+.pic-green{background:#def0da!important;color:#315b2c!important;border-color:#afd2a6!important}
+.pic-blue{background:#deecfb!important;color:#28517d!important;border-color:#a9c9e9!important}
+.pic-purple{background:#ece1f7!important;color:#654281!important;border-color:#cfb4e5!important}
+.pic-rose{background:#f8e2e9!important;color:#843b57!important;border-color:#e5b6c8!important}
+.pic-teal{background:#dcefeb!important;color:#285b53!important;border-color:#aed0c7!important}
+.detail-item{background:var(--job-bg,#fff);border-left:4px solid var(--job-accent,#bac6d5);border-radius:9px;padding:14px 12px;margin-bottom:10px;scroll-margin:20px}
+.detail-item-content{min-width:0;flex:1}
+.detail-item-content>small{font-size:15px;color:#465164;line-height:1.6;overflow-wrap:anywhere}
+.item-workflow{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:14px;padding-top:12px;border-top:1px solid #dce2e9}
+.item-status{font-size:12px;color:var(--blue)}
+.item-pic-field,.item-deadline{display:grid;gap:5px;max-width:100%;font-size:12px}
+.item-pic-field>span,.item-deadline>span{font-size:11px;color:#536279;font-weight:700}
+.item-pic-field select{width:125px}
+.item-deadline form{display:flex;gap:6px;max-width:100%}
+.item-deadline input{width:190px;min-width:0;max-width:100%;padding:7px;border:1px solid #cbd3de;border-radius:7px;font-size:12px}
+.item-advance{margin-left:auto}
+.focused-item{outline:2px solid var(--blue);outline-offset:2px}
+.detail-actions .primary:last-child{margin-left:auto}
+.measurement-row>.allowance-field{width:110px;min-width:110px;flex:0 0 110px}
+@media(max-width:1180px){.project-toolbar-main{flex-wrap:wrap}.project-toolbar-main .search{flex-basis:200px}.project-toolbar-main .project-status-filters{flex-wrap:wrap}}
+@media(max-width:760px){.project-toolbar-main .search{flex-basis:100%;width:100%}.project-toolbar-main .project-status-filters{flex:1 1 100%;gap:5px}.project-toolbar-main .project-view-toggle{margin-left:auto}.item-workflow{align-items:flex-start}.item-advance{width:100%;margin-left:0}.detail-item .item-price{font-size:13px}.item-deadline form{flex-wrap:wrap}.project-toolbar-secondary .project-filter{flex:1;min-width:0}.project-toolbar-secondary #reload-projects{margin-left:0}}
+.detail-action-product{font-size:11px;color:#536279;margin-left:auto;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.detail-action-product+.primary{margin-left:0!important}
+@media(max-width:760px){.detail-action-product{flex:1 1 100%;max-width:none;text-align:right}.detail-action-product+.primary{margin-left:auto!important}}
+.assist-item-jobs{display:grid;gap:8px;margin:8px 0}
+.assist-item-jobs>div{display:grid;gap:3px;min-width:0}
+.assist-item-jobs strong{font-size:12px;color:#39465b;overflow-wrap:anywhere}
+.assist-item-jobs span{font-size:11px;color:#536279;line-height:1.5;overflow-wrap:anywhere}
+
+.measurement-row:has(.allowance-field){display:grid;grid-template-columns:180px 110px minmax(0,1fr)}
+.measurement-row>.material-width-field{min-width:0;max-width:none}
+@media(max-width:620px){.measurement-row:has(.allowance-field){grid-template-columns:minmax(0,1fr) 110px}.measurement-row:has(.allowance-field)>.field:first-child{width:100%}.measurement-row>.material-width-field{grid-column:1/-1;min-width:0}}

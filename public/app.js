@@ -1,4 +1,5 @@
 import { imageGeometry, supportsOutdoorAllowance, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
+import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor } from "./item-workflow.js";
 import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
@@ -195,7 +196,7 @@ function quantitySelectorHtml(unit = "Lembar") {
 }
 
 function imageMeasurementHtml(product, includeQuantity = true) {
-  return `<div class="image-measurements"><div class="measurement-row"><label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label><div class="field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${supportsOutdoorAllowance(product) ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div>${supportsOutdoorAllowance(product) ? '<label class="field allowance-field"><span>Lebihan / sisi</span><span class="input-with-unit"><input id="allowance" type="number" min="0" step="any" value="0" required aria-label="Lebihan per sisi"><b>cm</b></span></label>' : ""}</div><div class="measurement-row"><label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>${includeQuantity ? quantitySelectorHtml() : ""}${supportsOutdoorAllowance(product) ? '<small id="final-image-size" class="final-image-size"></small>' : ""}</div>`;
+  return `<div class="image-measurements"><div class="measurement-row"><label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label>${supportsOutdoorAllowance(product) ? '<label class="field allowance-field"><span>Lebihan / sisi</span><span class="input-with-unit"><input id="allowance" type="number" min="0" step="any" value="0" required aria-label="Lebihan per sisi"><b>cm</b></span></label>' : ""}<div class="field material-width-field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${supportsOutdoorAllowance(product) ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div></div><div class="measurement-row"><label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label><div class="field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div>${includeQuantity ? quantitySelectorHtml() : ""}</div>`;
 }
 
 function posFinishingRowHtml(product, selected = null) {
@@ -393,7 +394,7 @@ function productConfigurationHtml(product, popup = false) {
   const finishStep = 3;
   const noteStep = 4;
   return `<hr class="divider"><p class="section-label">${popup ? measurementTitle : `2 · ${measurementTitle}`}</p>${product.a3Kind ? a3ConfigurationOptionsHtml(product) : ""}${measurement}${materialVariantOptionsHtml(product)}${subVariantOptionsHtml(product)}${hasMaterialChoice ? isUnit ? unitQuantity : areaQuantity : ""}${choiceGroupsHtml(product)}
-    <p class="product-note" id="product-note">${escapeHtml(product.note)}</p>
+    <p class="product-note" id="product-note">${escapeHtml(supportsOutdoorAllowance(product) ? String(product.note || "").replace(/Minimum\s+1\s*[×x]\s*1\s*m\.?\s*/gi, "") : product.note || "")}</p>
     <hr class="divider"><p class="section-label">${popup ? "Finishing" : `${finishStep} · Finishing`}</p><div class="finishing-dropdowns" id="finishing-grid">${finishingHtml(product)}</div>${product.finishing.length ? '<button id="add-finishing" type="button" class="secondary add-finishing">+ Tambah Finishing</button>' : ""}
     ${fileSection}
     <hr class="divider"><details class="production-note-details"><summary>Catatan produksi (opsional)</summary><label class="field"><textarea id="production-note" aria-label="Catatan produksi" placeholder="Tambahkan catatan khusus untuk item ini…"></textarea></label></details>
@@ -966,17 +967,17 @@ function renderProjects() {
   const orderStatuses = ["DESAIN", "CETAK", "FINISHING", "SELESAI"];
   const waitingStatuses = ["MENUNGGU_PEMBAYARAN"];
   const statuses = state.projectCategory === "waiting" ? waitingStatuses : orderStatuses;
-  const orderCount = state.orders.filter((order) => orderStatuses.includes(order.status)).length;
-  const waitingCount = state.orders.filter((order) => waitingStatuses.includes(order.status)).length;
+  const jobs = projectJobs(state.orders);
+  const orderCount = jobs.filter(job => orderStatuses.includes(job.status)).length;
+  const waitingCount = state.orders.filter(order => waitingStatuses.includes(order.status)).length;
   const multipleCategories = can("projects.waiting");
   root.innerHTML = `${multipleCategories ? `<div class="project-category-tabs"><button type="button" data-project-category="orders" class="${state.projectCategory === "orders" ? "active" : ""}">Order <b>${orderCount}</b></button><button type="button" data-project-category="waiting" class="${state.projectCategory === "waiting" ? "active" : ""}">Menunggu Pembayaran <b>${waitingCount}</b></button></div>` : ""}
     <section class="panel project-panel${multipleCategories ? "" : " project-single-category"}"><div class="project-toolbar">
-      ${state.projectCategory === "orders" ? `<div class="project-view-toggle"><button type="button" data-project-view="list" class="${state.projectView === "list" ? "active" : ""}">☷ List</button><button type="button" data-project-view="kanban" class="${state.projectView === "kanban" ? "active" : ""}">▥ Kanban</button></div>` : ""}
-      <input id="project-search" class="search" value="${escapeHtml(state.projectSearch)}" placeholder="Cari kode, pelanggan, atau produk…">
-      <select id="project-deadline" class="project-filter"><option value="all">Semua deadline</option><option value="today">Hari ini</option><option value="late">Terlambat</option><option value="none">Tanpa deadline</option></select>
-      ${state.projectCategory === "orders" && can("projects.assign") ? `<select id="project-pic" class="project-filter"><option value="all">Semua PIC</option><option value="unassigned">Belum ada PIC</option>${[...new Set([...activePics().map((pic) => pic.name), ...state.orders.map((order) => order.designPic).filter(Boolean)])].sort((a, b) => a.localeCompare(b, "id")).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}</select>` : ""}
-      <button id="reload-projects" class="secondary">Muat ulang</button>
-    </div>${state.projectCategory === "orders" ? `<div class="project-status-filter-section"><div class="project-status-filter-label" id="project-status-filter-label">Filter status</div><div class="project-status-filters" role="group" aria-labelledby="project-status-filter-label"><button type="button" aria-pressed="${state.projectStatus === "all"}" data-project-status="all" class="${state.projectStatus === "all" ? "active" : ""}">Semua <b>${orderCount}</b></button>${statuses.map((status) => `<button type="button" aria-pressed="${state.projectStatus === status}" data-project-status="${status}" class="${state.projectStatus === status ? "active" : ""}">${state.statusLabels[status]} <b>${state.orders.filter((order) => order.status === status).length}</b></button>`).join("")}</div></div>` : ""}<div id="project-content"></div></section>`;
+      <div class="project-toolbar-main"><input id="project-search" class="search" aria-label="Cari pesanan atau produk" value="${escapeHtml(state.projectSearch)}" placeholder="Cari pesanan atau produk…">
+      ${state.projectCategory === "orders" ? `<div class="project-status-filters" role="group" aria-label="Filter status"><button type="button" aria-pressed="${state.projectStatus === "all"}" data-project-status="all" class="${state.projectStatus === "all" ? "active" : ""}">Semua <b>${orderCount}</b></button>${statuses.map(status => `<button type="button" aria-pressed="${state.projectStatus === status}" data-project-status="${status}" class="${state.projectStatus === status ? "active" : ""}">${state.statusLabels[status]} <b>${jobs.filter(job => job.status === status).length}</b></button>`).join("")}</div><div class="project-view-toggle"><button type="button" data-project-view="list" class="${state.projectView === "list" ? "active" : ""}">☷ List</button><button type="button" data-project-view="kanban" class="${state.projectView === "kanban" ? "active" : ""}">▥ Kanban</button></div>` : ""}</div>
+      <div class="project-toolbar-secondary"><select id="project-deadline" class="project-filter" aria-label="Filter deadline"><option value="all">Semua deadline</option><option value="today">Hari ini</option><option value="late">Terlambat</option><option value="none">Tanpa deadline</option></select>
+      ${state.projectCategory === "orders" ? `<select id="project-pic" class="project-filter" aria-label="Filter PIC"><option value="all">Semua PIC</option><option value="unassigned">Belum ada PIC</option>${[...new Set([...activePics().map(pic => pic.name), ...jobs.map(job => job.designPic).filter(Boolean)])].sort((a,b) => a.localeCompare(b,"id")).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}</select>` : ""}<button id="reload-projects" class="secondary">Muat ulang</button></div>
+    </div><div id="project-content"></div></section>`;
   document.querySelector("#project-deadline").value = state.projectDeadline;
   if (state.projectCategory === "waiting") {
     const select = document.createElement("select"); select.className = "project-filter assist-waiting-filter";
@@ -1028,11 +1029,11 @@ function formatProjectDeadline(order) {
 function filteredProjectOrders() {
   const query = state.projectSearch.trim().toLowerCase();
   const categoryStatuses = state.projectCategory === "waiting" ? ["MENUNGGU_PEMBAYARAN"] : ["DESAIN", "CETAK", "FINISHING", "SELESAI"];
-  return state.orders.filter((order) => {
+  return projectJobs(state.orders).filter((order) => {
     if (!categoryStatuses.includes(order.status)) return false;
     if (state.projectCategory === "waiting" && state.projectWaitingType === "drafts" && !unconfirmedDraft(order)) return false;
     if (state.projectCategory === "waiting" && state.projectWaitingType === "confirmed" && unconfirmedDraft(order)) return false;
-    const searchText = `${order.code} ${order.customerName} ${order.phone || ""} ${(order.items || []).map((item) => item.productName).join(" ")}`.toLowerCase();
+    const searchText = `${order.code} ${order.customerName} ${order.phone || ""} ${order.designPic || ""} ${(order.items || []).map((item) => `${item.productName} ${item.displaySize || ""} ${item.productionNote || ""}`).join(" ")}`.toLowerCase();
     if (query && !searchText.includes(query)) return false;
     if (state.projectStatus !== "all" && order.status !== state.projectStatus) return false;
     if (state.projectDeadline === "today" && !isProjectDeadlineToday(order)) return false;
@@ -1050,28 +1051,27 @@ function renderProjectContent(statuses) {
   content.innerHTML = state.projectCategory === "orders" && state.projectView === "kanban"
     ? `<div class="kanban-wrap"><div class="kanban">${statuses.map((status) => projectColumn(status, orders)).join("")}</div></div>`
     : projectListHtml(statuses, orders);
-  content.querySelectorAll("[data-order]").forEach((button) => button.onclick = () => openOrder(button.dataset.order));
   content.querySelectorAll("[data-project-row-order]").forEach((row) => {
     const openRow = (event) => {
       if (event.target.closest("button, select, input, a")) return;
-      openOrder(row.dataset.projectRowOrder);
+      openOrder(row.dataset.projectRowOrder, false, row.dataset.projectRowItem);
     };
     row.addEventListener("click", openRow);
     row.addEventListener("keydown", (event) => {
       if (["Enter", " "].includes(event.key) && !event.target.closest("button, select, input, a")) {
-        event.preventDefault(); openOrder(row.dataset.projectRowOrder);
+        event.preventDefault(); openOrder(row.dataset.projectRowOrder, false, row.dataset.projectRowItem);
       }
     });
   });
   content.querySelectorAll("[data-project-pic-order]").forEach((select) => select.addEventListener("change", async () => {
     const order = state.orders.find((item) => item.id === select.dataset.projectPicOrder);
-    const previousPic = order?.designPic || "";
+    const previousPic = order?.items.find(item => item.itemId === select.dataset.projectPicItem)?.designPic || "";
     select.disabled = true;
     try {
       const designPic = select.value;
-      await api(`/api/orders/${select.dataset.projectPicOrder}/design-pic`, { method: "PATCH", body: JSON.stringify({ designPic }) });
-      if (order) order.designPic = designPic;
-      select.classList.remove("unassigned");
+      const updated = await api(`/api/orders/${select.dataset.projectPicOrder}/items/${select.dataset.projectPicItem}/design-pic`, { method: "PATCH", body: JSON.stringify({ designPic }) });
+      if (order) Object.assign(order, updated);
+      renderProjectContent(statuses);
       toast(`PIC diubah menjadi ${designPic}`);
     } catch (error) {
       select.value = previousPic;
@@ -1088,45 +1088,41 @@ function renderProjectContent(statuses) {
 function projectListHtml(statuses, orders) {
   if (!orders.length) return '<div class="project-empty">Tidak ada pesanan yang sesuai dengan filter.</div>';
   const waiting = state.projectCategory === "waiting";
-  const columnCount = waiting ? 4 : 5;
+  const columnCount = 5;
   const groups = waiting ? [
     { status: "MENUNGGU_PEMBAYARAN", label: "Tagihan Aktif · Menunggu Pembayaran", orders: orders.filter(o => !unconfirmedDraft(o)) },
     { status: "DRAFT", label: "Draft Belum Dikonfirmasi", orders: orders.filter(unconfirmedDraft) }
   ] : statuses.map(status=>({ status, label: state.statusLabels[status], orders: orders.filter(o=>o.status===status) }));
-  return `<div class="project-table-wrap"><table class="project-table ${waiting ? "waiting-table" : ""}"><thead><tr><th>Order</th><th>Produk</th><th>Deadline</th>${waiting ? "" : "<th>PIC</th>"}<th></th></tr></thead><tbody>${groups.map((group) => {
+  return `<div class="project-table-wrap"><table class="project-table ${waiting ? "waiting-table" : ""}"><thead><tr><th>Order</th><th>Produk</th><th>Jumlah</th><th>Deadline</th><th>PIC</th></tr></thead><tbody>${groups.map((group) => {
     const status = group.status, grouped = group.orders;
     if (!grouped.length) return "";
     const collapsed = state.projectCollapsed.has(status);
     const deadlineSummary = grouped.filter((order) => projectDeadlineState(order) === "late").length;
     const groupLabel = group.label;
-    return `<tr class="project-group-row status-${status.toLowerCase()}"><td colspan="${columnCount}"><button type="button" data-project-group="${status}" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Buka" : "Tutup"} kelompok ${escapeHtml(groupLabel)}"><span aria-hidden="true">${collapsed ? "›" : "⌄"}</span><strong>${groupLabel}</strong><em>${grouped.length} pesanan</em>${deadlineSummary ? `<b class="project-overdue-summary"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18.5a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></svg>${deadlineSummary} terlambat</b>` : ""}</button></td></tr>${collapsed ? "" : grouped.map(projectListRow).join("")}`;
-  }).join("")}</tbody></table></div><div class="project-list-footer"><span>Menampilkan ${orders.length} pesanan pada tab ini</span><span>List diperbarui otomatis dari alur produksi</span></div>`;
+    return `<tr class="project-group-row status-${status.toLowerCase()}"><td colspan="${columnCount}"><button type="button" data-project-group="${status}" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Buka" : "Tutup"} kelompok ${escapeHtml(groupLabel)}"><span aria-hidden="true">${collapsed ? "›" : "⌄"}</span><strong>${groupLabel}</strong><em>${grouped.length} produk · ${new Set(grouped.map(job => job.id)).size} pesanan</em>${deadlineSummary ? `<b class="project-overdue-summary"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18.5a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></svg>${deadlineSummary} terlambat</b>` : ""}</button></td></tr>${collapsed ? "" : grouped.map(projectListRow).join("")}`;
+  }).join("")}</tbody></table></div><div class="project-list-footer"><span>Menampilkan ${orders.length} produk dari ${new Set(orders.map(job => job.id)).size} pesanan</span><span>List diperbarui otomatis dari alur produksi</span></div>`;
+}
+
+function projectSignifier(order) {
+  const label = order.hold?.reason === "Menunggu approval customer" ? "Menunggu Approval" : order.hold?.reason;
+  return order.hold ? `<span class="assist-order-signifier" title="${escapeHtml(order.hold.reason)}">Ⅱ ${escapeHtml(label)}</span>` : order.status === "DESAIN" && order.fileReadiness === "READY" ? '<span class="assist-order-signifier ready">✓ File siap cetak</span>' : "";
+}
+
+function projectPicHtml(job) {
+  const color = job.designPic ? `pic-${picColor(job.items?.[0] || job)}` : "unassigned";
+  return can("projects.assign") && ["DESAIN", "CETAK", "FINISHING", "SELESAI"].includes(job.status)
+    ? `<select class="project-pic-select ${color}" data-project-pic-order="${job.id}" data-project-pic-item="${job.itemId}" aria-label="Pilih PIC untuk ${escapeHtml(job.items[0].productName)}"><option value="" disabled ${job.designPic ? "" : "selected"}>-</option>${picSelectOptions(job)}</select>`
+    : `<span class="project-pic-static ${color}">${escapeHtml(job.designPic || "-")}</span>`;
 }
 
 function projectListRow(order) {
-  const deadlineState = projectDeadlineState(order);
-  const products = (order.items || []).map((item) => item.productName);
-  const firstProduct = products[0] || "—";
-  const extraProducts = products.length > 1 ? `<b class="project-extra-items">+${products.length - 1} item lainnya</b>` : "";
-  const waiting = state.projectCategory === "waiting";
-  const picOptions = picSelectOptions(order);
-  const holdLabel = order.hold?.reason === "Menunggu approval customer" ? "Menunggu Approval" : order.hold?.reason;
-  const signifier = order.hold ? `<span class="assist-order-signifier" title="${escapeHtml(order.hold.reason)} · sejak ${projectDateFormat.format(new Date(order.hold.since))}">Ⅱ ${escapeHtml(holdLabel)}</span>` : order.status === "DESAIN" && order.fileReadiness === "READY" ? '<span class="assist-order-signifier ready">✓ File siap cetak</span>' : "";
-  const specification = order.items?.[0]?.displaySize || "";
-  return `<tr class="project-order-row" data-project-row-order="${order.id}" tabindex="0" aria-label="Buka detail pesanan ${escapeHtml(order.customerName)}"><td class="project-order-identity"><div class="project-order-heading"><strong title="${escapeHtml(order.customerName)}">${escapeHtml(order.customerName)}</strong>${signifier}</div><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b> - ${escapeHtml(order.code)}</small></td><td class="project-product-cell"><strong title="${escapeHtml(firstProduct)}">${escapeHtml(firstProduct)}</strong><small class="project-product-summary"><span title="${escapeHtml(specification)}">${escapeHtml(specification)}</span>${extraProducts}</small></td><td class="project-deadline ${deadlineState}">${formatProjectDeadline(order)}</td>${waiting ? "" : `<td>${can("projects.assign") ? `<select class="project-pic-select ${order.designPic ? "" : "unassigned"}" data-project-pic-order="${order.id}" aria-label="Pilih PIC untuk ${escapeHtml(order.customerName)}"><option value="" disabled ${order.designPic ? "" : "selected"}>-</option>${picOptions}</select>` : `<span class="project-pic-static">${escapeHtml(order.designPic || "-")}</span>`}</td>`}<td><button type="button" class="project-detail-button" data-order="${order.id}">Detail</button></td></tr>`;
+  const item = order.items[0], product = item.productName || "—", specification = item.displaySize || "";
+  return `<tr class="project-order-row status-${order.status.toLowerCase()}" data-project-row-order="${order.id}" data-project-row-item="${order.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(product)} untuk ${escapeHtml(order.customerName)}"><td class="project-order-identity"><div class="project-order-heading"><strong title="${escapeHtml(order.customerName)}">${escapeHtml(order.customerName)}</strong>${projectSignifier(order)}</div><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b></small></td><td class="project-product-cell"><strong title="${escapeHtml(product)}">${escapeHtml(product)}</strong><small class="project-product-summary"><span title="${escapeHtml(specification)}">${escapeHtml(specification)}</span></small></td><td class="project-quantity">${escapeHtml(itemQuantityLabel(item))}</td><td class="project-deadline ${projectDeadlineState(order)}">${formatProjectDeadline(order)}</td><td>${projectPicHtml(order)}</td></tr>`;
 }
 
-function projectColumn(status, source = state.orders) {
-  const orders = source.filter((order) => order.status === status);
-  return `<section class="kanban-column"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${orders.length}</span></div>${orders.map((order) => {
-    const payment = paymentStatus(order);
-    const hidePrice = status === "DESAIN";
-    const paymentClass = payment === "LUNAS" ? "ok" : payment === "BELUM_LUNAS" ? "danger-badge" : "warn";
-    const cardBadge = hidePrice
-      ? `<span class="badge info">${order.designPic ? "PIC: " + escapeHtml(order.designPic) : "Menunggu PIC"}</span>`
-      : `<span class="badge ${paymentClass}">${payment.replaceAll("_", " ")}</span>`;
-    return `<article class="order-card" data-order="${order.id}"><div class="order-card-head"><span class="order-code">${order.code}</span>${cardBadge}</div><h4>${escapeHtml(order.customerName)}</h4><p>${order.items.map((i) => i.productName).join(", ")}</p>${status !== "MENUNGGU_PEMBAYARAN" && !hidePrice ? `<p class="pic-label">${order.designPic ? "PIC: " + escapeHtml(order.designPic) : "Belum ada PIC"}</p>` : ""}${hidePrice || !can("projects.money") ? "" : `<p style="margin-top:7px"><strong>${rupiah.format(order.total)}</strong></p>`}</article>`;
-  }).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
+function projectColumn(status, source = projectJobs(state.orders)) {
+  const jobs = source.filter(job => job.status === status);
+  return `<section class="kanban-column status-${status.toLowerCase()}"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${jobs.length}</span></div>${jobs.map(job => `<article class="order-card status-${status.toLowerCase()}" data-project-row-order="${job.id}" data-project-row-item="${job.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(job.items[0].productName)}"><div class="order-card-head">${projectSignifier(job)}<span class="project-pic-static pic-${picColor(job.items[0])}">${escapeHtml(job.designPic || "Belum ada PIC")}</span></div><h4>${escapeHtml(job.customerName)}</h4><b class="project-phone">${escapeHtml(job.phone || "Walk-in")}</b><p>${escapeHtml(job.items[0].productName)}</p><strong>${escapeHtml(itemQuantityLabel(job.items[0]))}</strong><p class="project-deadline ${projectDeadlineState(job)}">${formatProjectDeadline(job)}</p></article>`).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
 }
 
 function nextAction(order) {
@@ -1137,6 +1133,13 @@ function itemDetail(item) {
   const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}${finish.note ? ` — ${escapeHtml(finish.note)}` : ""}`).join(", ");
   const templateParts = item.templateDesign ? (can("projects.money") ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : `<small>Template: ${escapeHtml(item.templateDesign)}</small>`) : "";
   return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}${imageSizeNote(item) ? `<small class="image-size-note">${escapeHtml(imageSizeNote(item))}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
+}
+
+function itemWorkflowHtml(order, item) {
+  const editableDeadline = ["OWNER", "CASHIER"].includes(state.currentUser.role) || state.currentUser.role === "MANAGER" && can("pos.edit");
+  const active = ["DESAIN", "CETAK", "FINISHING", "SELESAI"].includes(item.status);
+  const canAdvance = can("projects.status") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item));
+  return `<div class="item-workflow"><strong class="item-status">${escapeHtml(state.statusLabels[item.status])}</strong><label class="item-pic-field"><span>PIC</span>${can("projects.assign") && active ? `<select class="project-pic-select pic-${picColor(item)}" data-item-pic="${item.itemId}" aria-label="PIC ${escapeHtml(item.productName)}"><option value="" disabled ${item.designPic ? "" : "selected"}>-</option>${picSelectOptions(item)}</select>` : `<b class="project-pic-static pic-${picColor(item)}">${escapeHtml(item.designPic || "-")}</b>`}</label><div class="item-deadline"><span>Deadline</span>${editableDeadline ? `<form data-item-deadline="${item.itemId}"><input type="datetime-local" name="deadline" aria-label="Deadline ${escapeHtml(item.productName)} (WITA)" value="${localDateTimeInput(item.deadline)}"><button type="submit" class="secondary">Simpan</button></form>` : `<b>${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "-"}</b>`}</div>${canAdvance ? `<button type="button" class="primary item-advance" data-item-advance="${item.itemId}">${item.status === "FINISHING" ? "Selesaikan Produk" : nextAction(item)}</button>` : ""}</div>`;
 }
 
 function confirmUnpaidPickup(order) {
@@ -1152,7 +1155,7 @@ function confirmUnpaidPickup(order) {
   });
 }
 
-function openOrder(id, showPayment = false) {
+function openOrder(id, showPayment = false, focusedItemId = null) {
   const order = state.orders.find((item) => item.id === id);
   if (!order) return toast("Pesanan tidak ditemukan", "error");
   const showMoney = can("projects.money");
@@ -1160,13 +1163,13 @@ function openOrder(id, showPayment = false) {
   const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
   const outstanding = showMoney ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
   const detail = document.querySelector("#order-detail");
+  const actionableItems = order.items.filter(item => can("projects.status") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item)));
+  const primaryItem = actionableItems.find(item => item.itemId === focusedItemId) || actionableItems[0];
   detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${order.code}</span><h2 style="margin:5px 0 0">${escapeHtml(order.customerName)}</h2></div><button class="detail-close">×</button></div><div class="detail-body">
     <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
-    <div class="order-items-detail">${order.items.map((item, index) => `<div class="detail-item"><span class="item-number">${index + 1}</span><div>${itemDetail(item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
+    <div class="order-items-detail">${order.items.map((item,index) => `<div class="detail-item status-${item.status.toLowerCase()}" data-detail-item="${item.itemId}" tabindex="-1"><span class="item-number">${index+1}</span><div class="detail-item-content">${itemDetail(item)}${itemWorkflowHtml(order,item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
     ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
     <div id="order-assistance" class="order-assistance"></div>
-    <div class="order-deadline-section"><p class="note"><strong>Deadline:</strong> ${order.deadline ? dateFormat.format(new Date(order.deadline)) + " WITA" : "Tidak ditentukan"}</p>${["OWNER", "CASHIER"].includes(state.currentUser.role) || state.currentUser.role === "MANAGER" && can("pos.edit") ? `<form id="order-deadline-form"><label class="field"><span>${order.deadline ? "Ubah" : "Tambah"} deadline (WITA)</span><input name="deadline" type="datetime-local" value="${localDateTimeInput(order.deadline)}" required></label><button type="submit" class="secondary">Simpan Deadline</button></form>` : ""}</div>
-    ${isDesign && can("projects.assign") ? `<div class="operator-box"><div class="field"><span>Nama Operator Design</span><div class="operator-choices">${activePics().map((pic) => `<div class="chip"><input type="radio" name="design-pic" id="operator-${escapeHtml(pic.id)}" value="${escapeHtml(pic.name)}" ${order.designPic === pic.name ? "checked" : ""}><label for="operator-${escapeHtml(pic.id)}">${escapeHtml(pic.name)}</label></div>`).join("") || '<p class="product-note">Belum ada PIC aktif. Tambahkan melalui Master Data → PIC.</p>'}</div></div><button id="save-design-pic" class="secondary">Simpan PIC</button></div>` : ""}
     ${can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
   </div><div class="detail-actions">
@@ -1175,23 +1178,31 @@ function openOrder(id, showPayment = false) {
       ${!isWaiting ? '<button id="print-spk" class="secondary">Cetak SPK</button>' : ""}
       ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
       ${isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
-      ${can("projects.status") && nextAction(order) ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
+      ${primaryItem ? `<span class="detail-action-product">Produk ${order.items.indexOf(primaryItem)+1}: ${escapeHtml(primaryItem.productName)}</span><button type="button" class="primary" data-item-advance="${primaryItem.itemId}">${primaryItem.status === "FINISHING" ? "Selesaikan Produk" : nextAction(primaryItem)}</button>` : ""}
+      ${can("projects.status") && order.status === "SELESAI" && roleCanAdvance(state.currentUser.role, order.status, "DIAMBIL") ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
     </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   detail.querySelector("#edit-order")?.addEventListener("click", () => startEditOrder(order));
   bindDeadlinePicker(detail);
-  detail.querySelector("#order-deadline-form")?.addEventListener("submit", async (event) => {
-    event.preventDefault(); const button = event.target.querySelector("button"); button.disabled = true;
-    try { await api(`/api/orders/${order.id}/deadline`, { method: "PATCH", body: JSON.stringify({ deadline: makassarInputToIso(event.target.elements.deadline.value) }) }); dialog.close(); await load(); openOrder(order.id); toast("Deadline disimpan dan dicatat di riwayat"); } catch (error) { toast(error.message, "error"); button.disabled = false; }
-  });
   bindPaymentForm(order, outstanding);
-  detail.querySelector("#save-design-pic")?.addEventListener("click", async () => {
+  const updateItem = async (itemId, field, body, control) => {
+    const related = [...detail.querySelectorAll("[data-item-advance]")].filter(button => button.dataset.itemAdvance === itemId);
+    control.disabled = true; related.forEach(button => { button.disabled = true; });
     try {
-      const designPic = detail.querySelector('input[name="design-pic"]:checked')?.value || "";
-      if (!designPic) return toast("Pilih nama operator design", "error");
-      await api(`/api/orders/${order.id}/design-pic`, { method: "PATCH", body: JSON.stringify({ designPic }) });
-      dialog.close(); await load(); toast("PIC Operator Design disimpan");
-    } catch (error) { toast(error.message, "error"); }
+      await api(`/api/orders/${order.id}/items/${itemId}/${field}`, { method: "PATCH", body: JSON.stringify(body) });
+      dialog.close(); await load(); openOrder(order.id, false, itemId); toast("Produk diperbarui dan dicatat di riwayat");
+    } catch (error) {
+      if (control.tagName === "SELECT") control.value = order.items.find(item => item.itemId === itemId)?.designPic || "";
+      toast(error.message, "error"); control.disabled = false; related.forEach(button => { button.disabled = false; });
+    }
+  };
+  detail.querySelectorAll("[data-item-pic]").forEach(select => select.onchange = () => updateItem(select.dataset.itemPic, "design-pic", { designPic: select.value }, select));
+  detail.querySelectorAll("[data-item-deadline]").forEach(form => form.onsubmit = event => {
+    event.preventDefault(); updateItem(form.dataset.itemDeadline, "deadline", { deadline: makassarInputToIso(form.elements.deadline.value) || null }, form.querySelector("button"));
+  });
+  detail.querySelectorAll("[data-item-advance]").forEach(button => button.onclick = () => {
+    const item = order.items.find(item => item.itemId === button.dataset.itemAdvance);
+    updateItem(item.itemId, "status", { status: nextItemStatus(item), expectedStatus: item.status }, button);
   });
   const advance = async (confirmUnpaid = false) => {
     const button = detail.querySelector("#advance-order"); button.disabled = true;
@@ -1218,6 +1229,10 @@ function openOrder(id, showPayment = false) {
   detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));
   dialog.showModal();
   assistance.mountOrder(order, detail.querySelector("#order-assistance"));
+  if (focusedItemId) {
+    const target = [...detail.querySelectorAll("[data-detail-item]")].find(element => element.dataset.detailItem === focusedItemId);
+    target?.classList.add("focused-item"); target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "center" });
+  }
   if (showPayment) detail.querySelector("#payment-form-wrap")?.classList.remove("hidden");
 }
 
@@ -1295,7 +1310,7 @@ function readPoAttachment(file) {
 
 function cartLineFromPricedItem(item) {
   const line = {
-    productId: item.productId, productName: item.productName, width: item.width,
+    itemId: item.itemId, productId: item.productId, productName: item.productName, width: item.width,
     dtfPackageId: item.dtfPackageId || "", shirtVariants: (item.shirtVariants || []).map((variant) => ({ ...variant })),
     length: item.actualLength, imageWidthCm: item.imageWidthCm ?? null, imageLengthCm: item.imageLengthCm ?? null, allowanceCm: item.allowanceCm || 0, finalImageWidthCm: item.finalImageWidthCm ?? null, finalImageLengthCm: item.finalImageLengthCm ?? null, billedLength: item.billedLength, quantity: item.quantity,
     sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
@@ -1338,7 +1353,7 @@ function printOrder(order, type) {
   printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : "TANDA TERIMA PESANAN"}</div><hr>
     <div class="print-meta"><b>${order.code}</b><span>${dateFormat.format(new Date(order.createdAt))}</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
-    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item) ? `<br>${escapeHtml(imageSizeNote(item))}` : ""}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
+    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item) ? `<br>${escapeHtml(imageSizeNote(item))}` : ""}<br>${escapeHtml(itemQuantityLabel(item))}<br>Status: ${escapeHtml(state.statusLabels[item.status] || item.status)} · PIC: ${escapeHtml(item.designPic || "—")}<br>Deadline: ${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "—"}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
     ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div><div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
     <hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
   document.body.classList.add("printing");
@@ -1516,7 +1531,7 @@ function renderSettingsMaster() {
   const rows = categories ? names.map((name) => {
     const count = (kind === "products" ? state.allProducts : state.materials).filter((item) => item.category === name).length;
     return `<tr><td><strong>${escapeHtml(name)}</strong></td><td>${count} ${kind === "products" ? "produk" : "bahan"}</td><td><button class="secondary" data-edit-category-name="${escapeHtml(name)}">Edit</button></td></tr>`;
-  }).join("") : activePics().map((pic) => `<tr><td><strong>${escapeHtml(pic.name)}</strong></td><td>${state.orders.filter((order) => order.designPicId === pic.id && !["SELESAI", "DIAMBIL"].includes(order.status)).length} pesanan berjalan</td><td><button class="secondary" data-edit-pic="${escapeHtml(pic.id)}">Edit</button></td></tr>`).join("");
+  }).join("") : activePics().map((pic) => `<tr><td><strong>${escapeHtml(pic.name)}</strong></td><td>${projectJobs(state.orders).filter(job => job.designPicId === pic.id && !["SELESAI", "DIAMBIL"].includes(job.status)).length} produk berjalan</td><td><button class="secondary" data-edit-pic="${escapeHtml(pic.id)}">Edit</button></td></tr>`).join("");
   root.innerHTML = `<div class="master-page">${masterHeader(categories ? "Kategori" : "PIC")}${categories ? `<div class="settings-kind-tabs">${[["products", "Kategori Produk"], ["materials", "Kategori Bahan"]].map(([id, name]) => `<button class="secondary ${kind === id ? "active" : ""}" data-settings-category-kind="${id}">${name}</button>`).join("")}</div>` : '<p class="product-note">PIC adalah daftar nama mandiri untuk kolom PIC pesanan, terpisah dari akun User.</p>'}<section class="panel"><div class="panel-head master-list-head"><h2>${categories ? kind === "products" ? "Kategori Produk" : "Kategori Bahan" : "Daftar PIC"}</h2><input id="settings-search" class="search" type="search" placeholder="Cari ${categories ? "kategori" : "PIC"}…"></div><div class="table-wrap master-table"><table><thead><tr><th>Nama</th><th>Penggunaan</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">Belum ada data.</td></tr>'}</tbody></table></div></section></div>`;
   document.querySelectorAll("[data-master-tab]").forEach((button) => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
   document.querySelectorAll("[data-settings-category-kind]").forEach((button) => button.onclick = () => { state.categorySettingsKind = button.dataset.settingsCategoryKind; renderSettingsMaster(); });
