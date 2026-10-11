@@ -36,6 +36,7 @@ test("Status Order: invoices, receipts, access and cashier pickup are independen
     for (const status of ["CETAK", "FINISHING", "SELESAI"]) await ok(`/api/orders/${order.id}/items/${second.itemId}/status`, "PATCH", { status });
     const mixed = await ok("/api/order-history?status=SELESAI", "GET", undefined, cash);
     assert.equal(mixed.orders.length, 1); assert.equal(mixed.orders[0].items.length, 2);
+    assert.equal(mixed.orders[0].items[0].priceBasis, first.priceBasis);
     assert.equal(mixed.summary.outstanding, order.total - 1000);
     assert.equal((await request("/api/order-history", "GET", undefined, operator)).status, 403);
     assert.equal((await request(`/api/order-history/${order.id}`, "GET", undefined, operator)).status, 403);
