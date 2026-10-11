@@ -1,4 +1,7 @@
 import { imageGeometry, supportsOutdoorAllowance, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
+import { createOrderHistory } from "./order-history-ui.js";
+import { paymentReceipts, historyDraft } from "./order-history.js";
+import { paymentReceiptHtml } from "./payment-documents.js";
 import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor } from "./item-workflow.js";
 import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
@@ -61,6 +64,7 @@ const state = {
 const root = document.querySelector("#view-root");
 const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
+const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, dateFormat, openOrder, toast });
 const assistance = createOrderAssistance({
   state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, deadlineLabel: formatProjectDeadline, canAuto: () => !hasUnsavedPayroll(),
   openOrder: async id => { await load(); if (state.orders.some(o=>o.id===id)) openOrder(id); else toast("Pesanan tidak lagi tersedia untuk akun ini", "error"); },
@@ -106,6 +110,7 @@ function toast(message, type = "") {
 }
 
 function showLogin() {
+  orderHistory.reset();
   clearEmployeeSession();
   state.currentUser = null;
   assistance.resetSession();
@@ -124,7 +129,7 @@ function showApp() {
 }
 
 function can(permission) { return state.permissions.includes(permission); }
-const viewPermissions = { pos: "pos.view", projects: "projects.orders", stock: "stock.view", reports: "reports.view", master: "master.view" };
+const viewPermissions = { pos: "pos.view", "order-history": "orders.view", projects: "projects.orders", stock: "stock.view", reports: "reports.view", master: "master.view" };
 function canView(view) { return view === "employees" ? canManageSettings() : can(viewPermissions[view]); }
 function firstAllowedView() { return Object.keys(viewPermissions).find((view) => can(viewPermissions[view])) || "none"; }
 
@@ -142,9 +147,10 @@ async function load() {
 
 function render() {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  document.querySelector("#page-title").textContent = { pos: "Point of Sale", projects: "Project Management", stock: "Stok Bahan", reports: "Laporan", master: "Master Data", employees: "Karyawan", none: "Akses Terbatas" }[state.view];
+  document.querySelector("#page-title").textContent = { pos: "Point of Sale", "order-history": "Status Order", projects: "Project Management", stock: "Stok Bahan", reports: "Laporan", master: "Master Data", employees: "Karyawan", none: "Akses Terbatas" }[state.view];
   if (state.view === "none") root.innerHTML = '<div class="category-empty"><strong>Belum ada menu yang dapat diakses</strong><p>Hubungi Admin atau Owner untuk mengatur permission akun ini.</p></div>';
   if (state.view === "pos") renderPos();
+  if (state.view === "order-history") orderHistory.mount();
   if (state.view === "projects") renderProjects();
   if (state.view === "stock") renderStock();
   if (state.view === "reports") renderReports();
@@ -1184,7 +1190,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   const order = state.orders.find((item) => item.id === id);
   if (!order) return toast("Pesanan tidak ditemukan", "error");
   const showMoney = can("projects.money");
-  const isDesign = order.status === "DESAIN";
+  const isDesign = order.status === "DESAIN" && state.view !== "order-history";
   const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
   const outstanding = showMoney ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
   const detail = document.querySelector("#order-detail");
@@ -1195,16 +1201,18 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     <div class="order-items-detail">${order.items.map((item,index) => `<div class="detail-item status-${item.status.toLowerCase()}" data-detail-item="${item.itemId}" tabindex="-1"><span class="item-number">${index+1}</span><div class="detail-item-content">${itemDetail(item)}${itemWorkflowHtml(order,item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
     ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
     <div id="order-assistance" class="order-assistance"></div>
+    ${showMoney && can("orders.view") ? `<section class="payment-ledger"><h3>Riwayat pembayaran</h3>${paymentReceipts(order).map(payment => `<div class="payment-ledger-row"><div><strong>${rupiah.format(payment.amount)} · ${escapeHtml(payment.method)}</strong><small>${dateFormat.format(new Date(payment.createdAt))} WITA · ${escapeHtml(payment.actor || "Riwayat lama")}</small></div><button class="secondary" data-print-payment="${escapeHtml(payment.id)}">Cetak Bukti #${payment.sequence}</button></div>`).join("") || '<p>Belum ada pembayaran diterima.</p>'}${(order.payments || []).filter(payment => payment.type === "PO").map(payment => `<p>PO / Tempo · ${escapeHtml(payment.poNumber)} · ${dateFormat.format(new Date(payment.createdAt))} WITA</p>`).join("")}</section>` : ""}
     ${can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
   </div><div class="detail-actions">
       ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}
       ${!isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="secondary">Konfirmasi Pembayaran</button>' : ""}
       ${!isWaiting ? '<button id="print-spk" class="secondary">Cetak SPK</button>' : ""}
+      ${showMoney && can("orders.view") ? '<button id="print-invoice" class="secondary">Nota Ulang</button>' : ""}
       ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
       ${isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
       ${primaryItem ? `<span class="detail-action-product">Produk ${order.items.indexOf(primaryItem)+1}: ${escapeHtml(primaryItem.productName)}</span><button type="button" class="primary" data-item-advance="${primaryItem.itemId}">${primaryItem.status === "FINISHING" ? "Selesaikan Produk" : nextAction(primaryItem)}</button>` : ""}
-      ${can("projects.status") && order.status === "SELESAI" && roleCanAdvance(state.currentUser.role, order.status, "DIAMBIL") ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
+      ${(can("projects.status") || can("orders.pickup")) && order.status === "SELESAI" && roleCanAdvance(state.currentUser.role, order.status, "DIAMBIL") ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
     </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   detail.querySelector("#edit-order")?.addEventListener("click", () => startEditOrder(order));
@@ -1251,6 +1259,12 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     } finally { button.disabled = false; }
   });
   detail.querySelector("#print-spk")?.addEventListener("click", () => printOrder(order, "spk"));
+  detail.querySelector("#print-invoice")?.addEventListener("click", () => printOrder(order, "invoice"));
+  detail.querySelectorAll("[data-print-payment]").forEach(button => button.onclick = () => {
+    if (!can("orders.view") || !can("projects.money")) return;
+    const payment = paymentReceipts(order).find(payment => payment.id === button.dataset.printPayment);
+    if (payment) { printDocument.className = "print-document payment-receipt"; printDocument.innerHTML = paymentReceiptHtml(order, payment); showPrintDocument(); }
+  });
   detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));
   dialog.showModal();
   assistance.mountOrder(order, detail.querySelector("#order-assistance"));
@@ -1321,7 +1335,7 @@ function bindPaymentForm(order, outstanding) {
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);
       await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify(values) });
       if (previewUrl) URL.revokeObjectURL(previewUrl);
-      dialog.close(); await load(); toast("Pembayaran berhasil dicatat");
+      dialog.close(); await load(); if (can("orders.view")) openOrder(order.id); toast("Pembayaran berhasil dicatat");
     } catch (error) { toast(error.message, "error"); }
     finally { submitting = false; if (button) button.disabled = false; }
   });
@@ -1374,13 +1388,18 @@ function startEditOrder(order) {
 
 function printOrder(order, type) {
   const isSpk = type === "spk";
+  if (!isSpk && !can("projects.money")) return;
   printDocument.className = `print-document ${type}`;
-  printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : "TANDA TERIMA PESANAN"}</div><hr>
-    <div class="print-meta"><b>${order.code}</b><span>${dateFormat.format(new Date(order.createdAt))}</span></div>
+  printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : type === "invoice" ? historyDraft(order) ? "NOTA DRAFT · BELUM DIKONFIRMASI" : "NOTA PESANAN" : "TANDA TERIMA PESANAN"}</div><hr>
+    <div class="print-meta"><b>${escapeHtml(order.code)}</b><span>${dateFormat.format(new Date(order.createdAt))} WITA</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
     ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item) ? `<br>${escapeHtml(imageSizeNote(item))}` : ""}<br>${escapeHtml(itemQuantityLabel(item))}<br>Status: ${escapeHtml(state.statusLabels[item.status] || item.status)} · PIC: ${escapeHtml(item.designPic || "—")}<br>Deadline: ${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "—"}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
     ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div><div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
-    <hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
+    ${!isSpk ? `<p><b>Status pembayaran: ${escapeHtml(paymentStatus(order).replaceAll("_", " "))}</b><br>WhatsApp: ${escapeHtml(order.phone || "—")}</p>` : ""}<hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
+  showPrintDocument();
+}
+
+function showPrintDocument() {
   document.body.classList.add("printing");
   window.onafterprint = () => { document.body.classList.remove("printing"); printDocument.innerHTML = ""; };
   window.print();

@@ -1,4 +1,5 @@
 import { requiredPhone } from "./public/customer-validation.js";
+import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
@@ -696,7 +697,8 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       normalizeOrder(order);
       const type = req.body.type === "PO" ? "PO" : "PAYMENT";
       const method = type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim();
-      const amount = Math.max(0, Number(req.body.amount || 0));
+      const amount = type === "PO" ? 0 : Number(req.body.amount || 0);
+      if (!Number.isFinite(amount) || amount < 0) throw new Error("Nominal pembayaran tidak valid");
       const outstanding = Math.max(0, order.total - order.paidAmount);
       const poNumber = String(req.body.poNumber || "").trim();
       const poAttachment = req.body.poAttachment || null;
@@ -710,7 +712,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
         if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(String(poAttachment.dataUrl || ""))) throw new Error("Data gambar PO tidak valid");
         if (String(poAttachment.dataUrl).length > 3_500_000) throw new Error("Ukuran gambar PO maksimal 2,5 MB");
       }
-      const payment = { id: crypto.randomUUID(), method, type, amount, poNumber, poAttachment: poAttachment ? { name: text(poAttachment.name), type: text(poAttachment.type), dataUrl: poAttachment.dataUrl } : null, createdAt: now() };
+      const payment = { id: crypto.randomUUID(), method, type, amount, poNumber, poAttachment: poAttachment ? { name: text(poAttachment.name), type: text(poAttachment.type), dataUrl: poAttachment.dataUrl } : null, createdAt: now(), actor: req.user.name, actorId: req.user.id, note: text(req.body.note), sequence: order.payments.filter(payment => payment.type !== "PO" && Number(payment.amount) > 0).length + 1, orderTotal: order.total, paidBefore: order.paidAmount, paidAfter: order.paidAmount + amount, balanceAfter: Math.max(0, order.total - order.paidAmount - amount) };
       order.payments.push(payment);
       order.paidAmount += amount;
       order.paymentConfirmed = true;
@@ -775,8 +777,10 @@ app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), as
 });
 
 registerItemWorkflowRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder, activity, audit, now });
+registerOrderHistoryRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder });
 
-app.patch("/api/orders/:id/status", requirePermission("projects.status"), async (req, res, next) => {
+app.patch("/api/orders/:id/status", async (req, res, next) => {
+  if (!hasPermission(req.user, "projects.status") && !(req.body.status === STATUS.PICKED_UP && hasPermission(req.user, "orders.pickup"))) return res.status(403).json({ error: "Anda tidak memiliki akses mengubah status ini" });
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
@@ -785,6 +789,7 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       const target = req.body.status;
       if (order.hold) { const error = new Error("Pesanan masih tertahan. Lepaskan penanda setelah kendala selesai."); error.code = "ORDER_HELD"; throw error; }
       if (target !== allowedNextStatus(order.status)) throw new Error("Perpindahan status tidak valid");
+      if (target === STATUS.PICKED_UP && (!order.items.length || order.items.some(item => item.status !== STATUS.DONE))) throw new Error("Seluruh produk harus selesai sebelum pesanan diambil");
       if (!allowedStatusForRole(req.user.role, order.status, target)) throw new Error("Role Anda tidak dapat memindahkan status ini");
       if (order.items.some(item => item.status !== order.status)) throw new Error("Tahapan produk berbeda. Lanjutkan status masing-masing produk melalui detail pesanan.");
       const unpaidPickup = target === STATUS.PICKED_UP && Number(order.paidAmount || 0) < Number(order.total || 0);
@@ -794,6 +799,7 @@ app.patch("/api/orders/:id/status", requirePermission("projects.status"), async 
       if (order.status === STATUS.DESIGN && order.items.some(item => !item.designPic)) throw new Error("Nama PIC Operator Design wajib diisi");
       if (unpaidPickup) activity(state, order, "Penerimaan pesanan belum lunas dikonfirmasi; sisa pembayaran tetap tercatat", req.user.name);
       order.status = target;
+      if (target === STATUS.PICKED_UP) order.pickedUpAt = now();
       order.statusEnteredAt = now();
       order.updatedAt = now();
       order.items.forEach(item => { item.status = target; item.statusEnteredAt = now(); item.updatedAt = now(); });

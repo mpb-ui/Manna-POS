@@ -1,0 +1,71 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import net from "node:net";
+
+test("Status Order: invoices, receipts, access and cashier pickup are independent of production grants", async () => {
+  const socket = net.createServer(); await new Promise(resolve => socket.listen(0, "127.0.0.1", resolve));
+  const port = socket.address().port; await new Promise(resolve => socket.close(resolve));
+  const child = spawn(process.execPath, ["server.js"], { cwd: new URL("..", import.meta.url).pathname, env: { ...process.env, DATABASE_URL: "", PORT: String(port), APP_PIN: "1234" }, stdio: "ignore" });
+  const url = `http://127.0.0.1:${port}`;
+  try {
+    let ready = false;
+    for (let i = 0; i < 80; i++) {
+      try { ready = (await fetch(`${url}/api/health`)).ok; } catch { /* boot */ }
+      if (ready) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(ready);
+    const login = async (username, pin) => { const r = await fetch(`${url}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, pin }) }); assert.equal(r.status, 200); return r.headers.get("set-cookie").split(";")[0]; };
+    const owner = await login("admin", "1234");
+    const request = async (path, method = "GET", body, cookie = owner) => { const r = await fetch(`${url}${path}`, { method, headers: { "content-type": "application/json", cookie }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, body: await r.json() }; };
+    const ok = async (...args) => { const r = await request(...args); assert.ok(r.status < 300, JSON.stringify(r)); return r.body; };
+    for (const [name, role, permissions] of [["cash", "CASHIER"], ["operator", "DESIGN"], ["limited", "CASHIER", ["orders.view"]]]) await ok("/api/users", "POST", { name, username: name, pin: "5678", role, ...(permissions ? { permissions } : {}) });
+    const cash = await login("cash", "5678"), operator = await login("operator", "5678"), limited = await login("limited", "5678");
+    const body = { customerName: "Invoice multi produk", phone: "081234567890", items: [{ productId: "poster-albatros", width: .9, length: 1, quantity: 2 }, { productId: "poster-albatros", width: .9, length: 2, quantity: 1 }] };
+    const draft = await ok("/api/orders", "POST", { ...body, customerName: "Draft belum dikonfirmasi" });
+    let order = await ok("/api/orders", "POST", body);
+    assert.equal((await request(`/api/orders/${order.id}/status`, "PATCH", { status: "DESAIN" }, cash)).status, 403);
+    assert.equal((await request(`/api/orders/${order.id}/payments`, "POST", { method: "TUNAI", amount: "NaN" })).status, 400);
+    order = await ok(`/api/orders/${order.id}/payments`, "POST", { method: "TUNAI", amount: 1000 }, cash);
+    const dp = order.payments[0];
+    assert.equal(dp.actor, "cash"); assert.equal(dp.paidBefore, 0); assert.equal(dp.balanceAfter, order.total - 1000);
+    const first = order.items[0], second = order.items[1];
+    assert.equal((await request(`/api/orders/${order.id}/status`, "PATCH", { status: "DIAMBIL", confirmUnpaid: true }, cash)).status, 400);
+    for (const item of order.items) await ok(`/api/orders/${order.id}/items/${item.itemId}/design-pic`, "PATCH", { designPic: "Gema" });
+    for (const status of ["CETAK", "FINISHING", "SELESAI"]) await ok(`/api/orders/${order.id}/items/${second.itemId}/status`, "PATCH", { status });
+    const mixed = await ok("/api/order-history?status=SELESAI", "GET", undefined, cash);
+    assert.equal(mixed.orders.length, 1); assert.equal(mixed.orders[0].items.length, 2);
+    assert.equal(mixed.summary.outstanding, order.total - 1000);
+    assert.equal((await request("/api/order-history", "GET", undefined, operator)).status, 403);
+    assert.equal((await request(`/api/order-history/${order.id}`, "GET", undefined, operator)).status, 403);
+    const restricted = await ok("/api/order-history", "GET", undefined, limited);
+    assert.equal(restricted.summary.outstanding, undefined); assert.ok(restricted.orders.every(o => o.total === undefined && o.paymentStatus === undefined && o.paidAmount === undefined));
+    const detail = await ok(`/api/order-history/${order.id}`, "GET", undefined, limited);
+    assert.equal(detail.payments, undefined); assert.equal(detail.items[0].subtotal, undefined);
+    assert.equal((await request("/api/order-history?payment=LUNAS", "GET", undefined, limited)).status, 403);
+    assert.equal((await request(`/api/order-history/${order.id}/payments/${dp.id}`, "GET", undefined, limited)).status, 403);
+    assert.equal((await request("/api/order-history?from=wrong")).status, 400);
+    assert.equal((await request("/api/order-history?from=2026-10-12&to=2026-10-11")).status, 400);
+    const all = await ok("/api/order-history", "GET", undefined, cash);
+    assert.equal(all.summary.orders, 2); assert.equal(all.summary.outstanding, order.total - 1000);
+    const paginated = await ok("/api/order-history?pageSize=1&page=2"); assert.equal(paginated.orders.length, 1); assert.equal(paginated.pages, 2);
+    assert.equal((await ok(`/api/order-history?q=${draft.code}`)).orders[0].id, draft.id);
+    for (const status of ["CETAK", "FINISHING", "SELESAI"]) await ok(`/api/orders/${order.id}/items/${first.itemId}/status`, "PATCH", { status });
+    const before = await ok("/api/bootstrap");
+    const blocked = await request(`/api/orders/${order.id}/status`, "PATCH", { status: "DIAMBIL" }, cash);
+    assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "UNPAID_PICKUP_CONFIRMATION");
+    const picked = await Promise.all([1, 2].map(() => request(`/api/orders/${order.id}/status`, "PATCH", { status: "DIAMBIL", confirmUnpaid: true }, cash)));
+    assert.equal(picked.filter(r => r.status === 200).length, 1); assert.equal(picked.filter(r => r.status === 400).length, 1);
+    const after = await ok("/api/bootstrap"); assert.deepEqual(after.inventory, before.inventory); assert.deepEqual(after.stockMovements, before.stockMovements);
+    order = await ok(`/api/orders/${order.id}/payments`, "POST", { method: "QRIS", amount: order.total - 1000 }, cash);
+    assert.equal(order.status, "DIAMBIL"); assert.equal(order.paymentStatus, "LUNAS");
+    assert.equal(order.timeline.filter(item => item.message === "Status berubah menjadi Pesanan Diambil").length, 1);
+    assert.deepEqual((await ok("/api/bootstrap")).inventory, before.inventory);
+    const receipt = await ok(`/api/order-history/${order.id}/payments/${dp.id}`, "GET", undefined, cash);
+    assert.equal(receipt.payment.balanceAfter, order.total - 1000); assert.equal(receipt.payment.actor, "cash");
+    const finalReceipt = await ok(`/api/order-history/${order.id}/payments/${order.payments[1].id}`, "GET", undefined, cash);
+    assert.equal(finalReceipt.payment.balanceAfter, 0); assert.equal(finalReceipt.payment.paidBefore, 1000);
+    assert.equal((await ok("/api/order-history?status=DIAMBIL&payment=LUNAS")).orders.length, 1);
+  } finally { child.kill(); await new Promise(resolve => child.once("exit", resolve)); }
+});
