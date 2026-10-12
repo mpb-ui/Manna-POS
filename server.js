@@ -1,4 +1,5 @@
 import { requiredPhone } from "./public/customer-validation.js";
+import { registerSheetProfileRoutes, validateProductCalculator } from "./lib/sheet-calculator.js";
 import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
@@ -567,10 +568,13 @@ function saveProduct(state, body, current = null) {
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
   const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  validateProductCalculator(product, state, body, current);
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
   return product;
 }
+
+registerSheetProfileRoutes({ app, store, requireCatalogAdmin, audit });
 
 app.post("/api/products", requirePermission("master.products"), async (req, res, next) => {
   try { const result = await store.mutate((state) => { const product = saveProduct(state, req.body); audit(state, req.user, "PRODUCT_CREATE", `Menambahkan produk ${product.name}`, { productId: product.id, price: product.price }); return product; }); res.status(201).json(result); } catch (error) { next(error); }
@@ -612,7 +616,7 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
 app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
-      const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || []);
+      const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || [], state.catalogOptions.sheetCalculatorProfiles);
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       const order = {
@@ -658,7 +662,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       if (!order) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
       if (order.status !== STATUS.WAITING_PAYMENT || order.paymentConfirmed) throw new Error("Hanya draft yang belum dibayar yang dapat diedit");
-      const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || []);
+      const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || [], state.catalogOptions.sheetCalculatorProfiles, order.items);
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       order.customerName = String(req.body.customerName).trim();
