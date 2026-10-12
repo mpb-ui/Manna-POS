@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/sheet-calculator.css" />
   <link rel="stylesheet" href="/wholesale-prices.css" />
+  <link rel="stylesheet" href="/navigation.css" />
 </head>
 <body>
   <div id="toast" class="toast" aria-live="polite"></div>
@@ -23,32 +24,25 @@
   </section>
 
   <div id="app-shell" class="app-shell hidden">
-    <aside class="sidebar">
-      <div class="brand">
-        <img class="brand-full" src="/manna-print-logo.jpg" alt="Manna Print" />
-        <img class="brand-mark" src="/manna-logogram.png" alt="Manna" />
-        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Tutup sidebar" aria-expanded="true" title="Tutup sidebar">‹</button>
-      </div>
-      <div class="sidebar-context">
-        <span>Manna Print · Labuan Bajo</span>
-        <strong id="page-title">Point of Sale</strong>
-      </div>
-      <nav>
-        <button class="nav-item active" data-view="pos"><span>▦</span><b>POS</b></button>
-        <button class="nav-item" data-view="order-history"><span>▧</span><b>Status Order</b></button>
-        <button class="nav-item" data-view="projects"><span>▤</span><b>Project Management</b><em id="active-count">0</em></button>
-        <button class="nav-item" data-view="stock"><span>◫</span><b>Stok Bahan</b></button>
-        <button class="nav-item" data-view="reports"><span>▥</span><b>Laporan</b></button>
-        <button class="nav-item hidden" data-view="employees"><span>♙</span><b>Karyawan</b></button>
-        <button class="nav-item" data-view="master"><span>⚙</span><b>Master Data</b></button>
+    <header class="top-navigation">
+      <a class="top-brand" href="#pos" aria-label="Manna Print, buka halaman utama"><span>manna <small>Print</small></span></a>
+      <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">☰ <span>Menu</span></button>
+      <nav id="primary-navigation" aria-label="Menu utama">
+        <button type="button" class="nav-item active" data-view="pos" aria-current="page"><b>POS</b></button>
+        <button type="button" class="nav-item" data-view="order-history"><b>Status Order</b></button>
+        <button type="button" class="nav-item" data-view="projects"><b>Project Management</b><em id="active-count">0</em></button>
+        <button type="button" class="nav-item" data-view="stock"><b>Stok Bahan</b></button>
+        <button type="button" class="nav-item" data-view="reports"><b>Laporan</b></button>
+        <button type="button" class="nav-item hidden" data-view="employees"><b>Karyawan</b></button>
+        <button type="button" class="nav-item" data-view="master"><b>Master Data</b></button>
       </nav>
-      <div class="sidebar-foot">
-        <div class="sidebar-user"><strong id="current-user-name">—</strong><small id="current-user-role">—</small><button id="logout-btn" type="button">Keluar</button></div>
-        <span id="today"></span>
-        <div><span class="online-dot"></span> Sistem aktif <button id="refresh-btn" class="sidebar-refresh" title="Muat ulang">↻</button></div>
-      </div>
-    </aside>
+      <details class="account-menu" id="account-menu">
+        <summary aria-label="Menu akun"><span class="account-avatar" aria-hidden="true">●</span><strong id="current-user-name">—</strong><span class="account-chevron" aria-hidden="true">⌄</span></summary>
+        <div class="account-popover"><small id="current-user-role">—</small><span id="today"></span><span><i class="online-dot"></i>Sistem aktif</span><button id="refresh-btn" type="button">↻ Muat ulang data</button><button id="logout-btn" type="button">Keluar</button></div>
+      </details>
+    </header>
     <main class="main-content">
+      <h1 id="page-title" class="page-heading">Point of Sale</h1>
       <div id="view-root"></div>
     </main>
   </div>

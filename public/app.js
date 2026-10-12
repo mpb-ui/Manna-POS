@@ -114,6 +114,7 @@ function toast(message, type = "") {
 }
 
 function showLogin() {
+  closeNavigation();
   orderHistory.reset();
   clearEmployeeSession();
   state.currentUser = null;
@@ -150,7 +151,11 @@ async function load() {
 }
 
 function render() {
-  document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
+  document.querySelectorAll(".nav-item").forEach((button) => {
+    const active = button.dataset.view === state.view;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+  });
   document.querySelector("#page-title").textContent = { pos: "Point of Sale", "order-history": "Status Order", projects: "Project Management", stock: "Stok Bahan", reports: "Laporan", master: "Master Data", employees: "Karyawan", none: "Akses Terbatas" }[state.view];
   if (state.view === "none") root.innerHTML = '<div class="category-empty"><strong>Belum ada menu yang dapat diakses</strong><p>Hubungi Admin atau Owner untuk mengatur permission akun ini.</p></div>';
   if (state.view === "pos") renderPos();
@@ -442,9 +447,10 @@ function renderPos() {
     ? flatCatalogHtml(visibleProducts, productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ATK") : visibleProducts.length
     ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>`
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
-  root.innerHTML = `<div class="view-grid">
+  root.innerHTML = `<div class="view-grid pos-layout">
+    <aside class="pos-categories" aria-label="Kategori produk"><div class="pos-category-heading"><strong>Kategori</strong>${canManageSettings() ? '<button class="category-settings-button" type="button" id="configure-category-tabs" aria-label="Atur urutan kategori" title="Atur urutan kategori">✎</button>' : ""}</div><button type="button" class="pos-category-toggle" aria-expanded="false" aria-controls="pos-category-list">Kategori: ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "Semua")} <span aria-hidden="true">⌄</span></button><div id="pos-category-list" class="category-tabs" role="tablist" aria-label="Kategori produk" aria-orientation="vertical">${categoryTabs}</div></aside>
     <section class="panel"><div class="panel-head product-panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2><div class="product-search-wrap"><span>⌕</span><input id="product-search" type="search" placeholder="Cari produk…" autocomplete="off"><kbd>Ctrl K</kbd><div id="search-popover" class="search-popover hidden"></div></div></div><div class="panel-body">
-      <div class="category-strip"><button class="category-scroll-button" type="button" data-category-scroll="-1" aria-label="Geser kategori ke kiri">‹</button><div class="category-tabs" role="tablist" aria-label="Kategori produk">${categoryTabs}</div><button class="category-scroll-button" type="button" data-category-scroll="1" aria-label="Geser kategori ke kanan">›</button>${canManageSettings() ? '<button class="category-settings-button" type="button" id="configure-category-tabs" aria-label="Atur urutan tab kategori" title="Atur urutan tab kategori"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m16 3 5 5L8 21H3v-5L16 3Z"/><path d="m13 6 5 5"/></svg></button>' : ""}</div><div class="category-content">${productContent}</div>
+      <div class="category-content">${productContent}</div>
     </div></section>
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
@@ -839,9 +845,18 @@ function bindPos() {
   bindProductSearch();
   bindDeadlinePicker();
   const tabs = document.querySelector(".category-tabs");
-  tabs.scrollLeft = state.categoryScroll;
-  tabs.addEventListener("scroll", () => { state.categoryScroll = tabs.scrollLeft; });
-  document.querySelectorAll("[data-category-scroll]").forEach((button) => button.onclick = () => tabs.scrollBy({ left: Number(button.dataset.categoryScroll) * Math.max(180, tabs.clientWidth * .7), behavior: "smooth" }));
+  tabs.addEventListener("keydown", event => {
+    const buttons = [...tabs.querySelectorAll('[data-category]')], index = buttons.indexOf(document.activeElement);
+    if (index < 0 || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+  });
+  document.querySelector('.pos-category-toggle').onclick = event => {
+    const button = event.currentTarget, open = button.getAttribute('aria-expanded') !== 'true';
+    button.setAttribute('aria-expanded', String(open));
+    button.closest('.pos-categories').classList.toggle('categories-open', open);
+  };
   document.querySelector("#configure-category-tabs")?.addEventListener("click", openCategoryOrderForm);
   const setFlatQuantity = (productId, change, absolute = false) => {
     const product = state.products.find((item) => item.id === productId && categoryKey(item) === state.selectedCategory && item.active !== false);
@@ -1954,20 +1969,28 @@ function openStockEntry(item) {
   detail.querySelector("#stock-entry-form").onsubmit = async (event) => { event.preventDefault(); const payload = Object.fromEntries(new FormData(event.target)); try { await api(`/api/inventory/${item.sku}`, { method: "PATCH", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "stock"; renderStock(); toast("Stok masuk berhasil dicatat"); } catch (error) { toast(error.message, "error"); } };
 }
 
-document.querySelectorAll(".nav-item").forEach((button) => button.onclick = () => { if (!canView(button.dataset.view)) return; if (state.view === "employees" && hasUnsavedPayroll()) { if (!window.confirm("Buang perubahan payroll yang belum disimpan?")) return; discardPayrollDrafts(); } state.view = button.dataset.view; render(); if (state.view === "projects") refreshProjectData(); });
+document.querySelectorAll(".nav-item").forEach((button) => button.onclick = () => { if (!canView(button.dataset.view)) return; if (state.view === "employees" && hasUnsavedPayroll()) { if (!window.confirm("Buang perubahan payroll yang belum disimpan?")) return; discardPayrollDrafts(); } closeNavigation(); state.view = button.dataset.view; render(); if (state.view === "projects") refreshProjectData(); });
 window.addEventListener("beforeunload", event => { if (hasUnsavedPayroll()) { event.preventDefault(); event.returnValue = ""; } });
-const shell = document.querySelector("#app-shell");
-const sidebarToggle = document.querySelector("#sidebar-toggle");
-function setSidebarCollapsed(collapsed) {
-  shell.classList.toggle("sidebar-collapsed", collapsed);
-  sidebarToggle.textContent = collapsed ? "›" : "‹";
-  sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
-  sidebarToggle.setAttribute("aria-label", collapsed ? "Buka sidebar" : "Tutup sidebar");
-  sidebarToggle.title = collapsed ? "Buka sidebar" : "Tutup sidebar";
-  localStorage.setItem("manna-sidebar-collapsed", collapsed ? "1" : "0");
+function closeNavigation() {
+  document.querySelector('#primary-navigation').classList.remove('navigation-open');
+  document.querySelector('#nav-toggle').setAttribute('aria-expanded', 'false');
+  document.querySelector('#account-menu').open = false;
 }
-setSidebarCollapsed(localStorage.getItem("manna-sidebar-collapsed") === "1");
-sidebarToggle.onclick = () => setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
+document.querySelector('#nav-toggle').onclick = () => {
+  const button = document.querySelector('#nav-toggle'), open = button.getAttribute('aria-expanded') !== 'true';
+  document.querySelector('#account-menu').open = false;
+  button.setAttribute('aria-expanded', String(open));
+  document.querySelector('#primary-navigation').classList.toggle('navigation-open', open);
+};
+document.querySelector('#account-menu').addEventListener('toggle', event => {
+  if (event.currentTarget.open) {
+    document.querySelector('#primary-navigation').classList.remove('navigation-open');
+    document.querySelector('#nav-toggle').setAttribute('aria-expanded', 'false');
+  }
+});
+document.addEventListener('click', event => { if (!event.target.closest('.top-navigation')) closeNavigation(); });
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && (document.querySelector('#account-menu').open || document.querySelector('#primary-navigation').classList.contains('navigation-open'))) { const target = document.querySelector('#account-menu').open ? document.querySelector('#account-menu summary') : document.querySelector('#nav-toggle'); closeNavigation(); target.focus(); } });
+document.querySelector('.top-brand').onclick = event => { event.preventDefault(); document.querySelector(`.nav-item[data-view="${firstAllowedView()}"]`)?.click(); };
 document.querySelector("#refresh-btn").onclick = load;
 document.querySelector("#today").textContent = new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Makassar" }).format(new Date());
 document.addEventListener("invalid", (event) => {
@@ -1981,9 +2004,9 @@ document.addEventListener("change", (event) => {
 }, true);
 document.querySelector("#login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  try { await api("/api/login", { method: "POST", body: JSON.stringify({ username: document.querySelector("#login-username").value, pin: document.querySelector("#login-pin").value }) }); showApp(); await load(); } catch (error) { toast(error.message, "error"); }
+  try { await api("/api/login", { method: "POST", body: JSON.stringify({ username: document.querySelector("#login-username").value, pin: document.querySelector("#login-pin").value }) }); await load(); showApp(); } catch (error) { toast(error.message, "error"); }
 });
 document.querySelector("#logout-btn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } finally { configurationDrafts.clear(); state.currentUser = null; showLogin(); document.querySelector("#login-pin").value = ""; } };
 
 const session = await api("/api/session");
-if (session.authenticated) { showApp(); await load(); } else showLogin();
+if (session.authenticated) { await load(); showApp(); } else showLogin();
