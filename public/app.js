@@ -693,6 +693,22 @@ function bindProductSearch() {
 }
 
 function bindProductConfiguration(onAdd, sheetSaved = null) {
+  document.querySelectorAll('.configurator-body .a3-field .chips').forEach(group => {
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', group.previousElementSibling.textContent);
+    const buttons = [...group.querySelectorAll('button[aria-pressed]')];
+    buttons.forEach(button => { button.setAttribute('role', 'radio'); button.setAttribute('aria-checked', button.getAttribute('aria-pressed')); });
+    group.addEventListener('keydown', event => {
+      if (!['ArrowRight','ArrowDown','ArrowLeft','ArrowUp'].includes(event.key)) return;
+      const choices = buttons.filter(button => !button.disabled), index = choices.indexOf(document.activeElement);
+      if(index<0) return;
+      event.preventDefault();
+      const next=choices[(index+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)+choices.length)%choices.length];
+      const attribute=[...next.attributes].find(attr=>attr.name.startsWith('data-a3-'));
+      next.click();
+      if(attribute)document.querySelector(`.configurator-body [${attribute.name}="${CSS.escape(attribute.value)}"]`)?.focus();
+    });
+  });
   if (selectedProduct()?.dtfShirt) {
     const rows = document.querySelector("#dtf-shirt-rows");
     rows.addEventListener("input", updatePreview);

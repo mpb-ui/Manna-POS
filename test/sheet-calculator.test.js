@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SHEET_PROFILES, calculateSheetLayout, validateSheetProfile, cuttingMode, productSheetProfile } from '../public/sheet-calculator.js';
+import { DEFAULT_SHEET_PROFILES, calculateSheetLayout, calculateSheetCapacity, sheetSpecification, validateSheetProfile, cuttingMode, productSheetProfile } from '../public/sheet-calculator.js';
 import { initializeSheetCalculator, validateProductCalculator } from '../lib/sheet-calculator.js';
 import { calculateOrder } from '../lib/domain.js';
 import { Store } from '../lib/store.js';
@@ -63,10 +63,32 @@ test('profil per varian dan server menghitung quantity lembar serta harga dan st
   assert.throws(()=>validateProductCalculator({...p},state,{sheetCalculatorEnabled:true,sheetProfileId:'missing'},p),/Pilih profil/);
 });
 
-test('repeat memakai profil terbaru dan mempertahankan permintaan pcs', async () => {
+test('repeat memakai kapasitas profil terbaru dan mempertahankan jumlah lembar manual serta pesanan lama', async () => {
   const state=await new Store('').read(),p=state.products.find(p=>p.a3Family==='Art Paper (AP)'&&p.a3Variant==='AP 150'&&p.a3Side==='1S');
   const quote=calculateOrder([p],[{productId:p.id,quantity:7,sheetCalculation:input}],state.catalogOptions.sheetCalculatorProfiles);
   const order={id:'original',code:'ORIGINAL',customerName:'Customer',phone:'081234567890',items:quote.items,total:quote.total};
   const profile=state.catalogOptions.sheetCalculatorProfiles.find(p=>p.id==='a3-plus');profile.areaWidthCm=30;profile.areaLengthCm=45;
-  const repeated=repeatQuote(state,order,{role:'OWNER'});assert.equal(repeated.canRepeat,true);assert.equal(repeated.items[0].quantity,9);assert.equal(repeated.items[0].sheetCalculation.requestedQuantity,100);assert.equal(order.items[0].quantity,7);
+  const before=structuredClone(order);
+  const repeated=repeatQuote(state,order,{role:'OWNER'});assert.equal(repeated.canRepeat,true);assert.equal(repeated.items[0].quantity,7);assert.equal(repeated.items[0].sheetCalculation.mode,'capacity');assert.equal(repeated.items[0].sheetCalculation.capacity,12);assert.equal(repeated.items[0].sheetCalculation.requestedQuantity,undefined);assert.deepEqual(order,before);
+});
+
+test('kapasitas memakai area terkecil dan tidak membutuhkan bentuk maupun pesanan pcs', () => {
+  const a3=calculateSheetCapacity(DEFAULT_SHEET_PROFILES[0],{widthCm:8,lengthCm:10,allowRotation:true});
+  const plus=calculateSheetCapacity(DEFAULT_SHEET_PROFILES[1],{widthCm:8,lengthCm:10,allowRotation:true});
+  assert.equal(a3.capacity,9);assert.equal(a3.areaWidthCm,27);assert.equal(a3.areaLengthCm,39.5);
+  assert.equal(plus.capacity,12);assert.equal(plus.areaWidthCm,30);assert.equal(plus.areaLengthCm,45);
+  assert.equal(plus.profile.gapMm,3);assert.equal(a3.profile.gapMm,2);
+  for(const key of ['requestedQuantity','sheets','lastSheetQuantity','cuttingMode'])assert.equal(plus[key],undefined);
+  assert.doesNotMatch(sheetSpecification(plus),/cutting|100 pcs|Kebutuhan/);
+  assert.match(sheetSpecification(plus),/12 pcs\/lembar/);
+  assert.equal(calculateSheetCapacity(DEFAULT_SHEET_PROFILES[1],{widthCm:5,lengthCm:5}).shape,'rectangle');
+});
+
+test('snapshot kapasitas dihitung server tanpa mengubah jumlah manual, harga, atau stok karena finishing', async () => {
+  const state=await new Store('').read(),p=state.products.find(p=>p.a3Family==='Art Paper (AP)'&&p.a3Variant==='AP 150'&&p.a3Side==='1S');
+  const line={productId:p.id,quantity:3,finishing:[],sheetCalculation:{mode:'capacity',widthCm:8,lengthCm:10,capacity:999,areaWidthCm:100,allowRotation:true}};
+  const quote=calculateOrder([p],[line],state.catalogOptions.sheetCalculatorProfiles);
+  assert.equal(quote.items[0].quantity,3);assert.equal(quote.items[0].sheetCalculation.capacity,12);assert.equal(quote.total,24000);assert.equal(quote.items[0].materials[0].units,3);
+  const cut=calculateOrder([p],[{...line,finishing:[{id:'fin-a3-diecut',units:1}]}],state.catalogOptions.sheetCalculatorProfiles);
+  assert.equal(cut.items[0].quantity,3);assert.equal(cut.items[0].sheetCalculation.capacity,12);assert.equal(cut.items[0].materials[0].units,3);assert.equal(cut.total,quote.total+1500);
 });

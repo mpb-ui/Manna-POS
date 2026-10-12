@@ -16,6 +16,10 @@ test('API profil, produk baru, varian, snapshot, permission, pembayaran dan stok
     let state=await ok('/api/bootstrap');
     const paper=state.products.find(p=>p.a3Family==='Art Paper (AP)'&&p.a3Variant==='AP 150'&&p.a3Side==='1S');
     const calc={shape:'rectangle',widthCm:8,lengthCm:10,requestedQuantity:100,allowRotation:true};
+    const capacityInput={mode:'capacity',widthCm:8,lengthCm:10,allowRotation:true,capacity:999};
+    const manual=await ok('/api/orders','POST',{customerName:'Manual sheets',phone:'081234567891',items:[{productId:paper.id,quantity:3,sheetCalculation:capacityInput,finishing:[]},{productId:paper.id,quantity:5,sheetCalculation:capacityInput,finishing:[{id:'fin-a3-diecut',units:1}]}]});
+    assert.deepEqual(manual.items.map(i=>i.quantity),[3,5]);assert.deepEqual(manual.items.map(i=>i.sheetCalculation.capacity),[12,12]);assert.equal(manual.total,8*8000+1500);
+    assert.deepEqual((await ok('/api/bootstrap')).orders.find(o=>o.id===manual.id).items,manual.items);
     const lines=[{productId:paper.id,quantity:7,sheetCalculation:calc,finishing:[]},{productId:paper.id,quantity:9,sheetCalculation:calc,finishing:[{id:'fin-a3-diecut',units:1}]}];
     assert.equal((await request('/api/orders','POST',{customerName:'Invalid sheet',phone:'081234567890',items:[{...lines[0],quantity:1}]})).status,400);
     let order=await ok('/api/orders','POST',{customerName:'Sheet Test',phone:'081234567890',items:lines});

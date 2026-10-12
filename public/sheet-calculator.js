@@ -54,5 +54,14 @@ export function sheetSpecification(snapshot) {
   if (!snapshot) return '';
   const n = value => Number(value).toLocaleString('id-ID');
   const size = snapshot.shape === 'circle' ? `Ø ${n(snapshot.lengthCm)} cm` : `${n(snapshot.widthCm)} × ${n(snapshot.lengthCm)} cm`;
+  if (snapshot.mode === 'capacity') return `${size} · ${n(snapshot.capacity)} pcs/lembar · ${snapshot.profile.name} · Area ${n(snapshot.areaWidthCm)} × ${n(snapshot.areaLengthCm)} cm · Jarak ${n(snapshot.profile.gapMm)} mm`;
   return `${size} · ${n(snapshot.requestedQuantity)} pcs · ${n(snapshot.capacity)} pcs/lembar · ${snapshot.profile.name} · ${cuttingLabel(snapshot.cuttingMode)} · Area ${n(snapshot.areaWidthCm)} × ${n(snapshot.areaLengthCm)} cm · Jarak ${n(snapshot.profile.gapMm)} mm`;
+}
+
+// New POS calculations show capacity only. Legacy snapshots retain their original fields.
+export function calculateSheetCapacity(profile, input) {
+  const conservative = { ...profile, areaWidthCm: Math.min(profile.areaWidthCm, profile.cuttingWidthCm), areaLengthCm: Math.min(profile.areaLengthCm, profile.cuttingLengthCm) };
+  const result = calculateSheetLayout(conservative, { ...input, shape: 'rectangle', requestedQuantity: 1 }, 'none');
+  const { requestedQuantity, sheets, lastSheetQuantity, cuttingMode: ignoredMode, ...capacity } = result;
+  return { ...capacity, mode: 'capacity' };
 }
