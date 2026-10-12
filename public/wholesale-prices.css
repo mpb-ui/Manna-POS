@@ -1,0 +1,22 @@
+.configurator-body .quantity-field.has-wholesale-prices,.configurator-body .quantity-field:has(.sheet-quantity-row){max-width:none;width:100%;min-width:0}
+.wholesale-prices{margin-top:4px;border:1px solid #dce5f0;border-radius:7px;background:#f3f7fc;min-width:0;color:#52637c;font-size:12px}
+.wholesale-prices summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;list-style:none;cursor:pointer}
+.wholesale-prices summary::-webkit-details-marker{display:none}
+.wholesale-current{min-width:0}
+.wholesale-current strong{font-size:13px;color:#26374e;margin:0 3px}
+.wholesale-expand{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;color:#1769e8;font-size:11px;font-weight:600;white-space:nowrap}
+.wholesale-chevron{font-size:16px;line-height:1}
+.wholesale-prices[open] .wholesale-chevron{transform:rotate(180deg)}
+.wholesale-prices table{width:calc(100% - 16px);margin:0 8px 8px;border-collapse:separate;border-spacing:0 3px;font-size:12px;table-layout:auto}
+.wholesale-prices th{font-size:10px;font-weight:650;color:#64748b;padding:7px 9px;text-align:left}
+.wholesale-prices td{padding:8px 9px;border:0;font-variant-numeric:tabular-nums}
+.wholesale-prices th:last-child,.wholesale-prices td:last-child{text-align:right}
+.wholesale-prices td:first-child{border-left:3px solid transparent}
+.wholesale-prices tr.wholesale-active td{background:#fff;color:#1769e8;font-weight:700}
+.wholesale-prices tr.wholesale-active td:first-child{border-left-color:#1769e8;border-radius:4px 0 0 4px}
+.wholesale-prices tr.wholesale-active td:last-child{border-radius:0 4px 4px 0}
+.wholesale-prices td small{display:block;font-size:10px;color:#64748b;font-weight:400;margin-top:2px}
+.wholesale-prices td .wholesale-active-label{color:#1769e8}
+.wholesale-discount-note{display:block;padding:0 16px 10px;font-size:11px;color:#64748b}
+@media(max-width:400px){.wholesale-prices summary{gap:6px;padding:10px 8px;font-size:11px}.wholesale-current strong{font-size:12px;margin:0 2px}.wholesale-expand{font-size:10px;gap:4px}}
+@media(pointer:coarse){.wholesale-prices summary{min-height:44px}}

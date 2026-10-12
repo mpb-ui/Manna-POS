@@ -13,7 +13,9 @@ export function bindSheetCalculator({ scope, product, profiles, update, saved })
   const layout = scope.querySelector('.sheet-config-layout');
   const entry = document.createElement('button'); entry.type = 'button'; entry.id = 'sheet-toggle'; entry.className = 'sheet-toggle'; entry.textContent = '▦ Hitung dari ukuran'; entry.setAttribute('aria-controls','sheet-calculator'); entry.setAttribute('aria-expanded','false');
   const label=scope.querySelector('.quantity-field > span');
-  if(label){const heading=document.createElement('div');heading.className='sheet-quantity-heading';label.replaceWith(heading);label.textContent='Jumlah Cetak';heading.append(label,entry);}
+  if(label) label.textContent='Jumlah Cetak';
+  const control=scope.querySelector('.quantity-control');
+  if(control){const row=document.createElement('div');row.className='sheet-quantity-row';control.replaceWith(row);row.append(control,entry);}
   const appliedNote = document.createElement('small'); appliedNote.className = 'sheet-applied hidden'; appliedNote.setAttribute('aria-live','polite'); qty.closest('.quantity-field').append(appliedNote);
   let applied = saved?.applied === true, result = null, error = '', view = 'full';
   function open(active) { panel.classList.toggle('hidden',!active); layout?.classList.toggle('sheet-open',active); entry.setAttribute('aria-expanded',String(active)); }

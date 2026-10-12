@@ -1,4 +1,5 @@
 import { openSheetProfiles } from "./sheet-profile-ui.js";
+import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.js";
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
 import { sheetSpecification } from "./sheet-calculator.js";
 import { imageGeometry, supportsOutdoorAllowance, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
@@ -181,9 +182,7 @@ function billedLength(value, increment = 0.5) {
 function productBase(product, width, length, quantity, fixedVariant = null, materialVariant = null, combination = null) {
   const billed = billedLength(length, product.billingIncrement);
   const units = fixedVariant ? Number(quantity) : product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
-  const tierList = combination?.priceTiers?.length ? combination.priceTiers : combination?.price != null ? []
-    : materialVariant?.priceTiers?.length ? materialVariant.priceTiers : materialVariant?.price != null || fixedVariant?.price != null ? []
-    : product.wholesaleEnabled ? product.priceTiers || [] : [];
+  const tierList = effectivePriceTiers(product, fixedVariant, materialVariant, combination);
   const tier = tierList.filter((item) => Number(item.min) <= quantity && (item.max == null || item.max === "" || quantity <= Number(item.max))).sort((a, b) => Number(b.min) - Number(a.min))[0];
   const originalUnitPrice = Number(tier?.price ?? combination?.price ?? materialVariant?.price ?? fixedVariant?.price ?? product.price);
   const unitPrice = promoPrice(product, originalUnitPrice);
@@ -201,6 +200,7 @@ function suggestedFinishUnits(finish, width, length) {
 }
 
 function quantitySelectorHtml(unit = "Lembar") {
+  if (/^lbr$/i.test(unit)) unit = "lembar";
   return `<div class="quantity-field"><span>Jumlah produk</span><div class="quantity-control"><div class="qty-stepper"><button type="button" data-product-minus aria-label="Kurangi jumlah produk">−</button><input id="quantity" type="number" min="1" step="1" value="1" aria-label="Jumlah produk"><button type="button" data-product-plus aria-label="Tambah jumlah produk">+</button></div><b>${escapeHtml(unit)}</b></div></div>`;
 }
 
@@ -568,6 +568,10 @@ function updatePreview() {
     });
     return;
   }
+  const fixedVariant = product.fixedSizeVariants?.find(item => item.id === line.sizeVariantId);
+  const materialVariant = product.materialVariants?.find(item => item.id === line.materialVariantId);
+  const combination = materialVariant?.combinations?.find(item => item.subVariantId === line.subVariantId);
+  updateWholesalePrices({ scope: document.querySelector('#order-detail'), product, line, fixedVariant, materialVariant, combination });
   const finalSize = document.querySelector("#final-image-size");
   if (finalSize) finalSize.textContent = Number.isFinite(line.finalImageWidthCm) ? `Ukuran termasuk lebihan: ${line.finalImageWidthCm.toLocaleString("id-ID")} × ${line.finalImageLengthCm.toLocaleString("id-ID")} cm${line.allowanceCm > 0 && line.allowanceCm <= 5 ? " · Lebihan tidak menambah panjang tagihan" : ""}` : "";
   const billedInput = document.querySelector("#billed-length");
