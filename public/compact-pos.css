@@ -22,3 +22,28 @@
 @media(max-width:1100px){#app-shell .pos-layout{grid-template-columns:152px minmax(0,1fr)}.pos-layout>.pos-categories{grid-row:1/span 2}.pos-layout>section,.pos-layout>aside:last-child{grid-column:2}.pos-layout>aside:last-child{justify-self:end;width:min(450px,100%)}.pos-layout .sticky-summary{position:static}}
 @media(max-width:700px){#app-shell .pos-layout{grid-template-columns:minmax(0,1fr)}.pos-layout>.pos-categories,.pos-layout>section,.pos-layout>aside:last-child{grid-column:auto;grid-row:auto}.pos-layout>aside:last-child{width:100%;justify-self:stretch}.configurator-dialog .sheet-config-layout.sheet-open{grid-template-columns:1fr;gap:16px}.configurator-dialog .sheet-calculator{width:100%}}
 @media(pointer:coarse){.configurator-body .chip:has(input[type="radio"])>label,.configurator-body .a3-option{min-height:44px}}
+/* Align dimension inputs independently of the material options' height. */
+.image-measurements .image-dimension-row{display:grid;grid-template-columns:repeat(3,minmax(0,160px));gap:12px;align-items:start}
+.image-measurements .image-dimension-row>.field{width:auto;min-width:0;max-width:none;flex:auto}
+.image-measurements .image-dimension-row #billed-length{width:100%}
+.image-measurements .material-dimension-row{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
+.image-measurements .material-dimension-row>.allowance-field{width:110px;min-width:110px;max-width:110px;flex:0 0 110px}
+.image-measurements .material-dimension-row>.material-width-field{width:auto;min-width:0;max-width:none;flex:1;grid-column:auto}
+.image-measurements .field>span{font-size:12px}
+.image-measurements .input-with-unit input{min-width:0;width:100%;padding-right:44px}
+.image-measurements .input-with-unit>b{right:11px;font-size:12px}
+.top-navigation .top-brand img.top-brand-logo{width:160px;height:auto;display:block;object-fit:contain;filter:none}
+/* One icon shape and centered hit area for dropdown and disclosure arrows. */
+select:not([multiple]):not([size]){appearance:none;background-image:url('/chevron-down.svg');background-repeat:no-repeat;background-position:right 12px center;background-size:14px 14px;padding-right:38px!important}
+.ui-chevron{display:inline-block;width:20px;height:20px;flex:0 0 20px;vertical-align:middle;background:currentColor;mask:url('/chevron-down.svg') center/14px 14px no-repeat;-webkit-mask:url('/chevron-down.svg') center/14px 14px no-repeat;line-height:1}
+.project-group-row button>.ui-chevron{width:20px;height:20px;flex-basis:20px;margin:0;align-self:center}
+.project-group-row button[aria-expanded="false"]>.ui-chevron{transform:rotate(-90deg)}
+.wholesale-expand .ui-chevron,.account-menu .ui-chevron{align-self:center}
+.account-menu[open] .account-chevron{transform:rotate(180deg)}
+.pos-category-toggle[aria-expanded="true"]>.ui-chevron{transform:rotate(180deg)}
+details:not(.account-menu):not(.wholesale-prices):not(.assist-completeness)>summary{display:flex;align-items:center;gap:8px;list-style:none}
+details:not(.account-menu):not(.wholesale-prices)>summary::-webkit-details-marker{display:none}
+details:not(.account-menu):not(.wholesale-prices):not(.assist-completeness)>summary:before{content:"";width:20px;height:20px;flex:0 0 20px;background:currentColor;mask:url('/chevron-down.svg') center/14px 14px no-repeat;-webkit-mask:url('/chevron-down.svg') center/14px 14px no-repeat;transform:rotate(-90deg)}
+details[open]:not(.account-menu):not(.wholesale-prices):not(.assist-completeness)>summary:before{transform:none}
+.assist-completeness summary:after{content:"";width:20px;height:20px;flex:0 0 20px;background:currentColor;mask:url('/chevron-down.svg') center/14px 14px no-repeat;-webkit-mask:url('/chevron-down.svg') center/14px 14px no-repeat}
+@media(max-width:480px){.image-measurements .image-dimension-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.image-dimension-row>.billed-length-field{grid-column:1/-1;max-width:160px}.top-navigation .top-brand img.top-brand-logo{width:145px}.account-menu .account-chevron{display:none}}

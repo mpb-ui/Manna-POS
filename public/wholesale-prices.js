@@ -29,7 +29,7 @@ export function updateWholesalePrices({ scope, product, line, fixedVariant, mate
   field.classList.add('has-wholesale-prices');
   if (!details) {
     details = document.createElement('details'); details.className = 'wholesale-prices';
-    details.innerHTML = '<summary><span class="wholesale-current">Harga Satuan <strong></strong> <span class="wholesale-price-unit"></span></span><span class="wholesale-expand"><span>Lihat semua</span><span class="wholesale-chevron" aria-hidden="true">⌄</span></span></summary><table aria-label="Harga produk berdasarkan jumlah"><thead><tr><th scope="col">JUMLAH</th><th scope="col">HARGA SATUAN</th></tr></thead><tbody></tbody></table><small class="wholesale-discount-note hidden">Harga tabel sebelum diskon produk.</small>';
+    details.innerHTML = '<summary><span class="wholesale-current">Harga Satuan <strong></strong> <span class="wholesale-price-unit"></span></span><span class="wholesale-expand"><span>Lihat semua</span><span class="wholesale-chevron ui-chevron" aria-hidden="true"></span></span></summary><table aria-label="Harga produk berdasarkan jumlah"><thead><tr><th scope="col">JUMLAH</th><th scope="col">HARGA SATUAN</th></tr></thead><tbody></tbody></table><small class="wholesale-discount-note hidden">Harga tabel sebelum diskon produk.</small>';
     details.addEventListener('toggle', () => { details.querySelector('.wholesale-expand > span').textContent = details.open ? 'Tutup' : 'Lihat semua'; });
     const control = field.querySelector('.sheet-quantity-row') || field.querySelector('.quantity-control');
     control.after(details);

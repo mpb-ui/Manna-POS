@@ -26,7 +26,7 @@
 
   <div id="app-shell" class="app-shell hidden">
     <header class="top-navigation">
-      <a class="top-brand" href="#pos" aria-label="Manna Print, buka halaman utama"><span>manna <small>Print</small></span></a>
+      <a class="top-brand" href="#pos" aria-label="Manna Print, buka halaman utama"><img class="top-brand-logo" src="/manna-print-logo-white.png" alt="Manna Print" /></a>
       <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">☰ <span>Menu</span></button>
       <nav id="primary-navigation" aria-label="Menu utama">
         <button type="button" class="nav-item active" data-view="pos" aria-current="page"><b>POS</b></button>
@@ -38,7 +38,7 @@
         <button type="button" class="nav-item" data-view="master"><b>Master Data</b></button>
       </nav>
       <details class="account-menu" id="account-menu">
-        <summary aria-label="Menu akun"><span class="account-avatar" aria-hidden="true">●</span><strong id="current-user-name">—</strong><span class="account-chevron" aria-hidden="true">⌄</span></summary>
+        <summary aria-label="Menu akun"><span class="account-avatar" aria-hidden="true">●</span><strong id="current-user-name">—</strong><span class="account-chevron ui-chevron" aria-hidden="true"></span></summary>
         <div class="account-popover"><small id="current-user-role">—</small><span id="today"></span><span><i class="online-dot"></i>Sistem aktif</span><button id="refresh-btn" type="button">↻ Muat ulang data</button><button id="logout-btn" type="button">Keluar</button></div>
       </details>
     </header>
