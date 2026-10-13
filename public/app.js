@@ -210,7 +210,15 @@ function quantitySelectorHtml(unit = "Lembar") {
 }
 
 function imageMeasurementHtml(product, includeQuantity = true) {
-  return `<div class="image-measurements"><div class="measurement-row image-dimension-row"><label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label><label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label><div class="field billed-length-field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div></div><div class="measurement-row material-dimension-row">${supportsOutdoorAllowance(product) ? '<label class="field allowance-field"><span>Lebihan / sisi</span><span class="input-with-unit"><input id="allowance" type="number" min="0" step="any" value="0" required aria-label="Lebihan per sisi"><b>cm</b></span></label>' : ""}<div class="field material-width-field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${supportsOutdoorAllowance(product) ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div></div>${includeQuantity ? quantitySelectorHtml() : ""}</div>`;
+  const outdoor = supportsOutdoorAllowance(product);
+  const width = `<label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label>`;
+  const length = '<label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label>';
+  const billed = '<div class="field billed-length-field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div>';
+  const material = `<div class="field material-width-field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${outdoor ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div>`;
+  const rows = outdoor
+    ? `<div class="measurement-row outdoor-width-row">${width}<label class="field allowance-field"><span>Lebihan / sisi</span><span class="input-with-unit"><input id="allowance" type="number" min="0" step="any" value="0" required aria-label="Lebihan per sisi"><b>cm</b></span></label>${material}</div><div class="measurement-row outdoor-length-row">${length}${billed}</div>`
+    : `<div class="measurement-row image-dimension-row">${width}${length}${billed}</div><div class="measurement-row material-dimension-row">${material}</div>`;
+  return `<div class="image-measurements${outdoor ? ' outdoor-measurements' : ''}">${rows}${includeQuantity ? quantitySelectorHtml() : ""}</div>`;
 }
 
 function posFinishingRowHtml(product, selected = null) {
@@ -693,6 +701,11 @@ function bindProductSearch() {
 }
 
 function bindProductConfiguration(onAdd, sheetSaved = null) {
+  document.querySelectorAll('.configurator-body .chip:has(input[type="radio"])>label,.configurator-body .a3-option').forEach(chip => {
+    if(chip.querySelector('.radio-chip-copy'))return;
+    const copy=document.createElement('span');copy.className='radio-chip-copy';
+    copy.append(...chip.childNodes);chip.append(copy);
+  });
   document.querySelectorAll('.configurator-body .a3-field .chips').forEach(group => {
     group.setAttribute('role', 'radiogroup');
     group.setAttribute('aria-label', group.previousElementSibling.textContent);

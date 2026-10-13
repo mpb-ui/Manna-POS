@@ -11,8 +11,17 @@
 .configurator-dialog .sheet-preview #sheet-paper{margin-top:12px}
 .configurator-dialog .sheet-quantity-row{gap:8px}
 .configurator-dialog .sheet-quantity-row .sheet-toggle{font-size:11px;padding:7px 8px}
-.configurator-body .chip:has(input[type="radio"])>label,.configurator-body .a3-option{position:relative;padding-right:38px;min-height:36px;text-align:left}
-.configurator-body .chip:has(input[type="radio"])>label:after,.configurator-body .a3-option:after{content:"";position:absolute;right:11px;top:50%;transform:translateY(-50%);width:16px;height:16px;border:2px solid #b8c4d5;border-radius:50%;background:#fff;box-shadow:none}
+.configurator-body .chip:has(input[type="radio"])>label,.configurator-body .a3-option{display:inline-flex!important;flex-direction:row;align-items:center;justify-content:flex-start;gap:24px;position:relative;padding:10px 12px;min-height:36px;text-align:left;font-weight:650;max-width:100%}
+.configurator-body .radio-chip-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
+.configurator-body .radio-chip-copy strong{font-weight:650}
+.configurator-body .radio-chip-copy small{font-weight:500}
+.configurator-body .a3-option{flex:0 1 auto}
+.configurator-body .size-variant-chip label{min-width:0}
+.configurator-body .template-design-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.configurator-body .chip input[type="radio"]{width:16px;height:16px}
+.configurator-body .chip:has(input[type="radio"])>label:after,.configurator-body .a3-option:after{content:"";position:static;transform:none;flex:0 0 16px;box-sizing:border-box;width:16px;height:16px;border:1.5px solid #b8c4d5;border-radius:50%;background:#fff;box-shadow:none}
+.configurator-body .template-chip .radio-chip-copy{flex-direction:row;align-items:center;gap:9px}
+.configurator-body .template-chip .radio-chip-copy>span:not(.template-thumb){display:grid;gap:3px}
 .configurator-body .chip input[type="radio"]:checked+label,.configurator-body .a3-option[aria-pressed="true"]{border-color:#125895;background:#edf4fb;color:#125895;box-shadow:inset 0 0 0 1px #125895}
 .configurator-body .chip input[type="radio"]:checked+label:after,.configurator-body .a3-option[aria-pressed="true"]:after{border-color:#125895;box-shadow:inset 0 0 0 4px #125895}
 .configurator-body .exclusive-choice label i{display:none}
@@ -47,3 +56,12 @@ details:not(.account-menu):not(.wholesale-prices):not(.assist-completeness)>summ
 details[open]:not(.account-menu):not(.wholesale-prices):not(.assist-completeness)>summary:before{transform:none}
 .assist-completeness summary:after{content:"";width:20px;height:20px;flex:0 0 20px;background:currentColor;mask:url('/chevron-down.svg') center/14px 14px no-repeat;-webkit-mask:url('/chevron-down.svg') center/14px 14px no-repeat}
 @media(max-width:480px){.image-measurements .image-dimension-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.image-dimension-row>.billed-length-field{grid-column:1/-1;max-width:160px}.top-navigation .top-brand img.top-brand-logo{width:145px}.account-menu .account-chevron{display:none}}
+/* Outdoor columns stay aligned between the width and length rows. */
+.outdoor-measurements .measurement-row.outdoor-width-row,.outdoor-measurements .measurement-row.outdoor-length-row{display:grid;grid-template-columns:135px 95px minmax(0,1fr);gap:12px;align-items:start}
+.outdoor-measurements .measurement-row>.field{width:100%;min-width:0;max-width:none;flex:auto;grid-column:auto;grid-template-columns:minmax(0,1fr)}
+.outdoor-measurements #billed-length{width:100%}
+.outdoor-measurements .outdoor-length-row .billed-length-field>span{white-space:nowrap}
+.outdoor-measurements .measurement-row .chip label{font-weight:650;padding:10px 12px}
+.outdoor-measurements #width-chips .chip label{padding:10px 6px}
+.outdoor-measurements .measurement-row .chip label small{font-weight:500;margin-top:0}
+@media(max-width:620px){.outdoor-measurements .measurement-row.outdoor-width-row,.outdoor-measurements .measurement-row.outdoor-length-row{grid-template-columns:minmax(0,1fr) 95px}.outdoor-measurements .outdoor-width-row>.material-width-field{grid-column:1/-1}.outdoor-measurements .outdoor-length-row{align-items:end}.outdoor-measurements .outdoor-length-row .billed-length-field>span{white-space:normal}}
