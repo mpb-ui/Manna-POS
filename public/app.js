@@ -7,6 +7,7 @@ import { createOrderHistory } from "./order-history-ui.js";
 import { paymentReceipts, historyDraft } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
 import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor } from "./item-workflow.js";
+import { projectDeadlineInfo } from "./project-deadline.js";
 import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
@@ -17,7 +18,6 @@ import { mountEmployees, hasUnsavedPayroll, discardPayrollDrafts, clearEmployeeS
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
 const projectDateFormat = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Makassar" });
-const projectTimeFormat = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: "Asia/Makassar" });
 function localDateTimeInput(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -1098,26 +1098,21 @@ function witaDateKey(value = new Date()) {
 }
 
 function projectDeadlineState(order) {
-  if (!order.deadline) return "none";
-  if (["SELESAI", "DIAMBIL"].includes(order.status)) return "future";
-  const deadline = new Date(order.deadline);
-  if (deadline.getTime() < Date.now()) return "late";
-  return isProjectDeadlineToday(order) ? "today" : "future";
+  return projectDeadlineInfo(order).state;
 }
 
-function isProjectDeadlineToday(order) { return Boolean(order.deadline) && witaDateKey(order.deadline) === witaDateKey(); }
-
 function formatProjectDeadline(order) {
-  if (!order.deadline) return "-";
-  const deadline = new Date(order.deadline);
-  if (Number.isNaN(deadline.getTime())) return "-";
-  const today = new Date(`${witaDateKey()}T00:00:00Z`);
-  const target = new Date(`${witaDateKey(deadline)}T00:00:00Z`);
-  const dayOffset = Math.round((target - today) / 86400000);
-  const time = projectTimeFormat.format(deadline);
-  if (dayOffset === 0) return `Hari ini, ${time}`;
-  if (dayOffset === 1) return `Besok, ${time}`;
-  return `${projectDateFormat.format(deadline)}, ${time}`;
+  return projectDeadlineInfo(order).label;
+}
+
+function projectDeadlineHtml(order) {
+  const { label, state } = projectDeadlineInfo(order);
+  const tooltip = state === "late" ? ` title="Deadline: ${escapeHtml(dateFormat.format(new Date(order.deadline)))} WITA"` : "";
+  const warning = state === "late" ? '<svg class="project-deadline-warning" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18.5a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></svg>' : "";
+  const words = label.split(" ");
+  const lastWord = words.pop();
+  const content = warning ? `${escapeHtml(words.join(" "))} <span class="project-deadline-tail">${escapeHtml(lastWord)}${warning}</span>` : escapeHtml(label);
+  return `<span class="project-deadline-label"${tooltip}>${content}</span>`;
 }
 
 function filteredProjectOrders() {
@@ -1206,7 +1201,7 @@ function projectPicHtml(job) {
 
 function projectListRow(order) {
   const item = order.items[0], product = item.productName || "—", specification = projectProductSpecification(item);
-  return `<tr class="project-order-row status-${order.status.toLowerCase()}" data-project-row-order="${order.id}" data-project-row-item="${order.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(product)} untuk ${escapeHtml(order.customerName)}"><td class="project-order-identity"><div class="project-order-heading"><strong title="${escapeHtml(order.customerName)}">${escapeHtml(order.customerName)}</strong></div><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b></small></td><td class="project-product-cell"><strong title="${escapeHtml(product)}">${escapeHtml(product)}</strong><small class="project-product-summary"><span title="${escapeHtml(specification)}">${escapeHtml(specification)}</span></small>${projectSignifier(order)}</td><td class="project-quantity">${escapeHtml(itemQuantityLabel(item))}</td><td class="project-deadline ${projectDeadlineState(order)}">${formatProjectDeadline(order)}</td><td>${projectPicHtml(order)}</td></tr>`;
+  return `<tr class="project-order-row status-${order.status.toLowerCase()}" data-project-row-order="${order.id}" data-project-row-item="${order.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(product)} untuk ${escapeHtml(order.customerName)}"><td class="project-order-identity"><div class="project-order-heading"><strong title="${escapeHtml(order.customerName)}">${escapeHtml(order.customerName)}</strong></div><small><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b></small></td><td class="project-product-cell"><strong title="${escapeHtml(product)}">${escapeHtml(product)}</strong><small class="project-product-summary"><span title="${escapeHtml(specification)}">${escapeHtml(specification)}</span></small>${projectSignifier(order)}</td><td class="project-quantity">${escapeHtml(itemQuantityLabel(item))}</td><td class="project-deadline ${projectDeadlineState(order)}">${projectDeadlineHtml(order)}</td><td>${projectPicHtml(order)}</td></tr>`;
 }
 
 function projectProductSpecification(item) {
@@ -1220,7 +1215,7 @@ function projectProductSpecification(item) {
 
 function projectColumn(status, source = projectJobs(state.orders)) {
   const jobs = source.filter(job => job.status === status);
-  return `<section class="kanban-column status-${status.toLowerCase()}"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${jobs.length}</span></div>${jobs.map(job => `<article class="order-card status-${status.toLowerCase()}" data-project-row-order="${job.id}" data-project-row-item="${job.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(job.items[0].productName)}"><div class="order-card-head">${projectSignifier(job)}<span class="project-pic-static pic-${picColor(job.items[0])}">${escapeHtml(job.designPic || "Belum ada PIC")}</span></div><h4>${escapeHtml(job.customerName)}</h4><b class="project-phone">${escapeHtml(job.phone || "Walk-in")}</b><p class="project-card-product">${escapeHtml(job.items[0].productName)}</p><p class="project-card-specification">${escapeHtml(projectProductSpecification(job.items[0]))}</p><strong class="project-card-quantity">${escapeHtml(itemQuantityLabel(job.items[0]))}</strong><p class="project-deadline ${projectDeadlineState(job)}">${formatProjectDeadline(job)}</p></article>`).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
+  return `<section class="kanban-column status-${status.toLowerCase()}"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${jobs.length}</span></div>${jobs.map(job => `<article class="order-card status-${status.toLowerCase()}" data-project-row-order="${job.id}" data-project-row-item="${job.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(job.items[0].productName)}"><div class="order-card-head">${projectSignifier(job)}<span class="project-pic-static pic-${picColor(job.items[0])}">${escapeHtml(job.designPic || "Belum ada PIC")}</span></div><h4>${escapeHtml(job.customerName)}</h4><b class="project-phone">${escapeHtml(job.phone || "Walk-in")}</b><p class="project-card-product">${escapeHtml(job.items[0].productName)}</p><p class="project-card-specification">${escapeHtml(projectProductSpecification(job.items[0]))}</p><strong class="project-card-quantity">${escapeHtml(itemQuantityLabel(job.items[0]))}</strong><p class="project-deadline ${projectDeadlineState(job)}">${projectDeadlineHtml(job)}</p></article>`).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
 }
 
 function nextAction(order) {
