@@ -4,6 +4,7 @@ import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
 import { initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
+import { LF_ROLL_VERSION } from "./lib/lf-rolls.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
 import { workflowSnapshot, checklistForOrder } from "./lib/order-assistance.js";
@@ -64,7 +65,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
@@ -919,7 +920,8 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
 
 function materialUsedByProduct(product, materialId) {
   const sources = [product.materialSources, ...(product.fixedSizeVariants || []).map((item) => item.materialSources),
-    ...(product.sizeVariants || []).map((item) => item.materialSources), ...(product.materialVariants || []).map((item) => item.materialSources)];
+    ...(product.sizeVariants || []).map((item) => item.materialSources), ...(product.materialVariants || []).map((item) => item.materialSources),
+    ...Object.entries(product.rollStockBindings || {}).filter(([width])=>(product.widths || []).includes(Number(width))).map(([,bindings])=>bindings.filter(binding=>(product.materialSources || []).some(source=>source.materialId===binding.sourceMaterialId)))];
   return sources.some((rows) => (rows || []).some((source) => source.materialId === materialId)) ||
     (product.choiceGroups || []).some((group) => (group.options || []).some((option) => option.materialId === materialId)) ||
     (product.dtfStockVariants || []).some((variant) => variant.materialId === materialId);

@@ -6,15 +6,30 @@ export const OUTDOOR_CAPACITIES = {
   'fl-440-matte': {3:320},
   'nb-backlite-510': {3:320}
 };
+export const LF_CAPACITIES = {
+  'poster-albatros': {0.9:90,1.2:125,1.5:152},
+  'poster-luster': {0.9:90,1.2:125,1.5:152},
+  'poster-canvas': {1.2:125},
+  'lf-sticker-transparent': {1.5:152},
+  'lf-sticker-white-glossy': {1:102,1.5:152},
+  'lf-sticker-matte': {1:102,1.5:152},
+  'lf-sticker-sandblast-print': {1:102,1.5:152},
+  'lf-sticker-sandblast-plain': {1:102,1.5:152},
+  'lf-sticker-oneway-outdoor': {1:102,1.5:152},
+  'lf-sticker-oneway-hires': {1:102,1.5:152}
+};
+export function supportsAutoRollWidth(product) {
+  return supportsOutdoorAllowance(product) || !product.templateProduct && product.priceBasis !== 'unit' && (Boolean(product.rollCapacities) || Boolean(LF_CAPACITIES[product.id]) || ['LF Poster','LF Sticker'].includes(product.category));
+}
 export function supportsOutdoorAllowance(product) {
   return !product.templateProduct && product.priceBasis !== 'unit' && (product.category === 'Outdoor' || Boolean(product.outdoorCapacities) || Boolean(OUTDOOR_CAPACITIES[product.id]) || product.id === 'cloth-banner');
 }
 export function outdoorCapacity(product,width) {
-  return Number((product.outdoorCapacities || OUTDOOR_CAPACITIES[product.id] || {})[width] ?? Number(width)*100);
+  return Number((product.rollCapacities || product.outdoorCapacities || LF_CAPACITIES[product.id] || OUTDOOR_CAPACITIES[product.id] || {})[width] ?? Number(width)*100);
 }
 export function suggestedOutdoorWidth(product,imageWidthCm,allowanceCm=0) {
   const widths=[...(product.widths || [])].sort((a,b)=>outdoorCapacity(product,a)-outdoorCapacity(product,b));
-  const required=Number(imageWidthCm)+2*Number(allowanceCm);
+  const required=Number(imageWidthCm)+2*(supportsOutdoorAllowance(product)?Number(allowanceCm):0);
   return widths.find(width=>outdoorCapacity(product,width)>=required-1e-9) ?? widths.at(-1);
 }
 export function imageGeometry(product,input) {

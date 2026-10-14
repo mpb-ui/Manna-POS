@@ -2,7 +2,7 @@ import { openSheetProfiles } from "./sheet-profile-ui.js";
 import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.js";
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
 import { sheetSpecification } from "./sheet-calculator.js";
-import { imageGeometry, supportsOutdoorAllowance, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
+import { imageGeometry, supportsOutdoorAllowance, supportsAutoRollWidth, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
 import { createOrderHistory } from "./order-history-ui.js";
 import { paymentReceipts, historyDraft } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
@@ -217,7 +217,7 @@ function imageMeasurementHtml(product, includeQuantity = true) {
   const width = `<label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || 1) * 100}" required><b>cm</b></span></label>`;
   const length = '<label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label>';
   const billed = '<div class="field billed-length-field"><span>Panjang ditagihkan</span><input id="billed-length" class="readonly-input" value="1 m" readonly aria-readonly="true"></div>';
-  const material = `<div class="field material-width-field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${outdoor ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div>`;
+  const material = `<div class="field material-width-field"><span>Lebar bahan</span><div class="chips" id="width-chips">${product.widths.map((width, index) => `<div class="chip"><input type="radio" name="width" id="w-${index}" value="${width}" ${index === 0 ? "checked" : ""}><label for="w-${index}">${width} meter${supportsAutoRollWidth(product) ? `<small>${outdoorCapacity(product,width)} cm</small>` : ""}</label></div>`).join("")}</div></div>`;
   const rows = outdoor
     ? `<div class="measurement-row outdoor-width-row">${width}<label class="field allowance-field"><span>Lebihan / sisi</span><span class="input-with-unit"><input id="allowance" type="number" min="0" step="any" value="0" required aria-label="Lebihan per sisi"><b>cm</b></span></label>${material}</div><div class="measurement-row outdoor-length-row">${length}${billed}</div>`
     : `<div class="measurement-row image-dimension-row">${width}${length}${billed}</div><div class="measurement-row material-dimension-row">${material}</div>`;
@@ -753,7 +753,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     return;
   }
   document.querySelectorAll("#image-width,#allowance").forEach(input => input.addEventListener("input", () => {
-    const product = selectedProduct(); if (!supportsOutdoorAllowance(product)) return;
+    const product = selectedProduct(); if (!supportsAutoRollWidth(product)) return;
     const width = suggestedOutdoorWidth(product,document.querySelector("#image-width").value,document.querySelector("#allowance")?.value || 0);
     const radio = document.querySelector(`input[name="width"][value="${width}"]`); if (radio) radio.checked = true;
     updatePreview();
@@ -1435,7 +1435,7 @@ function cartLineFromPricedItem(item) {
     productionNote: item.productionNote || "", previewTotal: item.subtotal
   };
   const product = state.products.find(product => product.id === item.productId);
-  if (product && supportsOutdoorAllowance(product) && !product.widths.includes(item.width)) {
+  if (product && supportsAutoRollWidth(product) && !product.widths.includes(item.width)) {
     line.width = suggestedOutdoorWidth(product, item.imageWidthCm || Number(item.width) * 100, item.allowanceCm || 0);
     const materialVariant = product.materialVariants?.find(variant => variant.id === item.materialVariantId);
     const combination = materialVariant?.combinations?.find(combination => combination.subVariantId === item.subVariantId);
@@ -1608,7 +1608,7 @@ function renderMaster() {
   }).join("");
   const materialRows = state.materials.map((material) => {
     const stock = state.inventory.find((item) => item.materialId === material.id || item.sku === material.sku);
-    return `<tr data-category="${escapeHtml(material.category)}" data-sort-category="${escapeHtml(material.category)}"><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small></td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}<small>${material.stockMethod === "ROLL" ? "Per Roll" : "Per Satuan"}</small></td><td class="${!stock?.stockNeedsCount && Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(stock?.unit || material.stockUnit || material.unit)}${stock?.stockNeedsCount ? "<small>Saldo lama · perlu stok opname roll</small>" : ""}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
+    return `<tr data-category="${escapeHtml(material.category)}" data-sort-category="${escapeHtml(material.category)}"><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small>${material.lfLegacyGroup?'<small>Bahan generik lama · saldo belum dibagi</small>':""}</td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}<small>${material.stockMethod === "ROLL" ? "Per Roll" : "Per Satuan"}</small></td><td class="${!stock?.stockNeedsCount && Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(stock?.unit || material.stockUnit || material.unit)}${stock?.stockNeedsCount ? "<small>Saldo lama · perlu stok opname roll</small>" : ""}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
   }).join("");
   const machineRows = state.machines.map((machine) => `<tr><td><strong>${escapeHtml(machine.name)}</strong><small>${escapeHtml(machine.code)}</small></td><td>${escapeHtml(machine.type)}</td><td>${escapeHtml(machine.capacity || "—")}</td><td>${rupiah.format(machine.costPerHour)}/jam</td><td><span class="badge ${machine.status === "AKTIF" ? "ok" : "warn"}">${escapeHtml(machine.status)}</span></td><td><button class="secondary" data-edit-machine="${machine.id}">Edit</button></td></tr>`).join("");
   const finishingRows = state.finishings.map((finishing) => `<tr data-categories="${escapeHtml(JSON.stringify(finishing.categories || []))}" data-sort-category="${escapeHtml([...(finishing.categories || [])].sort((a, b) => a.localeCompare(b, "id"))[0] || "")}"><td><strong>${escapeHtml(finishing.name)}</strong><small>${escapeHtml(finishing.code)}</small></td><td class="compact-cell">${(finishing.categories || []).map((category) => `<span class="mini-chip">${escapeHtml(category)}</span>`).join(" ")}</td><td>${rupiah.format(finishing.price)}</td><td>${escapeHtml({ free: "Per unit", area: "Per m²", point: "Per titik", perimeter: "Keliling", top_bottom: "Atas–bawah", left_right: "Kanan–kiri", length: "Meter lari" }[finishing.rule] || finishing.rule)}</td><td><span class="badge ${finishing.active === false ? "warn" : "ok"}">${finishing.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-finishing="${finishing.id}">Edit</button></td></tr>`).join("");

@@ -4,9 +4,15 @@ import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture() {
+async function databaseFixture({legacyLf=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
  const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();delete data.stockSchemaVersion;
+ if (legacyLf) {
+  data.stockSchemaVersion=1;delete data.lfRollWidthVersion;
+  data.materials=data.materials.filter(m=>!m.lfRollGroup);
+  const materialIds=new Set(data.materials.map(m=>m.id));data.inventory=data.inventory.filter(row=>!row.materialId||materialIds.has(row.materialId));
+  for(const p of data.products){delete p.rollStockBindings;delete p.rollStockSources;delete p.rollCapacities;}
+ }
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -40,4 +46,12 @@ test("PostgreSQL stock writes use a locked atomic patch, excluding untouched ord
 test("PostgreSQL errors roll back a mutation and leave the backup untouched",async()=>{
  const f=await databaseFixture();await f.store.init();const before=structuredClone(f.getState());
  await assert.rejects(f.store.mutate(state=>{state.inventory[0].quantity=0;throw new Error('failure')}));assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');assert.deepEqual(f.backups.get('stock-methods-v1'),f.data);
+});
+
+
+test("LF width migration keeps a raw backup, preserves old balances, creates empty roll SKUs only once",async()=>{
+ const f=await databaseFixture({legacyLf:true});await f.store.init();assert.equal(f.store.lfRollBackupVerified,true);assert.deepEqual(f.backups.get('lf-roll-widths-v1'),f.data);assert.equal(f.getState().lfRollWidthVersion,1);assert.equal(f.getState().inventory[0].quantity,777);
+ const added=f.getState().materials.filter(m=>m.lfRollGroup);assert.equal(added.length,16);assert(added.every(m=>f.getState().inventory.find(row=>row.materialId===m.id).quantity===0));assert.deepEqual(f.getState().orders,f.data.orders);
+ const first=structuredClone(f.getState());await f.store.init();assert.deepEqual(f.getState(),first);assert.equal(f.backups.size,1);
+ const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups'));const update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(backup<update);
 });
