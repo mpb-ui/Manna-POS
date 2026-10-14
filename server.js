@@ -247,6 +247,13 @@ app.get("/api/bootstrap", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
+app.get('/api/pos/shirt-stock', requirePermission('pos.view'), async (_req, res, next) => {
+  try {
+    const state = await store.read();
+    res.set('Cache-Control', 'no-store').json({ shirtStock: shirtAvailability(state) });
+  } catch (error) { next(error); }
+});
+
 registerPayrollRoutes(app, store, requireCatalogAdmin, audit);
 registerAssetRoutes(app, store, requireCatalogAdmin, audit);
 registerAssistanceRoutes(app, store, { activity, audit, normalizeOrder });

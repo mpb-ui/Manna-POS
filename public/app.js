@@ -3,6 +3,7 @@ import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.j
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
 import { sheetSpecification } from "./sheet-calculator.js";
 import { imageGeometry, supportsOutdoorAllowance, supportsAutoRollWidth, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
+import { bindShirtStockSelection } from "./dtf-stock-selection.js";
 import { createOrderHistory } from "./order-history-ui.js";
 import { paymentReceipts, historyDraft } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
@@ -442,6 +443,7 @@ function dtfShirtRowHtml(index) {
 function dtfShirtConfigurationHtml(product) {
   return `<hr class="divider"><p class="section-label">2 · Pilih paket sablon</p><div class="dtf-packages" role="group" aria-label="Paket sablon">${product.dtfPackages.map((pack, index) => `<label class="dtf-package"><input type="radio" name="dtf-package" value="${escapeHtml(pack.id)}" ${index === 0 ? "checked" : ""}><span><strong>${escapeHtml(pack.label)}</strong><small>${rupiah.format(pack.price)} / kaos</small></span></label>`).join("")}</div>
     <hr class="divider"><p class="section-label">3 · Warna, ukuran & jumlah kaos</p><div id="dtf-shirt-rows">${dtfShirtRowHtml(0)}</div><button id="add-shirt-row" type="button" class="secondary dtf-add-row">+ Tambah kombinasi warna/ukuran</button><p class="product-note">Ukuran XXL menambah Rp15.000 per kaos. Stok mengikuti kombinasi warna dan ukuran, bukan paket sablon.</p>
+    <div class="dtf-stock-feedback" data-dtf-stock-feedback hidden><span id="dtf-stock-feedback-message" data-dtf-stock-message role="status" aria-live="polite"></span><button type="button" class="text-button" data-dtf-stock-retry hidden>Cek ulang stok</button></div><p class="dtf-stock-help">Stok tersedia memperhitungkan pesanan aktif dan kaos di keranjang.</p>
     <hr class="divider"><label class="field"><span class="section-label">4 · Catatan produksi</span><textarea id="production-note" placeholder="Posisi desain, ukuran cetak, atau catatan khusus…"></textarea></label>
     <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p></div><strong id="item-price">Rp0</strong></div><button id="add-item" class="primary" type="button">+ Tambah ke Pesanan</button></div>`;
 }
@@ -579,10 +581,7 @@ function updatePreview() {
   if (product?.dtfShirt) {
     document.querySelector("#item-price").textContent = rupiah.format(Number.isFinite(line.previewTotal) ? line.previewTotal : 0);
     document.querySelector("#formula-text").textContent = `${line.quantity} kaos · ${line.shirtVariants.filter((item) => item.size === "XXL").reduce((sum, item) => sum + item.quantity, 0)} XXL`;
-    document.querySelectorAll("[data-shirt-row]").forEach((row) => {
-      const stock = state.shirtStock.find((item) => item.color === row.querySelector("[data-shirt-color]").value && item.size === row.querySelector("[data-shirt-size]").value);
-      row.querySelector("[data-shirt-stock]").textContent = `Tersedia ${stock?.available ?? 0} pcs`;
-    });
+    shirtStockController?.sync();
     return;
   }
   const fixedVariant = product.fixedSizeVariants?.find(item => item.id === line.sizeVariantId);
@@ -743,13 +742,9 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
       if (rows.querySelectorAll("[data-shirt-row]").length === 1) rows.querySelector("[data-remove-shirt]").disabled = true;
       updatePreview();
     });
-    document.querySelector("#add-item").onclick = () => {
-      const line = readCurrentLine();
-      const combinations = line.shirtVariants.map((item) => `${item.color}-${item.size}`);
-      if (line.shirtVariants.some((item) => !Number.isSafeInteger(item.quantity) || item.quantity < 1)) return toast("Jumlah setiap varian harus bilangan bulat positif", "error");
-      if (new Set(combinations).size !== combinations.length) return toast("Gabungkan jumlah kaos dengan warna dan ukuran yang sama", "error");
-      onAdd(line);
-    };
+    shirtStockController = bindShirtStockSelection({ scope: document.querySelector('#order-detail'), productId: selectedProduct().id,
+      getStock: () => state.shirtStock, setStock: stock => { state.shirtStock = stock; }, getCart: () => state.cart,
+      readLine: readCurrentLine, api, onAdd, toast });
     return;
   }
   document.querySelectorAll("#image-width,#allowance").forEach(input => input.addEventListener("input", () => {
@@ -808,6 +803,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
 
 const configurationDrafts = new Map();
 let sheetController = null;
+let shirtStockController = null;
 function blinkCartTotal() {
   const total = document.querySelector(".summary-row.total");
   if (!total) return;
@@ -821,6 +817,7 @@ function openProductConfigurator(productId, carryDraft = null) {
   if (!dialog.open) syncDraft(document.querySelector("#checkout"));
   state.selectedProduct = product.id;
   sheetController = null;
+  shirtStockController = null;
   dialog.classList.add("configurator-dialog");
   const detail = document.querySelector("#order-detail");
   const capture = () => ({
@@ -855,7 +852,7 @@ function openProductConfigurator(productId, carryDraft = null) {
   let outsideDown = false;
   dialog.onpointerdown = event => { const rect = dialog.getBoundingClientRect(); outsideDown = event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom); };
   dialog.onclick = event => { const rect = dialog.getBoundingClientRect(); if (outsideDown && event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) close(); outsideDown = false; };
-  dialog.onclose = () => { if (dialog.open) return; sheetController = null; dialog.classList.remove("configurator-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
+  dialog.onclose = () => { if (dialog.open) return; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
   if (!dialog.open) dialog.showModal();
   bindProductConfiguration(line => { state.cart.push(line); configurationDrafts.delete(product.id); if (product.a3Family) state.products.filter(item => item.a3Family === product.a3Family && item.a3Kind === product.a3Kind).forEach(item => configurationDrafts.delete(item.id)); if (needsFile(line, selectedProduct())) state.draft.fileReadiness = "UNCONFIRMED"; dialog.close(); detail.replaceChildren(); renderPos(); blinkCartTotal(); toast("Produk ditambahkan"); }, saved?.sheetDraft);
   const switchA3 = next => { if (next) { const draft = capture(); configurationDrafts.set(product.id, draft); openProductConfigurator(next.id, draft); } };
