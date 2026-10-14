@@ -85,7 +85,7 @@ test("workflow per item: akses, produk identik, timeline, stok konkuren, pembaya
     assert.equal(order.status,"SELESAI");assert.equal(order.total,total);assert.equal(order.paidAmount,1);assert.equal(order.payments.length,1);assert.equal(order.stockCommitted,true);
     const used=order.items.flatMap(i=>i.materials?.length?i.materials:[{sku:i.stockSku,units:i.stockConsumption}]);
     for (const stock of before.inventory) {
-      const consumption=used.filter(s=>s.sku===stock.sku || s.materialId && s.materialId===stock.materialId).reduce((sum,s)=>sum+Number(s.units||0),0);
+      const consumption=stock.stockMethod === "ROLL" ? 0 : used.filter(s=>s.sku===stock.sku || s.materialId && s.materialId===stock.materialId).reduce((sum,s)=>sum+Number(s.units||0),0);
       assert.equal(after.inventory.find(s=>s.sku===stock.sku).quantity,stock.quantity-consumption);
     }
     for (const item of order.items) assert.ok(order.timeline.some(t=>t.itemId===item.itemId && /Selesai/.test(t.message)));

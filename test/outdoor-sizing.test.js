@@ -74,9 +74,9 @@ test('Migrasi opsi Outdoor tidak mengubah harga, BOM, stok atau snapshot lama da
   assert.equal(migrated.catalogVersion,16);assert.deepEqual(updated.widths,[2]);
   assert.equal(updated.price,12345);assert.equal(updated.note,'Custom');
   assert.deepEqual(updated.materialSources.map(({materialId,quantity,wastePercent})=>({materialId,quantity,wastePercent})),bom);
-  assert.deepEqual(migrated.inventory,inventory);const { designPicColor, items, ...snapshot } = migrated.orders[0];
+  assert.deepEqual(migrated.inventory.filter(row=>inventory.some(old=>old.sku===row.sku)).map(({stockMethod,stockUnit,stockNeedsCount,rollWidthCm,...row})=>row),inventory);const { designPicColor, items, stockCommitted: historicalStockCommitted, stockCommitBasis, ...snapshot } = migrated.orders[0];
   assert.deepEqual(snapshot, { id: historical.id, status: historical.status });
-  const { itemId, status, designPic, designPicId, designPicColor: itemColor, deadline, statusEnteredAt, updatedAt, ...pricedSnapshot } = items[0];
+  const { itemId, status, designPic, designPicId, designPicColor: itemColor, deadline, statusEnteredAt, updatedAt, stockCommitted, stockTiming, ...pricedSnapshot } = items[0];
   assert.deepEqual(pricedSnapshot, historical.items[0]);
   assert.equal(itemId, 'old-item-1'); assert.equal(status, historical.status);
   await store.mutate(s=>{s.products.find(p=>p.id===old.id).widths=[2,3];});

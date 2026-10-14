@@ -138,8 +138,11 @@ const viewPermissions = { pos: "pos.view", "order-history": "orders.view", proje
 function canView(view) { return view === "employees" ? canManageSettings() : can(viewPermissions[view]); }
 function firstAllowedView() { return Object.keys(viewPermissions).find((view) => can(viewPermissions[view])) || "none"; }
 
+let loadSequence = 0;
 async function load() {
-  const data = await api("/api/bootstrap");
+  const sequence = ++loadSequence;
+  const data = await api(`/api/bootstrap?view=${encodeURIComponent(state.view)}`);
+  if (sequence !== loadSequence) return;
   Object.assign(state, data);
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("hidden", !canView(button.dataset.view)));
   if (!canView(state.view)) state.view = firstAllowedView();
@@ -993,11 +996,14 @@ function bindPos() {
   const checkout = document.querySelector("#checkout");
   checkout.addEventListener("input", () => syncDraft(checkout));
   checkout.addEventListener("change", () => syncDraft(checkout));
+  const createRequestId = crypto.randomUUID();
+  let savingOrder = false;
   async function savePosOrder(openPayment = false) {
+    if (savingOrder) return; savingOrder = true;
     syncDraft(checkout);
     try {
       state.draft.phone = requiredPhone(state.draft.phone);
-      const payload = { ...state.draft, confirmed: openPayment, items: state.cart };
+      const payload = { ...state.draft, requestId: createRequestId, confirmed: openPayment, items: state.cart };
       const order = state.editingOrderId
         ? await api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
         : await api("/api/orders", { method: "POST", body: JSON.stringify(payload) });
@@ -1006,7 +1012,7 @@ function bindPos() {
       await load(); toast(`${order.code} berhasil disimpan`);
       state.view = openPayment ? "pos" : "projects"; render();
       if (openPayment) openPaymentDialog(order);
-    } catch (error) { toast(error.message, "error"); }
+    } catch (error) { toast(error.message, "error"); } finally { savingOrder = false; }
   }
   checkout.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1072,7 +1078,8 @@ async function refreshProjectData() {
   const user = state.currentUser;
   projectRefreshPending = true;
   try {
-    const data = await api("/api/bootstrap");
+    const data = await api("/api/bootstrap?view=projects");
+    if (state.view !== "projects") return;
     if (state.currentUser !== user || !canRefreshProjects()) return;
     const permissionsChanged = JSON.stringify(state.permissions) !== JSON.stringify(data.permissions);
     const focused = document.activeElement;
@@ -1119,7 +1126,7 @@ function filteredProjectOrders() {
   const query = state.projectSearch.trim().toLowerCase();
   const categoryStatuses = state.projectCategory === "waiting" ? ["MENUNGGU_PEMBAYARAN"] : ["DESAIN", "CETAK", "FINISHING", "SELESAI"];
   return projectJobs(state.orders).filter((order) => {
-    if (!categoryStatuses.includes(order.status)) return false;
+    if (!categoryStatuses.includes(order.status) || order.items[0]?.stockTiming === "SALE" && order.status !== "MENUNGGU_PEMBAYARAN") return false;
     if (state.projectCategory === "waiting" && state.projectWaitingType === "drafts" && !unconfirmedDraft(order)) return false;
     if (state.projectCategory === "waiting" && state.projectWaitingType === "confirmed" && unconfirmedDraft(order)) return false;
     const searchText = `${order.code} ${order.customerName} ${order.phone || ""} ${order.designPic || ""} ${(order.items || []).map((item) => `${item.productName} ${item.displaySize || ""} ${projectProductSpecification(item)} ${item.productionNote || ""}`).join(" ")}`.toLowerCase();
@@ -1229,6 +1236,7 @@ function itemDetail(item) {
 }
 
 function itemWorkflowHtml(order, item) {
+  if (item.stockTiming === "SALE") return `<div class="item-workflow"><strong class="item-status">Barang Dagangan · ${escapeHtml(state.statusLabels[item.status] || item.status)}</strong></div>`;
   const editableDeadline = ["OWNER", "CASHIER"].includes(state.currentUser.role) || state.currentUser.role === "MANAGER" && can("pos.edit");
   const active = ["DESAIN", "CETAK", "FINISHING", "SELESAI"].includes(item.status);
   const canAdvance = can("projects.status") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item));
@@ -1358,6 +1366,7 @@ function paymentFormHtml(order, outstanding) {
 }
 
 function bindPaymentForm(order, outstanding) {
+  const paymentRequestId = crypto.randomUUID();
   const form = document.querySelector("#payment-form");
   if (!form) return;
   const halfButton = form.querySelector("#payment-half");
@@ -1395,9 +1404,9 @@ function bindPaymentForm(order, outstanding) {
       const values = Object.fromEntries(new FormData(form)); values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
       const file = form.elements.poFile.files[0];
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);
-      await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify(values) });
+      const paidOrder = await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify({ ...values, requestId: paymentRequestId }) });
       if (previewUrl) URL.revokeObjectURL(previewUrl);
-      dialog.close(); await load(); if (can("orders.view")) openOrder(order.id); toast("Pembayaran berhasil dicatat");
+      dialog.close(); await load(); if (can("orders.view")) { if (!state.orders.some(item => item.id === paidOrder.id)) state.orders.push(paidOrder); openOrder(order.id); } toast("Pembayaran berhasil dicatat");
     } catch (error) { toast(error.message, "error"); }
     finally { submitting = false; if (button) button.disabled = false; }
   });
@@ -1510,7 +1519,7 @@ function drawReports() {
   if (state.reportTab === "customers") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Pelanggan</h2><span>${report.customers.length} pelanggan</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Pelanggan</th><th>Order</th><th>Item</th><th>Pesanan Terakhir</th>${capabilities.money ? "<th>Penjualan</th><th>Dibayar</th>" : ""}</tr></thead><tbody>${report.customers.map((row, index) => `<tr><td><b>${index + 1}</b></td><td><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.phone || "Walk-in")}</small></td><td>${row.orders}</td><td>${row.items}</td><td>${projectDateFormat.format(new Date(row.lastOrderAt))}</td>${capabilities.money ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td>` : ""}</tr>`).join("") || '<tr><td colspan="7">Belum ada data pelanggan.</td></tr>'}</tbody></table></div></section>`;
   if (state.reportTab === "payments") content.innerHTML = `<div class="report-kpis report-sub-kpis">${reportMetric("Belum Bayar", report.paymentSummary.unpaid, "pesanan")}${reportMetric("Pembayaran Sebagian", report.paymentSummary.partial, "pesanan")}${reportMetric("Lunas", report.paymentSummary.paidOrders, "pesanan")}${capabilities.money ? reportMetric("Sisa Pembayaran", reportMoney(report.paymentSummary.outstanding), "sampai tanggal akhir laporan") : ""}</div>${capabilities.money ? reportPaymentTable(report.receipts, "Uang Masuk", false) : ""}${capabilities.money ? purchaseOrderReport(report.purchaseOrders || []) : ""}${reportSalesTable(report)}`;
   if (state.reportTab === "operations") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Beban Pekerjaan per Tahap</h2><span>Mempermudah identifikasi antrean produksi</span></div><div class="table-wrap"><table><thead><tr><th>Tahap</th><th>Pesanan</th><th>Item</th></tr></thead><tbody>${report.statuses.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${row.orders}</td><td>${row.items}</td></tr>`).join("") || '<tr><td colspan="3">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
-  if (state.reportTab === "inventory") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Persediaan & Stok Minimum</h2><span>${report.inventory.filter((row) => row.low).length} bahan perlu diperiksa</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Kondisi</th>${capabilities.cost ? "<th>Nilai Stok</th>" : ""}</tr></thead><tbody>${report.inventory.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${escapeHtml(row.sku)}</td><td>${row.quantity.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td>${row.minStock.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td><span class="badge ${row.low ? "warn" : "ok"}">${row.low ? "PERLU DIPERIKSA" : "AMAN"}</span></td>${capabilities.cost ? `<td>${reportMoney(row.value)}</td>` : ""}</tr>`).join("")}</tbody></table></div></section>`;
+  if (state.reportTab === "inventory") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Persediaan & Stok Minimum</h2><span>${report.inventory.filter((row) => row.low).length} bahan perlu diperiksa</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Kondisi</th>${capabilities.cost ? "<th>Nilai Stok</th>" : ""}</tr></thead><tbody>${report.inventory.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${escapeHtml(row.sku)}</td><td>${row.quantity.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td>${row.minStock.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td><span class="badge ${row.stockNeedsCount || row.low ? "warn" : "ok"}">${row.stockNeedsCount ? "PERLU STOK OPNAME" : row.low ? "PERLU DIPERIKSA" : "AMAN"}</span></td>${capabilities.cost ? `<td>${row.value == null ? "—" : reportMoney(row.value)}</td>` : ""}</tr>`).join("")}</tbody></table></div></section>`;
   if (state.reportTab === "receivables" && capabilities.money) content.innerHTML = reportPaymentTable(report.receivables, "Piutang Outstanding", true);
   if (state.reportTab === "assets" && canManageSettings() && capabilities.cost) mountAssetReport(assetContext(), content, report.range.to.slice(0, 7));
   document.querySelector("#report-chart-toggle")?.addEventListener("click", () => { state.reportChartVisible = !state.reportChartVisible; drawReports(); });
@@ -1570,7 +1579,7 @@ function masterHeader(title, includeSummary = true) {
   const labels = { products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
   const allowed = { products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
   return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
-    ${includeSummary ? `<div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>` : ""}
+    ${includeSummary ? `<div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => !item.stockNeedsCount && Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>` : ""}
     <div class="master-tabs">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
 }
 
@@ -1599,7 +1608,7 @@ function renderMaster() {
   }).join("");
   const materialRows = state.materials.map((material) => {
     const stock = state.inventory.find((item) => item.materialId === material.id || item.sku === material.sku);
-    return `<tr data-category="${escapeHtml(material.category)}" data-sort-category="${escapeHtml(material.category)}"><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small></td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}</td><td class="${Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(material.unit)}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
+    return `<tr data-category="${escapeHtml(material.category)}" data-sort-category="${escapeHtml(material.category)}"><td><strong>${escapeHtml(material.name)}</strong><small>${escapeHtml(material.sku)}</small></td><td>${escapeHtml(material.category)}</td><td>${escapeHtml(material.unit)}<small>${material.stockMethod === "ROLL" ? "Per Roll" : "Per Satuan"}</small></td><td class="${!stock?.stockNeedsCount && Number(stock?.quantity || 0) <= Number(material.minStock || 0) ? "stock-negative" : ""}">${Number(stock?.quantity || 0).toLocaleString("id-ID")} ${escapeHtml(stock?.unit || material.stockUnit || material.unit)}${stock?.stockNeedsCount ? "<small>Saldo lama · perlu stok opname roll</small>" : ""}</td><td>${rupiah.format(material.cost)}</td><td>${escapeHtml(material.supplier || "—")}</td><td><span class="badge ${material.active === false ? "warn" : "ok"}">${material.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-material="${material.id}">Edit</button></td></tr>`;
   }).join("");
   const machineRows = state.machines.map((machine) => `<tr><td><strong>${escapeHtml(machine.name)}</strong><small>${escapeHtml(machine.code)}</small></td><td>${escapeHtml(machine.type)}</td><td>${escapeHtml(machine.capacity || "—")}</td><td>${rupiah.format(machine.costPerHour)}/jam</td><td><span class="badge ${machine.status === "AKTIF" ? "ok" : "warn"}">${escapeHtml(machine.status)}</span></td><td><button class="secondary" data-edit-machine="${machine.id}">Edit</button></td></tr>`).join("");
   const finishingRows = state.finishings.map((finishing) => `<tr data-categories="${escapeHtml(JSON.stringify(finishing.categories || []))}" data-sort-category="${escapeHtml([...(finishing.categories || [])].sort((a, b) => a.localeCompare(b, "id"))[0] || "")}"><td><strong>${escapeHtml(finishing.name)}</strong><small>${escapeHtml(finishing.code)}</small></td><td class="compact-cell">${(finishing.categories || []).map((category) => `<span class="mini-chip">${escapeHtml(category)}</span>`).join(" ")}</td><td>${rupiah.format(finishing.price)}</td><td>${escapeHtml({ free: "Per unit", area: "Per m²", point: "Per titik", perimeter: "Keliling", top_bottom: "Atas–bawah", left_right: "Kanan–kiri", length: "Meter lari" }[finishing.rule] || finishing.rule)}</td><td><span class="badge ${finishing.active === false ? "warn" : "ok"}">${finishing.active === false ? "NONAKTIF" : "AKTIF"}</span></td><td><button class="secondary" data-edit-finishing="${finishing.id}">Edit</button></td></tr>`).join("");
@@ -1737,16 +1746,9 @@ function switchHtml(name, checked, label = "Aktif") {
   return `<label class="switch-row"><input type="checkbox" name="${name}" ${checked ? "checked" : ""}><span class="switch"></span><b>${label}</b></label>`;
 }
 
-function openMaterialForm(material = null) {
-  const detail = showMasterDialog(material ? "Edit Bahan" : "Tambah Bahan", `<form id="material-form" class="master-form"><div class="form-grid">
-    <label class="field"><span>Nama bahan *</span><input name="name" value="${escapeHtml(material?.name || "")}" required></label><label class="field"><span>SKU bahan *</span><input name="sku" value="${escapeHtml(material?.sku || "")}" required></label>
-    <label class="field"><span>Kategori bahan *</span><select name="category" required>${[...(state.catalogOptions.materialCategories || [])].sort((a, b) => a.localeCompare(b, "id")).map((category) => `<option value="${escapeHtml(category)}" ${category === (material?.category || "Lainnya") ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select><small>Tambah atau ubah kategori melalui tab Kategori → Kategori Bahan.</small></label><label class="field"><span>Satuan stok *</span><select name="unit">${["m²", "m lari", "pcs", "lbr", "kg", "pack", "rim"].map((unit) => `<option ${material?.unit === unit ? "selected" : ""}>${unit}</option>`).join("")}</select></label>
-    ${material ? "" : `<label class="field"><span>Stok awal</span><input name="stock" type="number" min="0" step="0.01" value="0"></label>`}<label class="field"><span>Stok minimum</span><input name="minStock" type="number" min="0" step="0.01" value="${material?.minStock || 0}"></label>
-    <label class="field"><span>Harga dasar / satuan</span><input name="cost" type="number" min="0" value="${material?.cost || 0}"></label><label class="field"><span>Supplier</span><input name="supplier" value="${escapeHtml(material?.supplier || "")}"></label>
-  </div><div class="form-footer">${switchHtml("active", material?.active !== false)}${deleteButtonHtml(material, "Bahan")}<button class="primary" type="submit">Simpan Bahan</button></div></form>`);
-  bindDeleteRecord(detail, material, "materials", "Bahan", "materials");
-  detail.querySelector("#material-form").onsubmit = async (event) => { event.preventDefault(); const values = Object.fromEntries(new FormData(event.target)); values.active = event.target.elements.active.checked; try { await api(material ? `/api/materials/${material.id}` : "/api/materials", { method: material ? "PUT" : "POST", body: JSON.stringify(values) }); dialog.close(); await load(); state.view = "master"; state.masterTab = "materials"; render(); toast("Bahan berhasil disimpan"); } catch (error) { toast(error.message, "error"); } };
-}
+let stockUiPromise;
+function getStockUi() { return stockUiPromise ||= import("./stock-ui.js").then(({ createStockUi }) => createStockUi({ state, root, dialog, api, escapeHtml, dateFormat, showMasterDialog, switchHtml, deleteButtonHtml, bindDeleteRecord, can, load, render, toast })); }
+function openMaterialForm(material = null) { return getStockUi().then(ui => ui.openMaterialForm(material)); }
 
 function finishingTierRowHtml(tier = {}) {
   return `<div class="builder-row" data-finishing-tier><label class="field"><span>Jumlah minimum</span><input data-finishing-min type="number" min="0.0001" step="any" value="${tier.min ?? ""}" required></label><label class="field"><span>Jumlah maksimum</span><input data-finishing-max type="number" min="0.0001" step="any" value="${tier.max ?? ""}" placeholder="Tanpa batas"></label><label class="field"><span>Harga / unit</span><span class="money-input"><b>Rp</b><input data-finishing-tier-price type="text" inputmode="numeric" value="${tier.price == null ? "" : formatMoneyValue(tier.price)}" required></span></label><button type="button" class="text-button" data-remove-finishing-tier aria-label="Hapus tingkat grosir">×</button></div>`;
@@ -1977,29 +1979,10 @@ function openDtfProductForm(product) {
   };
 }
 
-function renderStock() {
-  const categories = [...new Set(state.inventory.map((item) => item.category || "Lainnya"))].sort();
-  root.innerHTML = `<div class="stock-grid"><section class="panel"><div class="panel-head stock-head"><div><h2>Stok Bahan</h2><span class="badge info">Berkurang saat Selesai</span></div><div class="stock-filters"><input id="stock-search" class="search" value="${escapeHtml(state.stockSearch)}" placeholder="Cari bahan atau SKU…"><select id="stock-category" class="filter-select"><option value="">Semua kategori</option>${categories.map((category) => `<option ${state.stockCategory === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select></div></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>Kategori</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Update</th>${can("stock.adjust") ? "<th></th>" : ""}</tr></thead><tbody>${state.inventory.map((item) => `<tr data-stock-row data-search="${escapeHtml(`${item.productName} ${item.sku}`.toLowerCase())}" data-category="${escapeHtml(item.category || "Lainnya")}"><td><strong>${escapeHtml(item.productName)}</strong></td><td><span class="mini-chip">${escapeHtml(item.category || "Lainnya")}</span></td><td>${escapeHtml(item.sku)}</td><td class="${Number(item.quantity) <= Number(item.minStock || 0) ? "stock-negative" : ""}">${Number(item.quantity).toLocaleString("id-ID")} ${escapeHtml(item.unit)}</td><td>${Number(item.minStock || 0).toLocaleString("id-ID")} ${escapeHtml(item.unit)}</td><td>${dateFormat.format(new Date(item.updatedAt))}</td>${can("stock.adjust") ? `<td><div class="stock-actions"><button class="primary" data-stock-in="${item.sku}">＋ Tambah Stok</button><button class="secondary" data-adjust="${item.sku}" title="Koreksi stok">Sesuaikan</button></div></td>` : ""}</tr>`).join("")}</tbody></table><div id="stock-empty" class="cart-empty hidden">Bahan tidak ditemukan.</div></div></section><aside class="panel"><div class="panel-head"><h2>Mutasi Terakhir</h2></div><div class="panel-body">${state.stockMovements.length ? state.stockMovements.slice(0, 15).map((move) => `<div class="movement"><div><strong>${escapeHtml(move.productName)}</strong><small>${escapeHtml(move.reason)}${move.orderCode ? ` · ${escapeHtml(move.orderCode)}` : ""}<br>${dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change > 0 ? "plus" : "minus"}">${move.change > 0 ? "+" : ""}${move.change}</em></div>`).join("") : '<div class="cart-empty">Belum ada mutasi stok.</div>'}</div></aside></div>`;
-  const applyStockFilter = () => { const query = document.querySelector("#stock-search").value.trim().toLowerCase(); const category = document.querySelector("#stock-category").value; let visible = 0; document.querySelectorAll("[data-stock-row]").forEach((row) => { const show = (!query || row.dataset.search.includes(query)) && (!category || row.dataset.category === category); row.classList.toggle("hidden", !show); if (show) visible += 1; }); document.querySelector("#stock-empty").classList.toggle("hidden", visible > 0); state.stockSearch = query; state.stockCategory = category; };
-  document.querySelector("#stock-search").oninput = applyStockFilter; document.querySelector("#stock-category").onchange = applyStockFilter; applyStockFilter();
-  document.querySelectorAll("[data-stock-in]").forEach((button) => button.onclick = () => openStockEntry(state.inventory.find((item) => item.sku === button.dataset.stockIn)));
-  document.querySelectorAll("[data-adjust]").forEach((button) => button.onclick = async () => {
-    const change = window.prompt("Masukkan perubahan stok. Contoh: 50 atau -2.5");
-    if (!change) return;
-    const reason = window.prompt("Alasan penyesuaian:", "Stok awal / stok masuk");
-    try { await api(`/api/inventory/${button.dataset.adjust}`, { method: "PATCH", body: JSON.stringify({ change, reason }) }); await load(); toast("Stok diperbarui"); } catch (error) { toast(error.message, "error"); }
-  });
-}
+function renderStock() { return getStockUi().then(ui => { if (state.view === "stock") ui.renderStock(); }); }
+function openStockEntry(item) { return getStockUi().then(ui => ui.openStockEntry(item)); }
 
-function openStockEntry(item) {
-  if (!item) return;
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
-  const detail = showMasterDialog("Tambah Stok Bahan", `<form id="stock-entry-form" class="master-form"><div class="stock-entry-summary"><span>${escapeHtml(item.productName)}</span><strong>Stok saat ini ${Number(item.quantity).toLocaleString("id-ID")} ${escapeHtml(item.unit)}</strong></div><div class="form-grid"><label class="field"><span>Jumlah stok masuk *</span><span class="input-with-unit"><input name="change" type="number" min="0.0001" step="0.0001" required><b>${escapeHtml(item.unit)}</b></span></label><label class="field"><span>Tanggal stok *</span><input name="movementDate" type="date" value="${today}" required></label><label class="field full"><span>Catatan</span><input name="reason" value="Stok masuk" placeholder="Contoh: Pembelian Supplier A"></label></div><div class="form-footer sticky-form-footer"><button type="button" class="secondary" id="cancel-stock-entry">Batal</button><button class="primary" type="submit">Simpan Stok Masuk</button></div></form>`);
-  detail.querySelector("#cancel-stock-entry").onclick = () => dialog.close();
-  detail.querySelector("#stock-entry-form").onsubmit = async (event) => { event.preventDefault(); const payload = Object.fromEntries(new FormData(event.target)); try { await api(`/api/inventory/${item.sku}`, { method: "PATCH", body: JSON.stringify(payload) }); dialog.close(); await load(); state.view = "stock"; renderStock(); toast("Stok masuk berhasil dicatat"); } catch (error) { toast(error.message, "error"); } };
-}
-
-document.querySelectorAll(".nav-item").forEach((button) => button.onclick = () => { if (!canView(button.dataset.view)) return; if (state.view === "employees" && hasUnsavedPayroll()) { if (!window.confirm("Buang perubahan payroll yang belum disimpan?")) return; discardPayrollDrafts(); } closeNavigation(); state.view = button.dataset.view; render(); if (state.view === "projects") refreshProjectData(); });
+document.querySelectorAll(".nav-item").forEach((button) => button.onclick = async () => { if (!canView(button.dataset.view)) return; if (state.view === "employees" && hasUnsavedPayroll()) { if (!window.confirm("Buang perubahan payroll yang belum disimpan?")) return; discardPayrollDrafts(); } closeNavigation(); state.view = button.dataset.view; try { await load(); } catch (error) { toast(error.message, "error"); } });
 window.addEventListener("beforeunload", event => { if (hasUnsavedPayroll()) { event.preventDefault(); event.returnValue = ""; } });
 function closeNavigation() {
   document.querySelector('#primary-navigation').classList.remove('navigation-open');

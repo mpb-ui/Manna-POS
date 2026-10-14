@@ -3,10 +3,11 @@ import { registerSheetProfileRoutes, validateProductCalculator } from "./lib/she
 import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
+import { initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
 import { workflowSnapshot, checklistForOrder } from "./lib/order-assistance.js";
-import { FILE_READINESS, completeness } from "./public/order-rules.js";
+import { FILE_READINESS, completeness, cancelled } from "./public/order-rules.js";
 import { assetReport } from "./lib/assets.js";
 import { aggregateReport } from "./lib/reports.js";
 import { normalizeFinishingTiers } from "./public/finishing-pricing.js";
@@ -63,11 +64,11 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory" }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
-    const token = readToken(req); const state = await store.read();
-    const user = token ? state.users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version) : null;
+    const token = readToken(req); const users = token ? await store.readUsers() : [];
+    const user = token ? users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version) : null;
     res.json({ authenticated: Boolean(user), user: publicUser(user), pinRequired: true });
   } catch (error) { next(error); }
 });
@@ -94,8 +95,8 @@ app.post("/api/logout", (_req, res) => {
 app.use("/api", async (req, res, next) => {
   try {
     const token = readToken(req); if (!token) return res.status(401).json({ error: "Sesi berakhir" });
-    const state = await store.read();
-    const user = state.users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version);
+    const users = await store.readUsers();
+    const user = users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version);
     if (!user) return res.status(401).json({ error: "Sesi berakhir" });
     req.user = user; next();
   } catch (error) { next(error); }
@@ -212,31 +213,35 @@ app.get("/api/bootstrap", async (req, res, next) => {
     const state = await store.read();
     state.orders.forEach(normalizeOrder);
     const permissions = effectivePermissions(req.user);
+    const view = ["pos", "projects", "stock", "master", "reports", "order-history", "employees"].includes(req.query.view) ? req.query.view : "full";
+    const includeMaster = ["full", "master"].includes(view);
+    const includeStock = ["full", "stock", "master"].includes(view);
     const canCatalog = permissions.includes("pos.view") || permissions.includes("master.view");
-    const canStock = permissions.includes("stock.view") || permissions.includes("master.view");
-    const canMaster = permissions.includes("master.view");
+    const canStock = includeStock && (permissions.includes("stock.view") || permissions.includes("master.view"));
+    const canMaster = includeMaster && permissions.includes("master.view");
     const visibleMaterials = state.materials.filter((item) => !item.deletedAt);
     const materials = canStock ? structuredClone(visibleMaterials) : [];
     if (!permissions.includes("stock.value") && !permissions.includes("master.materials")) materials.forEach((item) => { delete item.cost; delete item.supplier; });
     res.json({
       currentUser: publicUser(req.user), permissions,
-      assetLinks: ["OWNER", "ADMIN"].includes(req.user.role) ? assetReport(state).rows.filter(row => row.machineId && !row.cancelled).map(row => ({ id: row.id, machineId: row.machineId, name: row.name, archivedAt: row.archivedAt, disposedAt: row.disposal?.date || null, acquisitionCost: row.acquisitionCost, ...row.calculation })) : [],
-      permissionCatalog: permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: permissions.includes("users.manage") ? ROLE_PRESETS : {},
+      assetLinks: includeMaster && ["OWNER", "ADMIN"].includes(req.user.role) ? assetReport(state).rows.filter(row => row.machineId && !row.cancelled).map(row => ({ id: row.id, machineId: row.machineId, name: row.name, archivedAt: row.archivedAt, disposedAt: row.disposal?.date || null, acquisitionCost: row.acquisitionCost, ...row.calculation })) : [],
+      permissionCatalog: includeMaster && permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: includeMaster && permissions.includes("users.manage") ? ROLE_PRESETS : {},
       products: canCatalog ? state.products.filter((item) => item.active !== false && !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
       allProducts: canMaster ? state.products.filter((item) => !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
       catalogOptions: canCatalog || canMaster ? state.catalogOptions : { categories: [], saleUnits: [], priceBases: [] },
       pics: state.pics.filter((item) => item.active !== false && !item.deletedAt),
       materials, finishings: canCatalog || canMaster ? state.finishings.filter((item) => !item.deletedAt) : [], machines: canCatalog || canMaster || permissions.includes("reports.view") ? state.machines.filter((item) => !item.deletedAt) : [],
-      orders: state.orders.filter((order) => orderVisibleToUser(order, req.user)).map((order) => {
+      orders: state.orders.filter((order) => (view === "full" || !["DIAMBIL", "BATAL", "CANCELLED", "CANCELED"].includes(order.status)) && orderVisibleToUser(order, req.user)).map((order) => {
         const result = sanitizeOrder(order, req.user);
         // Compact metadata for list signifiers; detailed stock/checklists are lazy.
+        if (view !== "full") { delete result.poAttachment; result.payments = result.payments?.map(({ poAttachment, ...payment }) => payment); result.timeline = result.timeline?.slice(0, 10); return result; }
         const checklist = checklistForOrder(order, state.products);
         result.assistanceSummary = { issueCount: completeness(order, state.products).length, checklistDone: checklist.reduce((n, i) => n + i.steps.filter(s => s.done).length, 0), checklistTotal: checklist.reduce((n, i) => n + i.steps.length, 0) };
         return result;
       }),
-      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovements: canStock ? state.stockMovements.slice(0, 50) : [], statusLabels: STATUS_LABEL,
-      users: permissions.includes("users.manage") ? state.users.filter((item) => !item.deletedAt).map(publicUser) : [],
-      auditLogs: permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
+      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovementCount: canStock ? state.stockMovements.length : 0, stockMovements: canStock ? state.stockMovements.slice(0, view === "full" ? 50 : 15) : [], statusLabels: STATUS_LABEL,
+      users: includeMaster && permissions.includes("users.manage") ? state.users.filter((item) => !item.deletedAt).map(publicUser) : [],
+      auditLogs: includeMaster && permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
     });
   } catch (error) { next(error); }
 });
@@ -342,9 +347,13 @@ app.post("/api/materials", requirePermission("master.materials"), async (req, re
       if (!name || !sku || !text(req.body.unit)) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
       if (!state.catalogOptions.materialCategories.includes(text(req.body.category) || "Lainnya")) throw new Error("Pilih kategori bahan yang tersedia");
       unique(state, "materials", "sku", sku); unique(state, "materials", "name", name);
+      if (state.inventory.some(row => row.sku === sku)) throw new Error("SKU stok sudah digunakan");
       const material = { id: identifier("mat", sku), sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
+      if (!Number.isFinite(material.stock) || !Number.isFinite(material.minStock)) throw new Error("Saldo stok tidak valid");
+      updateStockMethod(state, material, req.body, req.user.name, now());
+      if (material.stockMethod === "ROLL" && !Number.isInteger(material.stock)) throw new Error("Stok awal roll harus bilangan bulat");
       state.materials.push(material);
-      state.inventory.push({ sku, materialId: material.id, productName: name, category: material.category, width: null, quantity: material.stock, minStock: material.minStock, unit: material.unit, updatedAt: now() });
+      state.inventory.push({ sku, materialId: material.id, productName: name, category: material.category, width: null, quantity: material.stock, minStock: material.minStock, unit: material.stockUnit, stockUnit: material.stockUnit, stockMethod: material.stockMethod, stockNeedsCount: false, updatedAt: now() });
       audit(state, req.user, "MATERIAL_CREATE", `Menambahkan bahan ${name}`, { materialId: material.id, sku });
       return material;
     });
@@ -361,10 +370,12 @@ app.put("/api/materials/:id", requirePermission("master.materials"), async (req,
       if (!name || !sku || !unit) throw new Error("Nama, SKU, dan satuan bahan wajib diisi");
       if (!state.catalogOptions.materialCategories.includes(text(req.body.category) || "Lainnya")) throw new Error("Pilih kategori bahan yang tersedia");
       unique(state, "materials", "sku", sku, material.id); unique(state, "materials", "name", name, material.id);
+      if (state.inventory.some(row => row.sku === sku && row.materialId !== material.id)) throw new Error("SKU stok sudah digunakan");
       const oldSku = material.sku;
       Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", unit, minStock: Math.max(0, Number(req.body.minStock || 0)), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false });
+      updateStockMethod(state, material, req.body, req.user.name, now());
       const stock = state.inventory.find((item) => item.sku === oldSku || item.materialId === material.id);
-      if (stock) Object.assign(stock, { sku, materialId: material.id, productName: name, category: material.category, minStock: material.minStock, unit, updatedAt: now() });
+      if (stock) Object.assign(stock, { sku, rollWidthCm: material.rollWidthCm, materialId: material.id, productName: name, category: material.category, minStock: material.minStock, unit: material.stockNeedsCount ? stock.unit : material.stockUnit, updatedAt: now() });
       audit(state, req.user, "MATERIAL_UPDATE", `Memperbarui bahan ${name}`, { materialId: material.id, sku });
       return material;
     });
@@ -577,10 +588,10 @@ function saveProduct(state, body, current = null) {
 registerSheetProfileRoutes({ app, store, requireCatalogAdmin, audit });
 
 app.post("/api/products", requirePermission("master.products"), async (req, res, next) => {
-  try { const result = await store.mutate((state) => { const product = saveProduct(state, req.body); audit(state, req.user, "PRODUCT_CREATE", `Menambahkan produk ${product.name}`, { productId: product.id, price: product.price }); return product; }); res.status(201).json(result); } catch (error) { next(error); }
+  try { const result = await store.mutate((state) => { const product = saveProduct(state, req.body); syncRetailProductStock(state, product); audit(state, req.user, "PRODUCT_CREATE", `Menambahkan produk ${product.name}`, { productId: product.id, price: product.price }); return product; }); res.status(201).json(result); } catch (error) { next(error); }
 });
 app.put("/api/products/:id", requirePermission("master.products"), async (req, res, next) => {
-  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id && !item.deletedAt); if (!product) throw new Error("Produk tidak ditemukan"); const beforePrice = product.price; const saved = saveProduct(state, req.body, product); audit(state, req.user, "PRODUCT_UPDATE", `Memperbarui produk ${saved.name}`, { productId: saved.id, beforePrice, price: saved.price }); return saved; }); res.json(result); } catch (error) { next(error); }
+  try { const result = await store.mutate((state) => { const product = state.products.find((item) => item.id === req.params.id && !item.deletedAt); if (!product) throw new Error("Produk tidak ditemukan"); const beforePrice = product.price; const previousSku = product.sku; const saved = saveProduct(state, req.body, product); syncRetailProductStock(state, saved, previousSku); audit(state, req.user, "PRODUCT_UPDATE", `Memperbarui produk ${saved.name}`, { productId: saved.id, beforePrice, price: saved.price }); return saved; }); res.json(result); } catch (error) { next(error); }
 });
 
 app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), async (req, res, next) => {
@@ -616,6 +627,10 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
 app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
+      if (req.body.requestId) {
+        const existing = state.orders.find(order => order.createRequestId === req.body.requestId && order.createdById === req.user.id);
+        if (existing) return existing;
+      }
       const priced = calculateOrder(state.products.filter((item) => item.active !== false && !item.deletedAt), req.body.items || [], state.catalogOptions.sheetCalculatorProfiles);
       if (!priced.items.length) throw new Error("Pesanan belum memiliki produk");
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
@@ -637,6 +652,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         status: STATUS.WAITING_PAYMENT,
         createdById: req.user.id,
         createdByName: req.user.name,
+        createRequestId: req.body.requestId || null,
         stockCommitted: false,
         items: workflowSnapshot(priced.items, state.products),
         total: priced.total,
@@ -699,9 +715,17 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order) throw new Error("Pesanan tidak ditemukan");
       normalizeOrder(order);
+      if (cancelled(order)) throw new Error("Pesanan yang dibatalkan tidak dapat menerima pembayaran baru");
       const type = req.body.type === "PO" ? "PO" : "PAYMENT";
       const method = type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim();
       const amount = type === "PO" ? 0 : Number(req.body.amount || 0);
+      if (req.body.requestId) {
+        const previous = order.payments.find(payment => payment.requestId === req.body.requestId);
+        if (previous) {
+          if (previous.amount !== amount || previous.type !== type || previous.method !== (type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim())) throw new Error("Permintaan pembayaran sudah dipakai untuk data berbeda");
+          return order;
+        }
+      }
       if (!Number.isFinite(amount) || amount < 0) throw new Error("Nominal pembayaran tidak valid");
       const outstanding = Math.max(0, order.total - order.paidAmount);
       const poNumber = String(req.body.poNumber || "").trim();
@@ -716,7 +740,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
         if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(String(poAttachment.dataUrl || ""))) throw new Error("Data gambar PO tidak valid");
         if (String(poAttachment.dataUrl).length > 3_500_000) throw new Error("Ukuran gambar PO maksimal 2,5 MB");
       }
-      const payment = { id: crypto.randomUUID(), method, type, amount, poNumber, poAttachment: poAttachment ? { name: text(poAttachment.name), type: text(poAttachment.type), dataUrl: poAttachment.dataUrl } : null, createdAt: now(), actor: req.user.name, actorId: req.user.id, note: text(req.body.note), sequence: order.payments.filter(payment => payment.type !== "PO" && Number(payment.amount) > 0).length + 1, orderTotal: order.total, paidBefore: order.paidAmount, paidAfter: order.paidAmount + amount, balanceAfter: Math.max(0, order.total - order.paidAmount - amount) };
+      const payment = { id: crypto.randomUUID(), requestId: req.body.requestId || null, method, type, amount, poNumber, poAttachment: poAttachment ? { name: text(poAttachment.name), type: text(poAttachment.type), dataUrl: poAttachment.dataUrl } : null, createdAt: now(), actor: req.user.name, actorId: req.user.id, note: text(req.body.note), sequence: order.payments.filter(payment => payment.type !== "PO" && Number(payment.amount) > 0).length + 1, orderTotal: order.total, paidBefore: order.paidAmount, paidAfter: order.paidAmount + amount, balanceAfter: Math.max(0, order.total - order.paidAmount - amount) };
       order.payments.push(payment);
       order.paidAmount += amount;
       order.paymentConfirmed = true;
@@ -726,6 +750,9 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
         order.items.forEach(item => { item.status = STATUS.DESIGN; item.statusEnteredAt = now(); item.updatedAt = now(); });
         refreshOrderWorkflow(order, now());
       }
+      const retailItems = order.items.filter(item=>item.stockTiming === "SALE" && !item.stockCommitted);
+      confirmRetailStock(state, order, req.user.name, now());
+      for (const item of retailItems) activity(state, order, `Penjualan ${item.productName}: stok satuan dicatat; ${item.status === "DIAMBIL" ? "pesanan diambil" : "barang siap diserahkan"}`, req.user.name, { itemId: item.itemId, productName: item.productName });
       order.updatedAt = now();
       activity(state, order, `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
       audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount });
@@ -817,6 +844,15 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
   } catch (error) { if (["UNPAID_PICKUP_CONFIRMATION", "ORDER_HELD"].includes(error.code)) return res.status(409).json({ error: error.message, code: error.code }); next(error); }
 });
 
+app.get("/api/stock-movements", requirePermission("stock.view"), async (req, res, next) => {
+  try {
+    const state = await store.read();
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 15));
+    res.json({ movements: state.stockMovements.slice(offset, offset + limit), hasMore: state.stockMovements.length > offset + limit });
+  } catch (error) { next(error); }
+});
+
 app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
@@ -825,19 +861,14 @@ app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, 
       if (state.materials.some((item) => (item.id === stock.materialId || item.sku === stock.sku) && item.deletedAt)) throw new Error("Bahan sudah dihapus");
       const change = Number(req.body.change);
       if (!Number.isFinite(change) || change === 0) throw new Error("Jumlah penyesuaian tidak valid");
+      if (req.body.requestId && state.stockMovements.some(move=>move.requestId===req.body.requestId)) return adjustPhysicalStock(state, stock, req.body, req.user.name, now());
       if (categoryKey(state.catalogOptions, stock.category, "materials") === "kaos-polos-dtf") {
         const reserved = shirtReservations(state).get(stock.materialId) || 0;
         if (Number(stock.quantity) + change < reserved) throw new Error(`Stok ${stock.productName} tidak boleh kurang dari ${reserved} pcs yang sudah dipesan`);
       }
-      stock.quantity = Number(stock.quantity) + change;
-      const movementDate = text(req.body.movementDate);
-      const createdAt = movementDate ? new Date(`${movementDate}T12:00:00+08:00`).toISOString() : now();
-      if (Number.isNaN(new Date(createdAt).getTime())) throw new Error("Tanggal stok tidak valid");
-      stock.updatedAt = now();
-      const movement = { id: crypto.randomUUID(), sku: stock.sku, productName: stock.productName, category: stock.category || "", change, balance: stock.quantity, orderCode: null, reason: String(req.body.reason || "Penyesuaian stok"), movementDate: movementDate || null, createdAt, recordedAt: now() };
-      state.stockMovements.unshift(movement);
-      audit(state, req.user, "STOCK_ADJUST", `Menyesuaikan stok ${stock.productName}`, { sku: stock.sku, change, balance: stock.quantity, reason: movement.reason });
-      return { stock, movement };
+      const result = adjustPhysicalStock(state, stock, req.body, req.user.name, now());
+      audit(state, req.user, "STOCK_ADJUST", `Menyesuaikan stok ${stock.productName}`, { sku: stock.sku, change: result.movement.change, balance: stock.quantity, reason: result.movement.reason, movementId: result.movement.id, reversalOf: result.movement.reversalOf });
+      return result;
     });
     res.json(result);
   } catch (error) { next(error); }
