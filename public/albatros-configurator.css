@@ -1,0 +1,86 @@
+/* Approved Albatros Figma configuration; other product dialogs keep their UI. */
+.order-dialog.albatros-dialog{width:min(650px,calc(100vw - 24px));border:1px solid #D7DFE9;border-radius:12px;overflow:hidden;max-height:calc(100dvh - 24px)}
+.albatros-dialog #order-detail{display:flex;flex-direction:column;max-height:calc(100dvh - 26px)}
+.albatros-dialog .configurator-head{position:static;flex:0 0 auto;padding:20px 24px;min-height:100px;border-bottom:1px solid #D7DFE9;gap:16px}
+.albatros-dialog .configurator-head .product-category{display:none}
+.albatros-dialog .configurator-head h2{margin:0 0 8px;font-size:24px;font-weight:800;line-height:30px;color:#17263C}
+.albatros-dialog .configurator-head p{margin:0;font-size:15px;font-weight:500;line-height:22px;color:#52627A}
+.albatros-dialog .detail-close{flex:0 0 32px;width:32px;height:32px;display:grid;place-items:center;padding:0;background:#F1F3F4;color:#52627A;border-radius:8px;font-size:24px;line-height:1}
+.albatros-dialog .configurator-body{padding:24px;display:flex;flex-direction:column;gap:20px;min-height:0;overflow-y:auto;scroll-padding:16px 145px;scrollbar-width:thin}
+.albatros-config{display:contents}
+.albatros-config h3{display:flex;align-items:center;gap:10px;margin:0;font-size:13px;font-weight:700;letter-spacing:.4px;line-height:20px;color:#17263C}
+.albatros-step{display:grid;place-items:center;flex:0 0 20px;width:20px;height:20px;background:#0088FF;border-radius:50%;font-size:12px;line-height:20px;color:#fff;letter-spacing:0;font-weight:700}
+.albatros-section-content{display:grid;gap:16px;margin:16px 0 0 30px;min-width:0}
+.albatros-dialog .albatros-size-options{gap:12px}
+.albatros-dialog .albatros-config .albatros-size-options .chip:has(input[type=radio])>label{width:144px;min-height:62px;padding:10px 12px;gap:12px;border:1px solid #D7DFE9;border-radius:8px;font-size:14px;font-weight:700;color:#17263C}
+.albatros-dialog .albatros-config .albatros-size-options .chip input[type=radio]:checked+label{background:#E9F1FE;color:#0A68F4;border-color:#0A68F4;box-shadow:inset 0 0 0 1px #0A68F4}
+.albatros-dialog .albatros-size-options .chip label{height:100%}
+.albatros-dialog .albatros-size-options .radio-chip-copy{flex:1}
+.albatros-dialog .albatros-size-options .chip label strong{font-weight:700;line-height:20px}
+.albatros-dialog .albatros-size-options .chip label small{font-size:13px;font-weight:400;line-height:18px;color:#52627A}
+.albatros-dialog .chip input[type=radio]:checked+label{background:#E9F1FE;color:#0A68F4;border-color:#0A68F4;box-shadow:inset 0 0 0 1px #0A68F4}
+.albatros-dialog .chip:has(input[type=radio])>label:after{flex-basis:18px;width:18px;height:18px;border-color:#A8B9CF}
+.albatros-dialog .chip input[type=radio]:checked+label:after{border-color:#0A68F4;background:#fff;box-shadow:inset 0 0 0 5px #0A68F4}
+.albatros-dimensions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;width:min(300px,100%)}
+.albatros-dimensions>p{grid-column:1/-1;margin:0;font-size:13px;line-height:20px;color:#52627A}
+.albatros-dialog .field{gap:8px}
+.albatros-dialog .field>span,.albatros-dialog .quantity-field>span{font-size:14px;font-weight:600;line-height:17px;color:#17263C}
+.albatros-dimensions input{height:44px;padding:0 36px 0 12px;border:1px solid #D7DFE9;border-radius:8px;font-size:16px;font-weight:600;color:#17263C}
+.albatros-dimensions .input-with-unit>b{right:12px;font-size:12px;font-weight:500;color:#52627A}
+.albatros-dialog .quantity-field{gap:8px;margin:0;max-width:none}
+.albatros-dialog .quantity-control .qty-stepper{width:144px;height:40px;grid-template-columns:40px minmax(0,1fr) 40px;border:1px solid #D7DFE9;border-radius:8px;overflow:hidden;gap:0}
+.albatros-dialog .quantity-control .qty-stepper input,.albatros-dialog .quantity-control .qty-stepper button{height:40px;min-height:40px;border:0;border-radius:0;margin:0}
+.albatros-dialog .quantity-control .qty-stepper input{font-size:16px;font-weight:600}
+.albatros-dialog .quantity-control .qty-stepper button{background:#F7F9FC;color:#0A68F4;font-size:20px}
+.albatros-dialog .quantity-control>b{font-size:14px;font-weight:500;color:#52627A}
+.albatros-quantity-area{position:relative;min-width:0}
+.albatros-dialog .albatros-details>summary{position:absolute;top:32px;right:0;padding:0;min-height:20px;justify-content:flex-end;font-size:12px;font-weight:600;color:#52627A;cursor:pointer}
+.albatros-dialog .albatros-details>summary:before{display:none}
+.albatros-details .ui-chevron{width:18px;height:18px;flex-basis:18px}
+.albatros-details[open]>summary .ui-chevron{transform:rotate(180deg)}
+.albatros-details-body{margin-top:16px;padding:14px;border:1px solid #D7DFE9;border-radius:8px;background:#F7F9FC;font-size:12px;line-height:1.6;color:#52627A;overflow-wrap:anywhere;min-width:0}
+.albatros-details-body>p{margin:0 0 8px}
+.albatros-plan-values{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}.albatros-plan-values span{display:grid;gap:3px}.albatros-plan-values b{color:#17263C}
+.albatros-plan-help{font-size:11px;color:#52627A;line-height:1.6;margin-top:8px!important}
+.albatros-details-body details{margin-top:12px;border-top:1px solid #D7DFE9;padding-top:8px}
+.albatros-details-body summary{cursor:pointer;font-weight:600}
+.albatros-preview{width:100%;max-height:260px;display:block}
+.albatros-table-scroll{max-width:100%;overflow-x:auto;margin-top:8px;background:#fff}
+.albatros-table-scroll table{min-width:430px}
+.albatros-table-scroll th,.albatros-table-scroll td{font-size:11px;padding:8px;white-space:nowrap}
+.albatros-table-scroll tr.chosen{background:#eaf5ee}
+.albatros-error{margin:0;padding:10px 12px;font-size:12px;color:#bc3038;background:#fff3f3;border:1px solid #f0c5c9;border-radius:8px}
+.albatros-fixed-info{margin:0;color:#52627A;font-size:13px}
+.albatros-finishing{padding:20px 0;border-block:1px solid #D7DFE9}
+.albatros-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.albatros-section-heading>button{padding:0;background:transparent;border:0;font-size:14px;font-weight:700;line-height:20px;color:#0A68F4}
+.albatros-finishing .albatros-section-content{margin-top:12px}
+.albatros-dialog .finish-dropdown-row{padding:0;border:0;background:transparent}
+.albatros-dialog .finish-dropdown-main{display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:8px}
+.albatros-dialog .finish-dropdown-main:has([data-finishing-price]){grid-template-columns:minmax(0,1fr) 108px 70px}
+.albatros-dialog .finish-dropdown-main:has([data-finishing-price]) select{grid-column:1/3;grid-row:1}
+.albatros-dialog .finish-dropdown-main:has([data-finishing-price]) [data-remove-finish]{grid-column:3;grid-row:1;justify-self:end}
+.albatros-dialog .finish-dropdown-main [data-finishing-price]{grid-column:1;grid-row:2;min-width:0;overflow-wrap:anywhere}
+.albatros-dialog .finish-dropdown-main [data-stepper]{grid-column:2;grid-row:2}
+.albatros-dialog .finish-dropdown-main [data-finish-note-toggle]{grid-column:3;grid-row:2}
+.albatros-dialog [data-finish-select]{min-height:40px;font-size:14px;border:1px solid #D7DFE9;border-radius:8px}
+.albatros-dialog [data-remove-finish]{width:40px;height:40px;padding:0;border:1px solid #D7DFE9;border-radius:8px;color:#BC3038}
+.albatros-design{display:flex;align-items:flex-start;gap:8px}
+.albatros-design>.albatros-step{margin-top:2px}
+.albatros-dialog .albatros-design .design-service{flex:1;min-width:0;margin-top:0}
+.albatros-dialog .design-toggle{gap:8px}
+.albatros-dialog .design-toggle strong{font-size:13px;line-height:24px;letter-spacing:.4px;color:#17263C;text-transform:uppercase}
+.albatros-dialog .design-switch{width:28px;height:18px;flex-basis:28px}
+.albatros-dialog .design-switch:after{width:14px;height:14px;top:2px;left:2px}
+.albatros-dialog .design-toggle input:checked+.design-switch:after{transform:translateX(10px)}
+.albatros-dialog .production-note-details{margin:0;padding:20px 0 0;border:0;border-top:1px solid #D7DFE9;border-radius:0;background:transparent}
+.albatros-dialog .production-note-details>summary{border:1px solid #D7DFE9;border-radius:8px;padding:8px 12px;min-height:40px;font-size:14px;font-weight:400;color:#52627A;font-style:italic;background:#fff}
+.albatros-dialog .item-action-bar{position:sticky;bottom:-24px;flex:0 0 auto;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:24px;margin:0 -24px -24px;padding:16px 24px calc(16px + env(safe-area-inset-bottom,0px));border:0;border-top:1px solid #D7DFE9;border-radius:0;background:#fff;box-shadow:0 -2px 20px #00000026;backdrop-filter:none;min-height:108px}
+.albatros-dialog .item-action-bar .price-preview{padding:0;background:none;flex:1;min-width:0;display:block}
+.albatros-dialog .price-preview span{font-size:13px;font-weight:700;line-height:18px;color:#52627A}
+.albatros-dialog .price-preview p{font-size:13px;line-height:18px;color:#52627A;overflow-wrap:anywhere;margin:4px 0}
+.albatros-dialog .price-preview strong{font-size:24px;line-height:32px;font-weight:700;color:#000;white-space:normal;overflow-wrap:anywhere}
+.albatros-dialog .item-action-bar .primary{flex:0 0 242px;min-width:0;min-height:50px;font-size:16px;font-weight:700;padding:8px 24px;background:#0A68F4;border-radius:8px}
+.albatros-dialog .item-action-bar .primary:disabled{background:#aabbd2;cursor:not-allowed}
+@media(max-width:520px){.albatros-dialog .configurator-head{padding:18px 16px}.albatros-dialog .configurator-body{padding:20px 16px;scroll-padding-bottom:180px}.albatros-section-content{margin-left:0}.albatros-dialog .albatros-details>summary{position:static;margin-top:12px;min-height:32px}.albatros-dialog .item-action-bar{bottom:-20px;margin:0 -16px -20px;padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px));gap:10px;flex-wrap:wrap}.albatros-dialog .item-action-bar .primary{flex:1 0 100%}.albatros-dialog .albatros-size-options .chip label{width:132px;min-height:58px}.albatros-section-heading>button{font-size:12px}.albatros-dialog .finish-dropdown-main{min-width:0}}
+@media(pointer:coarse){.albatros-dialog .albatros-details>summary,.albatros-details-body summary,.albatros-section-heading>button{min-height:44px}}

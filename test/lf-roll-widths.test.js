@@ -22,11 +22,12 @@ test('LF capacities select smallest fitting nominal roll at all boundaries witho
  assert.equal(supportsAutoRollWidth(product('poster-backlite-film')),false);
 });
 
-test('LF pricing uses nominal width and existing 10 cm rounding; explicit manual width remains allowed',()=>{
+test('LF pricing keeps nominal billing; Albatros rotates automatically while other LF manual widths remain allowed',()=>{
  const p=product('poster-albatros'),line=calculateLine(p,input(1.2,91));
- assert.equal(line.width,1.2);assert.equal(line.allowanceCm,0);assert.equal(line.actualLength,1.01);assert.equal(line.billedLength,1.1);assert.equal(line.baseTotal,Math.round(1.2*1.1*p.price));
+ assert.equal(line.width,1.2);assert.equal(line.allowanceCm,0);assert.equal(line.actualLength,.91);assert.equal(line.billedLength,1);assert.equal(line.baseTotal,Math.round(1.2*p.price));
  assert.equal(calculateLine(p,{...input(undefined,91)}).width,1.2);
- assert.equal(calculateLine(p,input(1.5,88)).width,1.5);
+ assert.equal(calculateLine(p,input(1.5,88)).width,.9);
+ assert.equal(calculateLine(product('poster-luster'),input(1.5,88)).width,1.5);
  assert.equal(calculateLine(p,input(1.5,180)).finalImageWidthCm,180);
  const fixed=calculateLine(p,{sizeVariantId:'a1',quantity:1,finishing:[]});assert.equal(fixed.baseTotal,100000);
 });
@@ -38,7 +39,7 @@ test('16 physical roll SKUs are distinct, empty, with matching width and shared 
   const a=calculateLine(product('lf-sticker-oneway-outdoor'),input(width)),b=calculateLine(product('lf-sticker-oneway-hires'),input(width));assert.equal(a.materials[0].materialId,b.materials[0].materialId);
   const c=calculateLine(product('lf-sticker-sandblast-print'),input(width)),d=calculateLine(product('lf-sticker-sandblast-plain'),input(width));assert.equal(c.materials[0].materialId,d.materials[0].materialId);
  }
- assert.notEqual(calculateLine(product('poster-albatros'),input(.9)).materials[0].materialId,calculateLine(product('poster-albatros'),input(1.2)).materials[0].materialId);
+ assert.notEqual(calculateLine(product('poster-albatros'),input(.9)).materials[0].materialId,calculateLine(product('poster-albatros'),input(1.2,91)).materials[0].materialId);
 });
 
 test('HPP and unrelated BOM consumption remain unchanged while roll snapshot references selected physical SKU',async()=>{
@@ -49,7 +50,7 @@ test('HPP and unrelated BOM consumption remain unchanged while roll snapshot ref
 });
 
 test('LF roll completion never deducts physical rolls; manual out affects only selected width',()=>{
- const s=structuredClone(state),p=product('poster-albatros');const a=calculateLine(p,input(.9)),b=calculateLine(p,input(1.2));
+ const s=structuredClone(state),p=product('poster-albatros');const a=calculateLine(p,input(.9)),b=calculateLine(p,input(1.2,91));
  const ra=s.inventory.find(r=>r.materialId===a.materials[0].materialId),rb=s.inventory.find(r=>r.materialId===b.materials[0].materialId);ra.quantity=10;rb.quantity=20;
  const order={id:'o',code:'INV',items:[{...a,itemId:'a',status:'SELESAI'},{...b,itemId:'b',status:'SELESAI'}]};commitPhysicalStock(s,order);commitPhysicalStock(s,order);assert.equal(ra.quantity,10);assert.equal(rb.quantity,20);
  adjustPhysicalStock(s,ra,{change:-1,reason:'Roll 90 cm dibuka',requestId:'r'},'Staf');assert.equal(ra.quantity,9);assert.equal(rb.quantity,20);

@@ -3,6 +3,8 @@ import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.j
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
 import { sheetSpecification } from "./sheet-calculator.js";
 import { imageGeometry, supportsOutdoorAllowance, supportsAutoRollWidth, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
+import { supportsAlbatrosPlacement, selectAlbatrosPlacement, albatrosPlacementNote } from "./albatros-sizing.js";
+import { albatrosConfigurationHtml, syncAlbatrosConfigurator } from "./albatros-configurator.js";
 import { bindShirtStockSelection } from "./dtf-stock-selection.js";
 import { createOrderHistory } from "./order-history-ui.js";
 import { paymentReceipts, historyDraft } from "./order-history.js";
@@ -409,6 +411,7 @@ function allCatalogHtml() {
 
 function productConfigurationHtml(product, popup = false) {
   if (product.dtfShirt) return dtfShirtConfigurationHtml(product);
+  if (supportsAlbatrosPlacement(product)) return albatrosConfigurationHtml(product, {escapeHtml, quantity:quantitySelectorHtml(), finishing:finishingHtml(product), files:fileServicesHtml(product), options:materialVariantOptionsHtml(product)+subVariantOptionsHtml(product)+choiceGroupsHtml(product)});
   const isUnit = product.priceBasis === "unit";
   const hasMaterialChoice = product.hasMaterialVariants && product.materialVariants?.length && !product.templateProduct && !product.fixedSizeVariants?.length;
   const unitQuantity = quantitySelectorHtml(product.unitName || "unit");
@@ -474,7 +477,8 @@ function renderPos() {
 
 function imageSizeNote(item) {
   if (item.sheetCalculation) return sheetSpecification(item.sheetCalculation);
-  return item.imageWidthCm > 0 && item.imageLengthCm > 0 ? `Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm${item.allowanceCm > 0 ? ` · Lebihan ${Number(item.allowanceCm).toLocaleString("id-ID")} cm/sisi · Ukuran akhir ${Number(item.finalImageWidthCm).toLocaleString("id-ID")} × ${Number(item.finalImageLengthCm).toLocaleString("id-ID")} cm` : ""}` : "";
+  const size = item.imageWidthCm > 0 && item.imageLengthCm > 0 ? `Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm${item.allowanceCm > 0 ? ` · Lebihan ${Number(item.allowanceCm).toLocaleString("id-ID")} cm/sisi · Ukuran akhir ${Number(item.finalImageWidthCm).toLocaleString("id-ID")} × ${Number(item.finalImageLengthCm).toLocaleString("id-ID")} cm` : ""}` : "";
+  return [size,albatrosPlacementNote(item)].filter(Boolean).join(' · ');
 }
 
 function cartHtml() {
@@ -522,15 +526,21 @@ function readCurrentLine() {
   const isFixedSize = Boolean(fixedVariant);
   const isUnit = product.priceBasis === "unit" || isFixedSize;
   const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
-  const width = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
+  let width = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
   let geometry = null;
   if (!isUnit && !product.templateProduct) {
     const input = { imageWidthCm: Number(document.querySelector("#image-width")?.value), imageLengthCm: Number(document.querySelector("#image-length")?.value), allowanceCm: Number(document.querySelector("#allowance")?.value || 0) };
     try { geometry = imageGeometry(product,input); } catch { geometry = { ...input, billingLength: NaN }; }
   }
-  const length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : geometry.billingLength;
+  let length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : geometry.billingLength;
+  let rollPlacement = null, placementError = '';
+  if (!isUnit && supportsAlbatrosPlacement(product)) {
+    try { rollPlacement = selectAlbatrosPlacement(product,geometry); width = rollPlacement.nominalWidth; length = rollPlacement.actualLength; }
+    catch(error) { placementError=error.message; }
+  }
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity, fixedVariant, materialVariant, combination);
+  if (supportsAlbatrosPlacement(product)) base.total = Math.round(base.total);
   const fileService = product.templateProduct || !document.querySelector("#design-enabled")?.checked ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
   const fileServiceQuantity = fileService.price ? Math.max(1, Math.floor(Number(document.querySelector(`[data-design-qty="${fileService.id}"]`)?.value || 1))) : 1;
   const fileServiceNote = fileService.price ? document.querySelector(`[data-design-note="${fileService.id}"]`)?.value.trim() || "" : "";
@@ -557,6 +567,7 @@ function readCurrentLine() {
   const choiceLabels = choices.map((choice) => product.choiceGroups.find((group) => group.id === choice.groupId)?.options.find((option) => option.id === choice.optionId)?.label).filter(Boolean);
   return {
     productId: product.id, productName: product.name, sheetCalculation: sheetController?.snapshot() || null, width, length, billedLength: base.billed, templateDesign,
+    ...(supportsAlbatrosPlacement(product) ? {rollPlacement, rollCalculationVersion:1, placementError} : {}),
     imageWidthCm: !isUnit && !product.templateProduct ? Number(document.querySelector("#image-width")?.value) : null,
     imageLengthCm: geometry?.imageLengthCm ?? null,
     allowanceCm: geometry?.allowanceCm ?? 0, finalImageWidthCm: geometry?.finalImageWidthCm ?? null, finalImageLengthCm: geometry?.finalImageLengthCm ?? null,
@@ -585,6 +596,7 @@ function updatePreview() {
     return;
   }
   const fixedVariant = product.fixedSizeVariants?.find(item => item.id === line.sizeVariantId);
+  if (supportsAlbatrosPlacement(product)) syncAlbatrosConfigurator(document.querySelector('#order-detail'),product,line);
   const materialVariant = product.materialVariants?.find(item => item.id === line.materialVariantId);
   const combination = materialVariant?.combinations?.find(item => item.subVariantId === line.subVariantId);
   updateWholesalePrices({ scope: document.querySelector('#order-detail'), product, line, fixedVariant, materialVariant, combination });
@@ -592,12 +604,13 @@ function updatePreview() {
   if (finalSize) finalSize.textContent = Number.isFinite(line.finalImageWidthCm) ? `Ukuran termasuk lebihan: ${line.finalImageWidthCm.toLocaleString("id-ID")} × ${line.finalImageLengthCm.toLocaleString("id-ID")} cm${line.allowanceCm > 0 && line.allowanceCm <= 5 ? " · Lebihan tidak menambah panjang tagihan" : ""}` : "";
   const billedInput = document.querySelector("#billed-length");
   if (billedInput) billedInput.value = `${line.billedLength} m`;
-  document.querySelector("#item-price").textContent = rupiah.format(line.previewTotal);
+  document.querySelector("#item-price").textContent = line.placementError ? '—' : rupiah.format(line.previewTotal);
   document.querySelector("#formula-text").textContent = line.sizeVariantId
     ? `${line.sizeVariantLabel} × ${line.quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lembar"} · ${rupiah.format(line.unitPrice)}/${product.groupedProduct ? product.unitName || "unit" : "lembar"}`
     : product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
     : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName} × ${line.fileServiceQuantity || 1}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
+  if (supportsAlbatrosPlacement(product) && !line.sizeVariantId) document.querySelector('#formula-text').textContent = `${line.quantity} Lembar · Perhitungan otomatis`;
 }
 
 function syncFixedSizeUi() {
@@ -794,6 +807,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     const calculationError = sheetController?.validate();
     if (calculationError) return toast(calculationError, "error");
     const line = readCurrentLine();
+    if (line.placementError) return toast(line.placementError,"error");
     const controls = [...document.querySelectorAll(".configurator-body input:not([hidden])")].filter(input => !input.closest(".hidden"));
     if (controls.some(input => !input.reportValidity())) return;
     if (!Number.isSafeInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.previewTotal)) return toast("Jumlah produk atau ukuran tidak valid", "error");
@@ -819,6 +833,7 @@ function openProductConfigurator(productId, carryDraft = null) {
   sheetController = null;
   shirtStockController = null;
   dialog.classList.add("configurator-dialog");
+  dialog.classList.toggle("albatros-dialog",supportsAlbatrosPlacement(product));
   const detail = document.querySelector("#order-detail");
   const capture = () => ({
     line: readCurrentLine(),
@@ -852,7 +867,7 @@ function openProductConfigurator(productId, carryDraft = null) {
   let outsideDown = false;
   dialog.onpointerdown = event => { const rect = dialog.getBoundingClientRect(); outsideDown = event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom); };
   dialog.onclick = event => { const rect = dialog.getBoundingClientRect(); if (outsideDown && event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) close(); outsideDown = false; };
-  dialog.onclose = () => { if (dialog.open) return; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
+  dialog.onclose = () => { if (dialog.open) return; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog","albatros-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
   if (!dialog.open) dialog.showModal();
   bindProductConfiguration(line => { state.cart.push(line); configurationDrafts.delete(product.id); if (product.a3Family) state.products.filter(item => item.a3Family === product.a3Family && item.a3Kind === product.a3Kind).forEach(item => configurationDrafts.delete(item.id)); if (needsFile(line, selectedProduct())) state.draft.fileReadiness = "UNCONFIRMED"; dialog.close(); detail.replaceChildren(); renderPos(); blinkCartTotal(); toast("Produk ditambahkan"); }, saved?.sheetDraft);
   const switchA3 = next => { if (next) { const draft = capture(); configurationDrafts.set(product.id, draft); openProductConfigurator(next.id, draft); } };
@@ -1418,6 +1433,7 @@ function readPoAttachment(file) {
 function cartLineFromPricedItem(item) {
   const line = {
     itemId: item.itemId, productId: item.productId, productName: item.productName, sheetCalculation: item.sheetCalculation || null, width: item.width,
+    ...(item.rollPlacement ? {rollPlacement:structuredClone(item.rollPlacement), rollCalculationVersion:item.rollCalculationVersion || 1} : {}),
     dtfPackageId: item.dtfPackageId || "", shirtVariants: (item.shirtVariants || []).map((variant) => ({ ...variant })),
     length: item.actualLength, imageWidthCm: item.imageWidthCm ?? null, imageLengthCm: item.imageLengthCm ?? null, allowanceCm: item.allowanceCm || 0, finalImageWidthCm: item.finalImageWidthCm ?? null, finalImageLengthCm: item.finalImageLengthCm ?? null, billedLength: item.billedLength, quantity: item.quantity,
     sizeVariantId: item.sizeVariantId || "", sizeVariantLabel: item.sizeVariantLabel || "",
@@ -1432,7 +1448,7 @@ function cartLineFromPricedItem(item) {
     productionNote: item.productionNote || "", previewTotal: item.subtotal
   };
   const product = state.products.find(product => product.id === item.productId);
-  if (product && supportsAutoRollWidth(product) && !product.widths.includes(item.width)) {
+  if (product && !item.sizeVariantId && supportsAutoRollWidth(product) && !product.widths.includes(item.width)) {
     line.width = suggestedOutdoorWidth(product, item.imageWidthCm || Number(item.width) * 100, item.allowanceCm || 0);
     const materialVariant = product.materialVariants?.find(variant => variant.id === item.materialVariantId);
     const combination = materialVariant?.combinations?.find(combination => combination.subVariantId === item.subVariantId);
