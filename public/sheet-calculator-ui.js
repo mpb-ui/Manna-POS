@@ -1,7 +1,9 @@
 import { calculateSheetCapacity, productSheetProfile } from './sheet-calculator.js';
 
-export function sheetCalculatorHtml() {
+export function sheetCalculatorHtml(product) {
+  const informational = product && !/^(lbr|lembar)$/i.test(product.unitName || product.saleUnit || 'lembar');
   return `<aside id="sheet-calculator" class="sheet-calculator hidden" aria-label="Kalkulator kapasitas per lembar"><div class="sheet-heading"><strong>Kalkulator ukuran</strong><button type="button" id="sheet-close" class="text-button" aria-label="Tutup kalkulator">×</button></div><div id="sheet-area" class="sheet-area"></div><small id="sheet-format"></small>
+    ${informational ? '<p class="sheet-unit-help">Kapasitas ini untuk satu lembar bahan. Jumlah pesanan tetap mengikuti satuan jual produk dan tidak diubah oleh kalkulator.</p>' : ''}
     <div class="sheet-dimensions"><label class="field"><span id="sheet-length-label">Panjang</span><span class="input-with-unit"><input id="sheet-length" type="text" inputmode="decimal" value="10" aria-labelledby="sheet-length-label"><b>cm</b></span></label><label class="field"><span id="sheet-width-label">Lebar</span><span class="input-with-unit"><input id="sheet-width" type="text" inputmode="decimal" value="8" aria-labelledby="sheet-width-label"><b>cm</b></span></label></div><label class="sheet-rotation"><input id="sheet-rotation" type="checkbox" checked> Rotasi 90° otomatis</label>
     <div id="sheet-result" class="sheet-result" aria-live="polite"></div><div id="sheet-error" class="sheet-error hidden" role="alert"></div><details class="sheet-preview"><summary>Pratinjau susunan cetak</summary><svg id="sheet-paper" role="img" aria-label="Susunan gambar pada satu lembar"></svg><small id="sheet-grid"></small></details></aside>`;
 }
@@ -12,7 +14,7 @@ export function bindSheetCalculator({ scope, product, profiles, update, saved })
   const get = id => scope.querySelector('#sheet-'+id), layout = scope.querySelector('.sheet-config-layout');
   const entry = document.createElement('button'); entry.type = 'button'; entry.id = 'sheet-toggle'; entry.className = 'sheet-toggle'; entry.textContent = '▦ Hitung dari ukuran'; entry.setAttribute('aria-controls','sheet-calculator'); entry.setAttribute('aria-expanded','false');
   const label=scope.querySelector('.quantity-field > span');
-  if(label) label.textContent='Jumlah Cetak';
+  if(label) label.textContent=product.a3Kind==='ready'?'Jumlah produk':'Jumlah Cetak';
   const control=scope.querySelector('.quantity-control');
   if(control){const row=document.createElement('div');row.className='sheet-quantity-row';control.replaceWith(row);row.append(control,entry);}
   let active = saved?.active === true || saved?.applied === true, result = null;

@@ -1,11 +1,11 @@
 import { albatrosPlacements, albatrosPlacementNote } from './albatros-sizing.js';
 const n = value => Number(value).toLocaleString('id-ID', {maximumFractionDigits:4});
 const money = value => new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0}).format(value);
-const badge = number => `<span class="albatros-step" aria-hidden="true">${number}</span>`;
+import { configurationBadge as badge, configurationFinishing, configurationDesign, configurationNotes, configurationActions } from './product-configurator.js';
 
 export function albatrosConfigurationHtml(product, {escapeHtml:h, quantity, finishing, files, options=''}) {
   const variants = [{id:'custom',label:'Meteran'}, ...(product.fixedSizeVariants || [])];
-  return `<div class="albatros-config"><section class="albatros-size"><h3>${badge(1)}<span>UKURAN & JUMLAH</span></h3><div class="albatros-section-content">
+  return `<div class="product-config"><section class="albatros-size"><h3>${badge(1)}<span>UKURAN & JUMLAH</span></h3><div class="config-section-content">
     <div class="chips albatros-size-options" role="group" aria-label="Ukuran Albatros">${variants.map((v,i)=>`<div class="chip"><input type="radio" name="size-variant" id="size-variant-${product.id}-${v.id}" value="${h(v.id)}" ${i?'':'checked'}><label for="size-variant-${product.id}-${v.id}"><span class="radio-chip-copy"><strong>${h(v.label)}</strong>${v.price!=null?`<small>${money(v.price)}</small>`:''}</span></label></div>`).join('')}</div>
     <div data-size-custom class="albatros-dimensions"><label class="field"><span>Lebar gambar</span><span class="input-with-unit"><input id="image-width" type="number" min="0.01" step="any" value="${Number(product.widths[0] || .9)*100}" required><b>cm</b></span></label><label class="field"><span>Panjang gambar</span><span class="input-with-unit"><input id="image-length" type="number" min="0.01" step="any" value="100" required><b>cm</b></span></label><p>Bahan dan arah cetak dipilih otomatis.</p></div>
     <p class="albatros-fixed-info hidden" data-albatros-fixed-info>Harga mengikuti ukuran yang dipilih, per lembar.</p>
@@ -13,26 +13,9 @@ export function albatrosConfigurationHtml(product, {escapeHtml:h, quantity, fini
     ${options}
     <p class="albatros-error hidden" data-albatros-error role="status" aria-live="polite"></p>
     </div></section>
-    <section class="albatros-finishing"><div class="albatros-section-heading"><h3>${badge(2)}<span>FINISHING</span></h3>${product.finishing.length?'<button id="add-finishing" type="button" class="text-button">+ Tambah Finishing</button>':''}</div><div class="albatros-section-content"><div class="finishing-dropdowns" id="finishing-grid">${finishing}</div></div></section>
-    <div class="albatros-design">${badge(3)}${files}</div>
-    <label class="albatros-production-note"><textarea id="production-note" rows="1" aria-label="Catatan produksi (opsional)" placeholder="Catatan produksi (opsional)"></textarea></label>
-    <div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p><strong id="item-price">Rp0</strong></div></div><button id="add-item" class="primary" type="button">+ Tambah ke Pesanan</button></div></div>`;
-}
-
-export function bindAlbatrosNotes(scope) {
-  const input = scope.querySelector('.albatros-production-note textarea');
-  if (!input) return;
-  const resize = () => { input.style.height = '0px'; input.style.height = `${Math.max(40, input.scrollHeight + 2)}px`; };
-  input.addEventListener('input', resize);
-  // Reflow after a viewport change, including a mobile keyboard, without retaining a window listener.
-  let width = -1;
-  const observer = new ResizeObserver(([entry]) => {
-    if (!input.isConnected) return observer.disconnect();
-    if (entry.contentRect.width !== width) { width = entry.contentRect.width; resize(); }
-  });
-  observer.observe(input.parentElement);
-  resize();
-  return () => observer.disconnect();
+    ${configurationFinishing(2, finishing, product.finishing.length > 0)}
+    ${configurationDesign(3, files)}
+    ${configurationNotes()}${configurationActions()}</div>`;
 }
 
 function placementSvg(p) {
@@ -41,7 +24,7 @@ function placementSvg(p) {
 }
 
 export function syncAlbatrosConfigurator(scope, product, line) {
-  if (!scope.querySelector('.albatros-config')) return;
+  if (!scope.querySelector('.albatros-size')) return;
   const error = scope.querySelector('[data-albatros-error]'), target = scope.querySelector('[data-albatros-plan]');
   const invalidQuantity = !Number.isSafeInteger(Number(scope.querySelector('#quantity').value)) || Number(scope.querySelector('#quantity').value)<1;
   const message=line.placementError || (invalidQuantity?'Jumlah produk harus bilangan bulat minimal 1':!Number.isSafeInteger(line.previewTotal)?'Nilai perhitungan Albatros terlalu besar':'');
