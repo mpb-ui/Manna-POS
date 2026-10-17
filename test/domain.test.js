@@ -19,12 +19,12 @@ test("LF Poster dan LF Sticker dibulatkan ke atas per 10 cm", () => {
   assert.equal(line.baseTotal, 148500);
 });
 
-test("finishing LF per m² mengikuti luas yang ditagihkan", () => {
+test("finishing LF otomatis per m² tetap mengikuti luas yang ditagihkan", () => {
   const sticker = PRODUCTS.find((item) => item.id === "lf-sticker-white-glossy");
-  const line = calculateLine(sticker, { width: 1.5, length: 1.01, quantity: 2, finishing: [{ id: "manual-cut-lf", units: 1 }] });
+  const line = calculateLine(sticker, { width: 1.5, length: 1.01, quantity: 2, finishing: [{ id: "transfer", units: 1 }] });
   assert.equal(line.billedLength, 1.1);
   assert.equal(line.finishing[0].units, 3.3);
-  assert.equal(line.finishingTotal, 148500);
+  assert.equal(line.finishingTotal, 99000);
 });
 
 test("Kisscut LF memiliki quantity manual minimal satu", () => {

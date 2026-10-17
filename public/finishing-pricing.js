@@ -1,4 +1,13 @@
 // Shared by the POS preview and authoritative order calculation.
+export function manualLfCutting(finish) {
+  return finish.rule === "area" && (["fin-lf-manual", "manual-cut-lf"].includes(finish.id)
+    || /^(cutting manual lf|cutting lf manual)$/i.test(String(finish.name || "").trim()));
+}
+
+export function manualAreaFinishing(finish) {
+  return finish.rule === "area" && (finish.name === "Kisscut LF" || manualLfCutting(finish));
+}
+
 export function normalizeFinishingTiers(value = []) {
   if (!Array.isArray(value) || value.length > 10) throw new Error("Maksimal 10 tingkat grosir finishing");
   const tiers = value.map((tier) => {

@@ -12,6 +12,12 @@ test('Albatros API recalculates automatic placement, preserves A1, retries, perm
   const req=async(path,method='GET',data,auth=cookie)=>{const response=await fetch(base+path,{method,headers:{cookie:auth,'content-type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});return {status:response.status,body:await response.json()};};
   const ok=async(...args)=>{const r=await req(...args);assert(r.status>=200&&r.status<300,JSON.stringify(r.body));return r.body;};
   const stockBefore=(await ok('/api/bootstrap?view=stock')).inventory;
+  const catalog=await ok('/api/bootstrap?view=master');
+  const manual=catalog.products.find(p=>p.id==='poster-albatros').finishing.find(f=>f.id==='fin-lf-manual');assert(manual);
+  const cutting=await ok('/api/orders','POST',{customerName:'Manual Cutting',phone:'8988',items:[{productId:'poster-albatros',imageWidthCm:91,imageLengthCm:101,quantity:3,finishing:[{id:manual.id,units:1.3,note:'Ikuti garis'}],fileServiceId:'DESIGN_B',fileServiceQuantity:2,fileServiceNote:'Siapkan revisi',productionNote:'Catatan produksi panjang'}]});
+  assert.equal(cutting.items[0].finishing[0].units,1.3);assert.equal(cutting.items[0].finishingTotal,Math.round(1.3*manual.price));
+  const cuttingEdit=await ok(`/api/orders/${cutting.id}`,'PUT',{customerName:'Manual Cutting Edit',phone:'8988',items:cutting.items.map(item=>({...item,fileServiceId:item.fileService.id,fileServiceQuantity:item.fileService.quantity,fileServiceNote:item.fileService.note}))});
+  assert.equal(cuttingEdit.total,cutting.total);assert.equal(cuttingEdit.items[0].finishing[0].note,'Ikuti garis');assert.equal(cuttingEdit.items[0].fileService.note,'Siapkan revisi');assert.equal(cuttingEdit.items[0].productionNote,'Catatan produksi panjang');
   const item={productId:'poster-albatros',imageWidthCm:91,imageLengthCm:101,width:.9,quantity:1,finishing:[],rollPlacement:{nominalWidth:.9,baseTotal:1}};
   const payload={customerName:'Albatros',phone:'8988',requestId:'albatros-repeat',items:[item,{...item,imageWidthCm:101,imageLengthCm:91},{productId:'poster-albatros',sizeVariantId:'a1',quantity:2,finishing:[]}]};
   const [a,b]=await Promise.all([ok('/api/orders','POST',payload),ok('/api/orders','POST',payload)]);assert.equal(a.id,b.id);assert.equal(a.total,560000);assert.equal(a.items[0].width,1.2);assert.equal(a.items[0].rollPlacement.acrossCm,101);assert.equal(a.items[0].rollPlacement.baseTotal,undefined);assert.equal(a.items[1].baseTotal,a.items[0].baseTotal);assert.equal(a.items[2].baseTotal,200000);

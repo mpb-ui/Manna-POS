@@ -27,7 +27,7 @@ SKU bahan mengikuti roll yang terpilih; HPP tetap dari sumber kalkulasi existing
 
 ## UI
 
-CSS dibatasi `.albatros-dialog`; modul konfigurasi terpisah. Modal650px, border#D7DFE9, radius12, header20×24px, judul24px/800, harga15px, paddingbody24px. Section memakai nomor20px dan judul13px. Meteran/A1 memakai radio18px sesuai referensi terbaru khusus Albatros; pilihan produk lain tetap menggunakan style existing.
+CSS dibatasi `.albatros-dialog`; modul konfigurasi terpisah. Modal650px, border#D7DFE9, radius12, header16×24px, judul24px/800, harga15px, paddingbody24px. Section memakai nomor20px dan judul13px. Meteran/A1 memakai radio18px sesuai referensi terbaru khusus Albatros; pilihan produk lain tetap menggunakan style existing.
 
 Lebar dan panjang masing-masing144px di desktop, input44px/16px. Stepper144×40px. Detail perhitungan tertutup default; di dalamnya tersedia arah/roll, panjang tagihan, estimasi bahan, pratinjau, dan perbandingan. Kasir dapat mengabaikan detail. Finishing, catatan finishing, varian/sub-varian/opsi bahan, biaya design beserta jumlah/catatan, dan catatan produksi tetap memakai kontrol serta handler existing.
 
@@ -43,4 +43,17 @@ Ukuran asli dan penempatan tampil di keranjang, detail, nota/SPK, serta PDF PO. 
 - Chromium dengan server memory terisolasi:1440×1100,1280×800,1024×768,768×1024,390×844,320×640,844×390. Tidak ada error browser atau overflow horizontal. Emulasi mobile sentuh390×844 juga lulus untuk radio A1, detail, dan preview.
 - Browser: header/modal/field/radio/stepper diukur; detail keyboard, preview, invalid/blocked add, A1 saat ukuran Meteran invalid, tutup/buka konfigurasi, finishing area, design2x, blinking, save/edit draft, DP, SPK, ukuran asli/penempatan, dan produk lain.
 
-Tidak ada transaksi QA pada production. Implementasi ini belum dipush atau dideploy.
+Tidak ada transaksi QA pada production. Versi awal fitur ini sudah dideploy pada commit `0b9b7c6a0a479d2ccfc5d7d5ff559e115f26b536`.
+
+## Revisi UI 17 Oktober 2026
+
+Referensi terbaru: CSS ekspor Figma `Pasted text(10).txt`. Revisi ini merupakan batch terpisah; status push/deploy mengikuti catatan rilis GitHub dan Railway.
+
+- Khusus Albatros: Finishing tampil satu baris pada desktop (pilihan, stepper128×40px, Catatan73×40px, hapus40×40px). Harga/satuan dan catatan32px berada di bawahnya. Layar kecil membagi kontrol menjadi dua baris.
+- Biaya Design: empat chip dengan judul Design A–D dan harga dalam satu baris desktop; dua kolom pada mobile. Stepper dan tombol Catatan tampil di bawah pilihan, dengan satu kontrol aktif. Pergantian opsi/switch tidak menghapus input sementara.
+- Catatan produksi langsung berupa textarea berwarna#F7F9FC, minimum40px, membesar sesuai isi dan menyusut kembali. Tidak ada disclosure/kolom catatan tambahan. ResizeObserver dibersihkan ketika dialog ditutup/diganti.
+- Cutting Manual LF/Cutting LF Manual: jumlah awal1, minimum1, tombol ±0,1. Jumlah manual tidak berubah ketika ukuran atau jumlah produk berubah. Helper bersama frontend/backend mengenali ID master/legacy dan kedua nama. Kebijakan berlaku pada finishing tersebut di produk LF lain juga; layout baru tetap khusus Albatros.
+- Harga finishing memakai jumlah manual × tarif/grosir yang berlaku; harga print/HPP/roll, A1, dan finishing otomatis lainnya tidak berubah. Nilai jumlah lama yang lebih presisi tetap diterima backend tanpa pembulatan paksa. Tidak ada migrasi atau penulisan ulang histori.
+- 199 automated tests lulus; tambahan cakupan identitas finishing, jumlah desimal, grosir, dan penyimpanan/edit draft beserta semua catatan. Test area otomatis lama dialihkan ke Transfer Sticker karena Cutting Manual LF kini memang manual.
+
+- Browser revisi: 9 ukuran viewport desktop/mobile (320–1440px), interaksi sentuh finishing/design/catatan, total preview vs API, tutup/buka dialog, simpan/edit draft, DP/SPK, dan stok roll; seluruhnya lulus tanpa error/overflow.

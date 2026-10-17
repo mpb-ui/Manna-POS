@@ -4,7 +4,7 @@ import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from ".
 import { sheetSpecification } from "./sheet-calculator.js";
 import { imageGeometry, supportsOutdoorAllowance, supportsAutoRollWidth, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
 import { supportsAlbatrosPlacement, selectAlbatrosPlacement, albatrosPlacementNote } from "./albatros-sizing.js";
-import { albatrosConfigurationHtml, syncAlbatrosConfigurator } from "./albatros-configurator.js";
+import { albatrosConfigurationHtml, syncAlbatrosConfigurator, bindAlbatrosNotes } from "./albatros-configurator.js";
 import { bindShirtStockSelection } from "./dtf-stock-selection.js";
 import { createOrderHistory } from "./order-history-ui.js";
 import { paymentReceipts, historyDraft } from "./order-history.js";
@@ -16,7 +16,7 @@ import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
 import { createOrderAssistance, briefingProfileOptions } from "./order-assistance-ui.js";
 import { needsFile, unconfirmedDraft } from "./order-rules.js";
-import { finishingPriceForUnits, normalizeFinishingTiers } from "./finishing-pricing.js";
+import { finishingPriceForUnits, normalizeFinishingTiers, manualAreaFinishing, manualLfCutting } from "./finishing-pricing.js";
 import { mountEmployees, hasUnsavedPayroll, discardPayrollDrafts, clearEmployeeSession } from "./employees-ui.js";
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
@@ -199,7 +199,6 @@ function productBase(product, width, length, quantity, fixedVariant = null, mate
   const unitPrice = promoPrice(product, originalUnitPrice);
   return { billed, units, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
 }
-function manualAreaFinishing(finish) { return finish.rule === "area" && finish.name === "Kisscut LF"; }
 function suggestedFinishUnits(finish, width, length) {
   if (finish.rule === "free") return 1;
   if (finish.rule === "point") return 4;
@@ -384,8 +383,14 @@ function flatCatalogHtml(products, category) {
 function fileServicesHtml(product) {
   const saved = state.editingOrderId ? state.cart.find(line => line.productId === product.id && line.fileServicePrice > 0) : null;
   const selected = saved?.fileServiceId || "DESIGN_A";
-  return `<section class="design-service"><label class="design-toggle"><input id="design-enabled" type="checkbox" role="switch" aria-controls="design-options" aria-expanded="${Boolean(saved)}" ${saved ? "checked" : ""}><span class="design-switch" aria-hidden="true"></span><strong>Biaya Design</strong></label>
-    <div id="design-options" class="file-service-grid ${saved ? "" : "hidden"}">${fileServices.filter(service => service.price > 0).map(service => `<div class="file-service-option"><div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${service.id === selected ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name}</strong><small>${rupiah.format(service.price)}</small></label></div><div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="${service.id === selected ? saved?.fileServiceQuantity || 1 : 1}" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row ${service.id === selected && saved?.fileServiceNote ? "" : "hidden"}" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" value="${escapeHtml(service.id === selected ? saved?.fileServiceNote || "" : "")}" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div></div>`).join("")}</div></section>`;
+  const services = fileServices.filter(service => service.price > 0);
+  const compact = supportsAlbatrosPlacement(product);
+  const chip = service => `<div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${service.id === selected ? "checked" : ""}><label for="file-${service.id}"><strong>${compact ? service.name.replace(/^Biaya /, "") : service.name}</strong><small>${rupiah.format(service.price)}</small></label></div>`;
+  const controls = service => `<div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="${service.id === selected ? saved?.fileServiceQuantity || 1 : 1}" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row ${service.id === selected && saved?.fileServiceNote ? "" : "hidden"}" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" value="${escapeHtml(service.id === selected ? saved?.fileServiceNote || "" : "")}" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div>`;
+  const options = compact
+    ? `<div id="design-options" class="albatros-design-options ${saved ? "" : "hidden"}"><div class="file-service-grid">${services.map(chip).join("")}</div>${services.map(controls).join("")}</div>`
+    : `<div id="design-options" class="file-service-grid ${saved ? "" : "hidden"}">${services.map(service => `<div class="file-service-option">${chip(service)}${controls(service)}</div>`).join("")}</div>`;
+  return `<section class="design-service"><label class="design-toggle"><input id="design-enabled" type="checkbox" role="switch" aria-controls="design-options" aria-expanded="${Boolean(saved)}" ${saved ? "checked" : ""}><span class="design-switch" aria-hidden="true"></span><strong>Biaya Design</strong></label>${options}</section>`;
 }
 
 function templateOptionsHtml(product) {
@@ -556,7 +561,7 @@ function readCurrentLine() {
     const areaUnits = isFixedSize ? Number(fixedVariant.area || 1) * quantity : product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : product.priceBasis === "sqm" ? width * base.billed * quantity : base.billed * quantity;
     const quantityInput = document.querySelector(`[data-finish-qty="${finish.id}"]`);
     const units = manualAreaFinishing(finish) ? Math.max(1, Number(quantityInput?.value || 1)) : finish.rule === "area" ? Number(areaUnits.toFixed(4)) : Math.max(1, Number(quantityInput?.value || 1));
-    if (finish.rule === "area" && quantityInput) quantityInput.value = units;
+    if (finish.rule === "area" && !manualAreaFinishing(finish) && quantityInput) quantityInput.value = units;
     const unitPrice = finishingPriceForUnits(finish, units);
     finishTotal += Math.round(units * unitPrice);
     const priceLabel = [...document.querySelectorAll("[data-finishing-price]")].find((label) => label.dataset.finishingPrice === finish.id);
@@ -644,7 +649,7 @@ function toggleFinishing(input) {
     const width = product.priceBasis === "unit" ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
     const length = product.templateProduct ? Number(templateSize?.[1]) : billedLength(Number(document.querySelector("#image-length")?.value || 100) / 100, product.billingIncrement);
     const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
-    const suggested = finish.rule === "area"
+    const suggested = manualLfCutting(finish) ? 1 : finish.rule === "area"
       ? (fixedVariant ? Number(fixedVariant.area || 1) * quantity : product.priceBasis === "unit" ? Number(product.areaPerUnit || 1) * quantity : Number(width) * Number(length) * quantity)
       : finish.id === "fin-a3-card-rounded" ? 1 : suggestedFinishUnits(finish, width, length);
     document.querySelector(`[data-finish-qty="${finish.id}"]`).value = manualAreaFinishing(finish) ? Math.max(1, Number(suggested.toFixed?.(4) ?? suggested)) : Number(suggested.toFixed?.(4) ?? suggested);
@@ -818,6 +823,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
 const configurationDrafts = new Map();
 let sheetController = null;
 let shirtStockController = null;
+let albatrosNotesCleanup = null;
 function blinkCartTotal() {
   const total = document.querySelector(".summary-row.total");
   if (!total) return;
@@ -832,6 +838,7 @@ function openProductConfigurator(productId, carryDraft = null) {
   state.selectedProduct = product.id;
   sheetController = null;
   shirtStockController = null;
+  albatrosNotesCleanup?.(); albatrosNotesCleanup = null;
   dialog.classList.add("configurator-dialog");
   dialog.classList.toggle("albatros-dialog",supportsAlbatrosPlacement(product));
   const detail = document.querySelector("#order-detail");
@@ -867,9 +874,10 @@ function openProductConfigurator(productId, carryDraft = null) {
   let outsideDown = false;
   dialog.onpointerdown = event => { const rect = dialog.getBoundingClientRect(); outsideDown = event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom); };
   dialog.onclick = event => { const rect = dialog.getBoundingClientRect(); if (outsideDown && event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) close(); outsideDown = false; };
-  dialog.onclose = () => { if (dialog.open) return; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog","albatros-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
+  dialog.onclose = () => { if (dialog.open) return; albatrosNotesCleanup?.(); albatrosNotesCleanup = null; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog","albatros-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
   if (!dialog.open) dialog.showModal();
   bindProductConfiguration(line => { state.cart.push(line); configurationDrafts.delete(product.id); if (product.a3Family) state.products.filter(item => item.a3Family === product.a3Family && item.a3Kind === product.a3Kind).forEach(item => configurationDrafts.delete(item.id)); if (needsFile(line, selectedProduct())) state.draft.fileReadiness = "UNCONFIRMED"; dialog.close(); detail.replaceChildren(); renderPos(); blinkCartTotal(); toast("Produk ditambahkan"); }, saved?.sheetDraft);
+  albatrosNotesCleanup = bindAlbatrosNotes(detail);
   const switchA3 = next => { if (next) { const draft = capture(); configurationDrafts.set(product.id, draft); openProductConfigurator(next.id, draft); } };
   detail.querySelectorAll("[data-a3-variant],[data-a3-print-mode],[data-a3-side]").forEach(button => button.onclick = () => {
     const variants = state.products.filter(item => item.active !== false && item.a3Family === product.a3Family && item.a3Kind === product.a3Kind);
