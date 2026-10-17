@@ -1,4 +1,4 @@
-import { albatrosPlacementNote } from './albatros-sizing.js';
+import { rollPlacementNote } from './roll-placement.js';
 const money = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dates = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
 let pdfLibrary;
@@ -71,7 +71,7 @@ export async function buildPurchaseOrderPdf(lib, row, imageData) {
     line(`${index + 1}. ${item.productName}`, { font: bold, size: 12 });
     line(item.displaySize || `${item.quantity} unit`, { color: muted });
     if (item.imageWidthCm > 0 && item.imageLengthCm > 0) line(`Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm`, { color: muted });
-    if (albatrosPlacementNote(item)) line(albatrosPlacementNote(item), {color:muted});
+    if (rollPlacementNote(item)) line(rollPlacementNote(item), {color:muted});
     if (item.allowanceCm > 0) line(`Lebihan ${item.allowanceCm} cm/sisi - Ukuran akhir ${item.finalImageWidthCm} × ${item.finalImageLengthCm} cm`, { color: muted });
     if (item.templateDesign) {
       line(`Harga spanduk: ${money.format(item.baseTotal)}`);

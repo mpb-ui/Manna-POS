@@ -26,7 +26,7 @@ test('Outdoor memakai kapasitas aktual dan memilih roll terkecil yang cukup, ter
     assert.deepEqual(p.widths,[width]);
     assert.equal(suggestedOutdoorWidth(p,50,0),width);
     assert.equal(suggestedOutdoorWidth(p,999,10),width);
-    assert.throws(()=>calculateLine(p,{...input,width:1}),/Lebar/);
+    assert.equal(calculateLine(p,{...input,width:1}).width,width, 'server chooses a configured roll instead of trusting the client');
   }
   const cloth=state.products.find(p=>p.id==='cloth-banner');
   assert.deepEqual(cloth.widths,[1,1.5]);
@@ -51,11 +51,13 @@ test('Lebihan sampai 5 cm gratis; di atas 5 cm kedua sisi masuk pembulatan dan s
   assert.throws(()=>calculateLine(product,{...input,allowanceCm:'invalid'}),/Lebihan/);
 });
 
-test('Kasir dapat memilih lebar manual dan ukuran di atas kapasitas tidak memblokir pesanan', () => {
+test('Outdoor otomatis mengabaikan override lebar; ukuran tidak muat pada kedua arah diblokir', () => {
   const manual=calculateLine(product,{...input,width:3});
-  assert.equal(manual.width,3);assert.equal(manual.baseTotal,calculateLine(product,input).baseTotal*3);
+  assert.equal(manual.width,1);assert.equal(manual.baseTotal,calculateLine(product,input).baseTotal);
   const oversize=calculateLine(product,{...input,width:3,imageWidthCm:400,allowanceCm:10});
-  assert.equal(oversize.finalImageWidthCm,420);assert.equal(oversize.width,3);
+  assert.equal(oversize.finalImageWidthCm,420);assert.equal(oversize.width,2);assert(oversize.rollPlacement.rotated);
+  assert.throws(()=>calculateLine(product,{...input,imageWidthCm:400,imageLengthCm:400,allowanceCm:10}),/tidak muat/);
+  assert.equal(calculateLine(product,{width:3,length:1,quantity:1,finishing:[]}).width,3, 'legacy requests without original dimensions keep their old width');
   const indoor=state.products.find(p=>p.id==='poster-albatros');
   const geometry=imageGeometry(indoor,{...input,allowanceCm:20});
   assert.equal(geometry.allowanceCm,0);assert.equal(geometry.billingLength,1);

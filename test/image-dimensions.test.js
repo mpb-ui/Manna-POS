@@ -11,7 +11,9 @@ test('ukuran gambar cm tetap memakai lebar bahan dan panjang ditagihkan untuk ha
   assert.equal(line.actualLength, 1.2); assert.equal(line.billedLength, 1.5);
   assert.equal(line.baseTotal, legacy.baseTotal); assert.equal(line.stockConsumption, legacy.stockConsumption);
   assert.deepEqual(line.materials, legacy.materials);
-  assert.equal(calculateLine(product, { ...input, imageWidthCm: 50, imageLengthCm: 120 }).baseTotal, line.baseTotal);
+  const rotated = calculateLine(product, { ...input, imageWidthCm: 50, imageLengthCm: 120 });
+  assert.equal(rotated.width, 2);assert.equal(rotated.baseTotal, 120000);
+  assert.equal(rotated.rollPlacement.usedArea, 1.1);assert(rotated.rollPlacement.rotated);
 });
 test('panjang gambar menjadi sumber panjang aktual dan ukuran invalid ditolak', () => {
   assert.equal(calculateLine(product, { width: 1, length: 99, quantity: 1, imageWidthCm: 80, imageLengthCm: 120 }).billedLength, 1.5);

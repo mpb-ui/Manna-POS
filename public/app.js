@@ -3,8 +3,8 @@ import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.j
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
 import { sheetSpecification } from "./sheet-calculator.js";
 import { imageGeometry, supportsOutdoorAllowance, supportsAutoRollWidth, suggestedOutdoorWidth, outdoorCapacity } from "./outdoor-sizing.js";
-import { supportsAlbatrosPlacement, selectAlbatrosPlacement, albatrosPlacementNote } from "./albatros-sizing.js";
-import { albatrosConfigurationHtml, syncAlbatrosConfigurator } from "./albatros-configurator.js";
+import { supportsRollPlacement, supportsOutdoorPlacement, selectRollPlacement, rollPlacementNote } from "./roll-placement.js";
+import { rollConfigurationHtml, syncRollConfigurator } from "./roll-configurator.js";
 import { configurationSection, configurationFinishing, configurationDesign, configurationNotes, configurationActions, bindConfigurationNotes } from "./product-configurator.js";
 import { bindShirtStockSelection } from "./dtf-stock-selection.js";
 import { createOrderHistory } from "./order-history-ui.js";
@@ -415,7 +415,7 @@ function allCatalogHtml() {
 
 function productConfigurationHtml(product) {
   if (product.dtfShirt) return dtfShirtConfigurationHtml(product);
-  if (supportsAlbatrosPlacement(product)) return albatrosConfigurationHtml(product, {escapeHtml, quantity:quantitySelectorHtml(), finishing:finishingHtml(product), files:fileServicesHtml(product), options:materialVariantOptionsHtml(product)+subVariantOptionsHtml(product)+choiceGroupsHtml(product)});
+  if (supportsRollPlacement(product)) return rollConfigurationHtml(product, {escapeHtml, quantity:quantitySelectorHtml(), finishing:finishingHtml(product), files:fileServicesHtml(product), options:materialVariantOptionsHtml(product)+subVariantOptionsHtml(product)+choiceGroupsHtml(product)});
   const isUnit = product.priceBasis === "unit";
   const hasMaterialChoice = product.hasMaterialVariants && product.materialVariants?.length && !product.templateProduct && !product.fixedSizeVariants?.length;
   const unitQuantity = quantitySelectorHtml(product.unitName || "unit");
@@ -478,7 +478,7 @@ function renderPos() {
 function imageSizeNote(item) {
   if (item.sheetCalculation) return sheetSpecification(item.sheetCalculation);
   const size = item.imageWidthCm > 0 && item.imageLengthCm > 0 ? `Ukuran gambar: ${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm${item.allowanceCm > 0 ? ` · Lebihan ${Number(item.allowanceCm).toLocaleString("id-ID")} cm/sisi · Ukuran akhir ${Number(item.finalImageWidthCm).toLocaleString("id-ID")} × ${Number(item.finalImageLengthCm).toLocaleString("id-ID")} cm` : ""}` : "";
-  return [size,albatrosPlacementNote(item)].filter(Boolean).join(' · ');
+  return [size,rollPlacementNote(item)].filter(Boolean).join(' · ');
 }
 
 function cartHtml() {
@@ -534,13 +534,13 @@ function readCurrentLine() {
   }
   let length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : geometry.billingLength;
   let rollPlacement = null, placementError = '';
-  if (!isUnit && supportsAlbatrosPlacement(product)) {
-    try { rollPlacement = selectAlbatrosPlacement(product,geometry); width = rollPlacement.nominalWidth; length = rollPlacement.actualLength; }
+  if (!isUnit && supportsRollPlacement(product)) {
+    try { rollPlacement = selectRollPlacement(product,geometry); width = rollPlacement.nominalWidth; length = rollPlacement.actualLength; }
     catch(error) { placementError=error.message; }
   }
   const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
   const base = productBase(product, width, length, quantity, fixedVariant, materialVariant, combination);
-  if (supportsAlbatrosPlacement(product)) base.total = Math.round(base.total);
+  if (supportsRollPlacement(product)) base.total = Math.round(base.total);
   const fileService = product.templateProduct || !document.querySelector("#design-enabled")?.checked ? fileServices[0] : fileServices.find((service) => service.id === document.querySelector('input[name="file-service"]:checked')?.value) || fileServices[0];
   const fileServiceQuantity = fileService.price ? Math.max(1, Math.floor(Number(document.querySelector(`[data-design-qty="${fileService.id}"]`)?.value || 1))) : 1;
   const fileServiceNote = fileService.price ? document.querySelector(`[data-design-note="${fileService.id}"]`)?.value.trim() || "" : "";
@@ -567,7 +567,7 @@ function readCurrentLine() {
   const choiceLabels = choices.map((choice) => product.choiceGroups.find((group) => group.id === choice.groupId)?.options.find((option) => option.id === choice.optionId)?.label).filter(Boolean);
   return {
     productId: product.id, productName: product.name, sheetCalculation: sheetController?.snapshot() || null, width, length, billedLength: base.billed, templateDesign,
-    ...(supportsAlbatrosPlacement(product) ? {rollPlacement, rollCalculationVersion:1, placementError} : {}),
+    ...(supportsRollPlacement(product) ? {rollPlacement, rollCalculationVersion:1, placementError} : {}),
     imageWidthCm: !isUnit && !product.templateProduct ? Number(document.querySelector("#image-width")?.value) : null,
     imageLengthCm: geometry?.imageLengthCm ?? null,
     allowanceCm: geometry?.allowanceCm ?? 0, finalImageWidthCm: geometry?.finalImageWidthCm ?? null, finalImageLengthCm: geometry?.finalImageLengthCm ?? null,
@@ -596,7 +596,7 @@ function updatePreview() {
     return;
   }
   const fixedVariant = product.fixedSizeVariants?.find(item => item.id === line.sizeVariantId);
-  if (supportsAlbatrosPlacement(product)) syncAlbatrosConfigurator(document.querySelector('#order-detail'),product,line);
+  if (supportsRollPlacement(product)) syncRollConfigurator(document.querySelector('#order-detail'),product,line);
   const materialVariant = product.materialVariants?.find(item => item.id === line.materialVariantId);
   const combination = materialVariant?.combinations?.find(item => item.subVariantId === line.subVariantId);
   updateWholesalePrices({ scope: document.querySelector('#order-detail'), product, line, fixedVariant, materialVariant, combination });
@@ -610,11 +610,11 @@ function updatePreview() {
     : product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
     : `${line.width} m × ${line.billedLength} m × ${line.quantity}${line.templateDesign ? ` · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}` : ""}${line.fileServicePrice ? ` · ${line.fileServiceName} × ${line.fileServiceQuantity || 1}` : ""}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`;
-  if (supportsAlbatrosPlacement(product) && !line.sizeVariantId) document.querySelector('#formula-text').textContent = `${line.quantity} Lembar · Perhitungan otomatis`;
+  if (supportsRollPlacement(product) && !line.sizeVariantId) document.querySelector('#formula-text').textContent = `${line.quantity} Lembar · Perhitungan otomatis`;
 }
 
 function syncFixedSizeUi() {
-  const selected = document.querySelector('input[name="size-variant"]:checked')?.value || "";
+  const selected = document.querySelector('input[name="size-variant"]:checked')?.value || "custom";
   document.querySelector("[data-size-custom]")?.classList.toggle("hidden", selected !== "custom");
 }
 
@@ -761,7 +761,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     return;
   }
   document.querySelectorAll("#image-width,#allowance").forEach(input => input.addEventListener("input", () => {
-    const product = selectedProduct(); if (!supportsAutoRollWidth(product)) return;
+    const product = selectedProduct(); if (!supportsAutoRollWidth(product) || supportsRollPlacement(product)) return;
     const width = suggestedOutdoorWidth(product,document.querySelector("#image-width").value,document.querySelector("#allowance")?.value || 0);
     const radio = document.querySelector(`input[name="width"][value="${width}"]`); if (radio) radio.checked = true;
     updatePreview();
@@ -835,7 +835,8 @@ function openProductConfigurator(productId, carryDraft = null) {
   shirtStockController = null;
   configurationNotesCleanup?.(); configurationNotesCleanup = null;
   dialog.classList.add("configurator-dialog", "product-config-dialog");
-  dialog.classList.toggle("albatros-dialog",supportsAlbatrosPlacement(product));
+  dialog.classList.toggle("automatic-roll-dialog",supportsRollPlacement(product));
+  dialog.classList.toggle("outdoor-roll-dialog",supportsOutdoorPlacement(product));
   const detail = document.querySelector("#order-detail");
   const capture = () => ({
     line: readCurrentLine(),
@@ -869,7 +870,7 @@ function openProductConfigurator(productId, carryDraft = null) {
   let outsideDown = false;
   dialog.onpointerdown = event => { const rect = dialog.getBoundingClientRect(); outsideDown = event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom); };
   dialog.onclick = event => { const rect = dialog.getBoundingClientRect(); if (outsideDown && event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) close(); outsideDown = false; };
-  dialog.onclose = () => { if (dialog.open) return; configurationNotesCleanup?.(); configurationNotesCleanup = null; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog","albatros-dialog","product-config-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
+  dialog.onclose = () => { if (dialog.open) return; configurationNotesCleanup?.(); configurationNotesCleanup = null; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog","automatic-roll-dialog","outdoor-roll-dialog","product-config-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
   if (!dialog.open) dialog.showModal();
   bindProductConfiguration(line => { state.cart.push(line); configurationDrafts.delete(product.id); if (product.a3Family) state.products.filter(item => item.a3Family === product.a3Family && item.a3Kind === product.a3Kind).forEach(item => configurationDrafts.delete(item.id)); if (needsFile(line, selectedProduct())) state.draft.fileReadiness = "UNCONFIRMED"; dialog.close(); detail.replaceChildren(); renderPos(); blinkCartTotal(); toast("Produk ditambahkan"); }, saved?.sheetDraft);
   configurationNotesCleanup = bindConfigurationNotes(detail);

@@ -2,6 +2,8 @@
 
 Tanggal: 17 Oktober 2026. Basis: `ca07edb9647b0cf3682091a25a3d54a713d71409`.
 
+Tindak lanjut: perhitungan otomatis seluruh Outdoor sudah diimplementasikan dalam batch berikutnya. Lihat [outdoor-auto-placement.md](outdoor-auto-placement.md) untuk aturan, cakupan, dan hasil pengujiannya. Temuan di bawah merekam kondisi pada batch UI awal.
+
 Scope batch: analisis kebutuhan perhitungan otomatis dan penerapan UI Albatros ke seluruh konfigurasi produk. Batch ini tidak memperluas algoritme rotasi Albatros ke produk lain, mengganti tarif, atau memigrasikan data. Perluasan algoritme dapat mengubah tagihan dan dibedakan dari penerapan style.
 
 ## Katalog yang diperiksa
