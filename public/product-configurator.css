@@ -28,7 +28,7 @@
 .product-config-dialog .product-config .field>.chips .chip>label,.product-config-dialog .size-variant-options .chip>label,.product-config-dialog .exclusive-choice-options .chip>label{width:100%;min-width:0}
 .product-config-dialog .product-config .field{margin:0;min-width:0;max-width:100%}
 .product-config-dialog .field input:not([type=radio]):not([type=checkbox]),.product-config-dialog .field select{width:100%;min-width:0;height:44px;border:1px solid #D7DFE9;border-radius:8px;padding:0 12px;background-color:#fff;color:#17263C;font-size:16px;font-weight:600}
-.product-config-dialog .field .input-with-unit>input{padding-right:40px}
+.product-config-dialog .field .input-with-unit>input[type=number]{padding-right:40px}
 .product-config-dialog .field .input-with-unit>b{right:12px;color:#52627A;font-size:12px;font-weight:500}
 .product-config-dialog .image-measurements{display:grid;gap:16px;min-width:0}
 .product-config-dialog .image-measurements .image-dimension-row{grid-template-columns:repeat(3,minmax(0,144px));gap:12px;align-items:start}
@@ -92,7 +92,7 @@
 .product-config-dialog .quantity-field{gap:8px;margin:0;max-width:none}
 .product-config-dialog .quantity-control .qty-stepper{width:144px;height:40px;grid-template-columns:40px minmax(0,1fr) 40px;border:1px solid #D7DFE9;border-radius:8px;overflow:hidden;gap:0}
 .product-config-dialog .quantity-control .qty-stepper input,.product-config-dialog .quantity-control .qty-stepper button{height:40px;min-height:40px;border:0;border-radius:0;margin:0}
-.product-config-dialog .quantity-control .qty-stepper input{font-size:16px;font-weight:600}
+.product-config-dialog .quantity-control .qty-stepper input{min-width:0;width:100%;font-size:16px;font-weight:600}
 .product-config-dialog .quantity-control .qty-stepper button{background:#F7F9FC;color:#0A68F4;font-size:20px}
 .product-config-dialog .quantity-control>b{font-size:14px;font-weight:500;color:#52627A}
 .roll-quantity-area{position:relative;min-width:0}
@@ -129,7 +129,11 @@
 .product-config-dialog .product-config .finish-note-toggle{display:flex;align-items:center;justify-content:center;padding:8px 12px;height:40px;min-height:40px;border:1px solid #D7DFE9;border-radius:8px;font-size:12px;line-height:20px;font-weight:700;color:#0A68F4;background:#fff}
 .product-config-dialog .product-config .qty-stepper:not(.quantity-control .qty-stepper){width:128px;height:40px;grid-template-columns:40px minmax(0,1fr) 40px;border:1px solid #D7DFE9;border-radius:8px}
 .product-config-dialog .product-config .qty-stepper:not(.quantity-control .qty-stepper) input{min-width:0;width:100%;height:40px;border:0;border-radius:0;padding:0 2px;font-size:16px;font-weight:600;color:#17263C;appearance:textfield;-moz-appearance:textfield}
-.product-config-dialog .qty-stepper input::-webkit-inner-spin-button,.product-config-dialog .qty-stepper input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+/* Use the same numeric controls on Windows, macOS and mobile. Native number
+   spinners otherwise overlap unit suffixes and duplicate the custom -/+ buttons.
+   Keep type=number for keyboard stepping and min/step validation. */
+.product-config-dialog input[type=number]{appearance:textfield;-moz-appearance:textfield}
+.product-config-dialog input[type=number]::-webkit-inner-spin-button,.product-config-dialog input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;display:none;margin:0}
 .product-config-dialog .product-config .qty-stepper:not(.quantity-control .qty-stepper) button{width:40px;height:40px;border:0;padding:0;font-size:20px;color:#0A68F4;background:#F7F9FC}
 .product-config-dialog .qty-stepper button:disabled{color:#8e9aac;cursor:default}
 .product-config-dialog .product-config .finish-note-row{margin:0;min-width:0}
