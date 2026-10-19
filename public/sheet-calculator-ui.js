@@ -33,7 +33,7 @@ export function bindSheetCalculator({ scope, product, profiles, update, saved })
   }
   function sync() {
     const variantId=scope.querySelector('input[name="material-variant"]:checked')?.value || '';
-    const profile=productSheetProfile(product,profiles,variantId);
+    const profile=saved?.profile && saved.productId===product.id && saved.variantId===variantId ? saved.profile : productSheetProfile(product,profiles,variantId);
     if(profile){const aw=Math.min(profile.areaWidthCm,profile.cuttingWidthCm),ah=Math.min(profile.areaLengthCm,profile.cuttingLengthCm);get('area').textContent=`Area gambar ${aw.toLocaleString('id-ID')} × ${ah.toLocaleString('id-ID')} cm`;get('format').textContent=`${profile.name} · Jarak ${profile.gapMm} mm`;}
     let error='';
     try{if(!profile)throw new Error('Pilih varian bahan dengan profil kalkulator');result=calculateSheetCapacity(profile,input());}
@@ -46,7 +46,7 @@ export function bindSheetCalculator({ scope, product, profiles, update, saved })
   panel.addEventListener('input',update);panel.addEventListener('change',update);
   if(saved)open(!!saved.open);
   sync();
-  return {sync,snapshot:()=>active&&result?structuredClone(result):null,validate:()=>'',capture:()=>({active,open:!panel.classList.contains('hidden')})};
+  return {sync,snapshot:()=>active&&result?structuredClone(result):null,validate:()=>'',capture:()=>({active,open:!panel.classList.contains('hidden'),profile:result?.profile,productId:product.id,variantId:scope.querySelector('input[name="material-variant"]:checked')?.value || ''})};
 }
 
 export function sheetProfileOptions(profiles, current='', inherit=false) {

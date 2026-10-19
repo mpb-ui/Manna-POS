@@ -82,7 +82,7 @@ export function createOrderAssistance(c) {
   function showStock(stock) { modal("Kesiapan bahan pesanan",`${stockTable(stock)}<p class="assist-stock-note">Alokasi berasal dari pesanan aktif yang sudah dikonfirmasi pembayarannya. Stok fisik tetap berkurang saat pesanan Selesai.</p>`); }
   function stockAlert(stock) { const count=stock.shortages.length;return count ? `<div class="assist-inline-alert"><div><strong>${stock.shortages.every(s=>s.untracked)?'Kebutuhan bahan perlu diperiksa':'Bahan tersedia belum cukup untuk pesanan ini'}</strong><small>${count} bahan perlu perhatian</small></div><button type="button" class="assist-text-button" data-stock>Cek Bahan</button></div>`:""; }
 
-  function mountCheckout() {
+  function mountCheckout(cachedCheck = null) {
     const form = document.querySelector("#checkout"); if(!form)return;
     const uid=identity(), version=epoch;
     let lookupTimer, lookupVersion=0, stockVersion=0;
@@ -92,7 +92,7 @@ export function createOrderAssistance(c) {
     const repeat=document.createElement("div");repeat.className="assist-repeat hidden";customerField.closest("label").after(repeat);
     const assistance=document.createElement("div");assistance.className="assist-checkout";
     assistance.innerHTML='<div data-stock-warning></div>';
-    form.querySelector(".checkout-actions").before(assistance);
+    (form.querySelector(".checkout-footer") || form.querySelector(".checkout-actions")).before(assistance);
     function valid(){return form.isConnected&&uid===identity()&&version===epoch;}
     const lookup=async()=>{
       const request=++lookupVersion;
@@ -112,7 +112,7 @@ export function createOrderAssistance(c) {
     if(form.elements.customerName.value.trim())lookup();
     if(c.state.cart.length&&can('pos.create')){
       const request=++stockVersion;
-      c.api('/api/orders/check',{method:'POST',body:JSON.stringify({items:c.state.cart,editingOrderId:c.state.editingOrderId})}).then(data=>{
+      (cachedCheck ? Promise.resolve(cachedCheck) : c.api('/api/orders/check',{method:'POST',body:JSON.stringify({items:c.state.cart,editingOrderId:c.state.editingOrderId})})).then(data=>{
         if(!valid()||request!==stockVersion)return;
         const target=assistance.querySelector('[data-stock-warning]');target.innerHTML=stockAlert(data.stock);target.querySelector('[data-stock]')?.addEventListener('click',()=>showStock(data.stock));
       }).catch(()=>{});

@@ -14,6 +14,8 @@ import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColo
 import { projectDeadlineInfo } from "./project-deadline.js";
 import { PROJECT_STAGES, sortProjectDeadlines, projectPicTone } from "./project-management.js";
 import { holdLabel } from "./hold-label.js";
+import { ensureCartIds, addCartLine, editCartLine, plainRetailLine } from "./cart.js";
+import { restoreCartEditor, cartSheetDraft } from "./cart-editor.js";
 import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
@@ -146,6 +148,7 @@ function firstAllowedView() { return Object.keys(viewPermissions).find((view) =>
 
 let loadSequence = 0;
 async function load() {
+  state.cartCheck = null;
   const sequence = ++loadSequence;
   const data = await api(`/api/bootstrap?view=${encodeURIComponent(state.view)}`);
   if (sequence !== loadSequence) return;
@@ -373,7 +376,7 @@ function flatCatalogHtml(products, category) {
     .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }));
   const tabs = isAtK ? ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("") : "";
   const rows = visible.map((item) => {
-    const line = (item.retailAtK || item.quickSale) && !item.hasMaterialVariants ? state.cart.find((entry) => entry.productId === item.id) : null;
+    const line = (item.retailAtK || item.quickSale) && !item.hasMaterialVariants ? state.cart.find((entry) => entry.productId === item.id && plainRetailLine(entry)) : null;
     const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="-1" data-flat-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}">−</button><input type="text" inputmode="numeric" pattern="[0-9]*" data-flat-quantity="${escapeHtml(item.id)}" value="${line.quantity}" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="1" data-flat-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
       : `<button type="button" class="atk-pick" data-flat-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
     return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-flat-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
@@ -385,19 +388,18 @@ function flatCatalogHtml(products, category) {
 }
 
 function fileServicesHtml(product) {
-  const saved = state.editingOrderId ? state.cart.find(line => line.productId === product.id && line.fileServicePrice > 0) : null;
-  const selected = saved?.fileServiceId || "DESIGN_A";
+  const selected = "DESIGN_A";
   const services = fileServices.filter(service => service.price > 0);
   const chip = service => `<div class="chip file-service-chip"><input type="radio" name="file-service" id="file-${service.id}" value="${service.id}" ${service.id === selected ? "checked" : ""}><label for="file-${service.id}"><strong>${service.name.replace(/^Biaya /, "")}</strong><small>${rupiah.format(service.price)}</small></label></div>`;
-  const controls = service => `<div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="${service.id === selected ? saved?.fileServiceQuantity || 1 : 1}" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row ${service.id === selected && saved?.fileServiceNote ? "" : "hidden"}" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" value="${escapeHtml(service.id === selected ? saved?.fileServiceNote || "" : "")}" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div>`;
-  const options = `<div id="design-options" class="config-design-options ${saved ? "" : "hidden"}"><div class="file-service-grid">${services.map(chip).join("")}</div>${services.map(controls).join("")}</div>`;
-  return `<section class="design-service"><label class="design-toggle"><input id="design-enabled" type="checkbox" role="switch" aria-controls="design-options" aria-expanded="${Boolean(saved)}" ${saved ? "checked" : ""}><span class="design-switch" aria-hidden="true"></span><strong>Biaya Design</strong></label>${options}</section>`;
+  const controls = service => `<div class="file-design-controls hidden" data-design-controls="${service.id}"><div class="file-design-actions"><button type="button" class="finish-note-toggle" data-design-note-toggle="${service.id}">Catatan</button><div class="qty-stepper"><button type="button" data-design-minus="${service.id}" aria-label="Kurangi jumlah ${service.name}">−</button><input data-design-qty="${service.id}" type="number" min="1" step="1" value="1" aria-label="Jumlah ${service.name}"><button type="button" data-design-plus="${service.id}" aria-label="Tambah jumlah ${service.name}">+</button></div></div><div class="finish-note-row hidden" data-design-note-row="${service.id}"><input data-design-note="${service.id}" maxlength="2000" value="" placeholder="Catatan ${service.name}" aria-label="Catatan ${service.name}"></div></div>`;
+  const options = `<div id="design-options" class="config-design-options hidden"><div class="file-service-grid">${services.map(chip).join("")}</div>${services.map(controls).join("")}</div>`;
+  return `<section class="design-service"><label class="design-toggle"><input id="design-enabled" type="checkbox" role="switch" aria-controls="design-options" aria-expanded="false" ><span class="design-switch" aria-hidden="true"></span><strong>Biaya Design</strong></label>${options}</section>`;
 }
 
 function templateOptionsHtml(product) {
   const sizes = (product.sizeVariants || []).map((size, index) => `<div class="chip"><input type="radio" name="template-size" id="size-${size.id}" value="${size.width}x${size.length}" ${index === 0 ? "checked" : ""}><label for="size-${size.id}">${escapeHtml(size.label)}</label></div>`).join("");
   const designs = (product.designTemplates || []).map((code, index) => `<div class="chip template-chip"><input type="radio" name="template-design" id="template-${code}" value="${code}" ${index === 0 ? "checked" : ""}><label for="template-${code}"><span class="template-thumb template-tone-${index % 5 + 1}" aria-hidden="true"><i>${code.split("-")[0]}</i></span><span><strong>${code}</strong><small>+ ${rupiah.format(product.templateDesignPrice || 35000)}</small></span></label></div>`).join("");
-  return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div>${quantitySelectorHtml()}`;
+  return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div>${quantitySelectorHtml()}<label class="field template-design-quantity"><span>Jumlah Design Template</span><input id="template-design-quantity" type="number" min="1" step="1" value="1"></label>`;
 }
 
 function catalogCardHtml(product, promo = false) {
@@ -417,6 +419,7 @@ function allCatalogHtml() {
 
 function productConfigurationHtml(product) {
   if (product.dtfShirt) return dtfShirtConfigurationHtml(product);
+  if (configurationEditingLine && plainRetailLine(configurationEditingLine) && (product.quickSale || product.retailAtK) && !product.hasMaterialVariants && !product.fixedSizeVariants?.length && !product.finishing.length) return `<div class="product-config">${configurationSection(1,"JUMLAH",quantitySelectorHtml(product.unitName || "pcs"))}${configurationNotes()}${configurationActions()}</div>`;
   if (supportsRollPlacement(product)) return rollConfigurationHtml(product, {escapeHtml, quantity:quantitySelectorHtml(), finishing:finishingHtml(product), files:fileServicesHtml(product), options:materialVariantOptionsHtml(product)+subVariantOptionsHtml(product)+choiceGroupsHtml(product)});
   const isUnit = product.priceBasis === "unit";
   const hasMaterialChoice = product.hasMaterialVariants && product.materialVariants?.length && !product.templateProduct && !product.fixedSizeVariants?.length;
@@ -454,6 +457,7 @@ function dtfShirtConfigurationHtml(product) {
 }
 
 function renderPos() {
+  state.cart = ensureCartIds(state.cart);
   let visibleProducts = productsForCategory(state.selectedCategory);
   if (!visibleProducts.some((product) => product.id === state.selectedProduct)) state.selectedProduct = null;
   const product = selectedProduct();
@@ -473,7 +477,8 @@ function renderPos() {
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
   bindPos();
-  assistance.mountCheckout();
+  assistance.mountCheckout(state.cartCheck?.cart === state.cart && Date.now()-state.cartCheck.at < 5000 ? state.cartCheck.data : null);
+  syncCartBusy();
 
 }
 
@@ -486,21 +491,64 @@ function imageSizeNote(item) {
 function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
   return state.cart.map((line, i) => {
-    const product = state.products.find((item) => item.id === line.productId);
-    const detail = (product?.retailAtK || product?.quickSale) && !product?.hasMaterialVariants ? "" : product?.a3Kind === "ready"
-      ? `${line.finishingNames ? `<p>${escapeHtml(line.finishingNames)}</p>` : ""}${line.productionNote ? `<p class="item-note">Catatan: ${escapeHtml(line.productionNote)}</p>` : ""}`
-      : `<p>${line.templateDesign ? "" : (line.fileServicePrice ? escapeHtml(line.fileServiceName) : "") + (line.fileServicePrice ? ` × ${line.fileServiceQuantity || 1}${line.fileServiceNote ? ` (${escapeHtml(line.fileServiceNote)})` : ""}` : "")}${line.finishingNames ? `${line.fileServicePrice ? " · " : ""}${escapeHtml(line.finishingNames)}` : line.templateDesign ? "Tanpa finishing tambahan" : "Tanpa finishing tambahan"}</p>${line.productionNote ? `<p class="item-note">Catatan: ${escapeHtml(line.productionNote)}</p>` : ""}`;
-    return `<div class="cart-item"><span class="cart-item-number" aria-label="Produk ${i + 1}">${i + 1}</span><div class="cart-item-content"><div class="cart-item-heading"><h4>${escapeHtml(line.productName)}</h4><strong>${rupiah.format(line.previewTotal)}</strong></div><p>${escapeHtml(line.displaySize || `${line.width} m × ${line.billedLength} m · ${line.quantity}x`)}</p>${imageSizeNote(line) ? `<p class="image-size-note">${escapeHtml(imageSizeNote(line))}</p>` : ""}${line.templateDesign ? `<div class="cart-price-parts"><span>Harga spanduk <b>${rupiah.format(line.baseTotal)}</b></span><span>Design Template ${escapeHtml(line.templateDesign)} <b>${rupiah.format(line.templateDesignTotal)}</b></span></div>` : ""}<div class="cart-item-footer"><div class="cart-item-detail">${detail}</div><button type="button" data-remove="${i}" aria-label="Hapus ${escapeHtml(line.productName)}">Hapus</button></div></div></div>`;
+    const product = state.products.find(item => item.id === line.productId);
+    const retail = (product?.retailAtK || product?.quickSale) && plainRetailLine(line);
+    const dimensions = line.imageWidthCm > 0 && line.imageLengthCm > 0 ? `Ukuran gambar: ${Number(line.imageWidthCm).toLocaleString("id-ID")} × ${Number(line.imageLengthCm).toLocaleString("id-ID")} cm${line.allowanceCm > 0 ? ` · Lebihan ${Number(line.allowanceCm).toLocaleString("id-ID")} cm/sisi` : ""}` : line.sheetCalculation ? sheetSpecification(line.sheetCalculation) : "";
+    const design = line.fileServicePrice ? `${line.fileServiceName} × ${line.fileServiceQuantity || 1}${line.fileServiceNote ? ` · ${line.fileServiceNote}` : ""}` : line.templateDesign ? `Design Template ${line.templateDesign} × ${line.templateDesignQuantity || 1}` : "";
+    return `<article class="cart-item" data-cart-row="${line.cartId}"><span class="cart-item-number" aria-hidden="true">${i + 1}</span><div class="cart-item-content"><div class="cart-item-heading"><h4><button class="cart-edit-button" type="button" aria-label="Edit ${escapeHtml(line.productName)}">${escapeHtml(line.productName)}</button></h4><strong>${rupiah.format(line.previewTotal)}</strong></div><p>${escapeHtml(line.displaySize || `${line.quantity} ${product?.unitName || "unit"}`)}</p>${dimensions ? `<p class="image-size-note">${escapeHtml(dimensions)}</p>` : ""}${design ? `<p>${escapeHtml(design)}</p>` : ""}${line.productionNote ? `<p class="cart-production-note">Catatan: ${escapeHtml(line.productionNote)}</p>` : ""}<div class="cart-item-footer"><div class="cart-item-detail">${retail ? "" : `<p>${escapeHtml(line.finishingNames || "Tanpa finishing tambahan")}</p>`}</div><button type="button" data-remove="${line.cartId}" aria-label="Hapus ${escapeHtml(line.productName)}">Hapus</button></div></div></article>`;
   }).join("");
 }
 
 function checkoutHtml() {
   const total = state.cart.reduce((sum, item) => sum + item.previewTotal, 0);
-  return `<div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><form id="checkout" class="order-form"><div class="form-grid">
+  return `<form id="checkout" class="order-form"><div class="form-grid checkout-customer">
     <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
     <label class="field"><span>No. WhatsApp *</span><input name="phone" type="text" autocomplete="tel" required value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
-  </div><div class="checkout-actions"><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft Pesanan"}</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></form>`;
+  </div><div class="checkout-footer"><div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><div class="checkout-actions"><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft"}</button><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></div></form>`;
+}
+
+let cartQueue = Promise.resolve(), cartPending = 0, configurationEditingLine = null;
+function syncCartBusy() {
+  root.querySelectorAll('#checkout .checkout-actions button,[data-remove]').forEach(button => { button.disabled = cartPending > 0 || (!state.cart.length && button.id !== 'cancel-edit'); });
+  root.querySelector('.sticky-summary')?.setAttribute('aria-busy', String(cartPending > 0));
+}
+
+function mutateCart(plan, { guard = () => true, afterCommit, blink = true } = {}) {
+  const uid = state.currentUser?.id, orderId = state.editingOrderId;
+  cartPending += 1; syncCartBusy();
+  const task = cartQueue.then(async () => {
+    if (state.currentUser?.id !== uid || state.editingOrderId !== orderId || !guard()) return false;
+    const before = state.cart, proposal = plan(before);
+    const quote = await api('/api/orders/check', { method:'POST', signal:AbortSignal.timeout(10000), body:JSON.stringify({ items:proposal, editingOrderId:orderId, includeItems:true }) });
+    if (state.currentUser?.id !== uid || state.editingOrderId !== orderId || state.cart !== before || !guard()) return false;
+    const dtfIds = new Set(proposal.filter(line => state.products.find(p=>p.id===line.productId)?.dtfShirt).flatMap(line => line.shirtVariants || []).map(v=>v.materialId).filter(Boolean));
+    const shirtRows = quote.items.filter(line => state.products.find(p=>p.id===line.productId)?.dtfShirt).flatMap(line=>line.materials || []);
+    shirtRows.forEach(row=>dtfIds.add(row.materialId));
+    const shortage = quote.stock.shortages.find(row=>dtfIds.has(row.materialId));
+    if (shortage) throw new Error(`Stok ${shortage.name} tidak cukup untuk jumlah pesanan ini`);
+    const scroll = root.querySelector('.sticky-summary>.panel-body')?.scrollTop || 0;
+    state.cart = quote.items.map((item,index) => ({ ...cartLineFromPricedItem({ ...item, itemId:proposal[index].itemId }), cartId:proposal[index].cartId }));
+    state.cartCheck = { cart:state.cart, data:quote, at:Date.now() };
+    afterCommit?.();
+    if (state.view === 'pos') {
+      renderPos();
+      const body=root.querySelector('.sticky-summary>.panel-body');if(body)body.scrollTop=scroll;
+      if (typeof blink === 'function' ? blink(before,state.cart) : blink) blinkCartTotal();
+    }
+    return true;
+  }).finally(() => { cartPending -= 1; syncCartBusy(); });
+  cartQueue = task.catch(() => {});
+  return task;
+}
+
+async function openCartEditor(cartId) {
+  await cartQueue;
+  if (state.view !== 'pos') return;
+  const line = state.cart.find(line => line.cartId === cartId);
+  if (!line) return;
+  if (!state.products.some(p=>p.id===line.productId)) return toast('Produk tidak tersedia untuk diedit', 'error');
+  openProductConfigurator(line.productId, null, cartId);
 }
 
 function readCurrentLine() {
@@ -536,7 +584,14 @@ function readCurrentLine() {
   }
   let length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : geometry.billingLength;
   let rollPlacement = null, placementError = '';
-  if (!isUnit && supportsRollPlacement(product)) {
+  const old = configurationEditingLine;
+  const legacyPlacement = !isUnit && supportsRollPlacement(product) && old?.productId === product.id && !old.rollPlacement
+    && Number(document.querySelector('#quantity')?.value) === Number(old.quantity)
+    && geometry?.imageWidthCm === Number(old.imageWidthCm ?? Number(old.width)*100)
+    && geometry?.imageLengthCm === Number(old.imageLengthCm ?? Number(old.length)*100)
+    && geometry?.allowanceCm === Number(old.allowanceCm || 0);
+  if (legacyPlacement) { width=old.width; length=old.length; }
+  if (!isUnit && supportsRollPlacement(product) && !legacyPlacement) {
     try { rollPlacement = selectRollPlacement(product,geometry); width = rollPlacement.nominalWidth; length = rollPlacement.actualLength; }
     catch(error) { placementError=error.message; }
   }
@@ -547,7 +602,8 @@ function readCurrentLine() {
   const fileServiceQuantity = fileService.price ? Math.max(1, Math.floor(Number(document.querySelector(`[data-design-qty="${fileService.id}"]`)?.value || 1))) : 1;
   const fileServiceNote = fileService.price ? document.querySelector(`[data-design-note="${fileService.id}"]`)?.value.trim() || "" : "";
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
-  const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) : 0;
+  const templateDesignQuantity = product.templateProduct ? Math.max(1, Number(document.querySelector("#template-design-quantity")?.value || 1)) : 0;
+  const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) * templateDesignQuantity : 0;
   let finishTotal = 0;
   document.querySelectorAll("[data-finishing-price]").forEach((label) => {
     const finish = product.finishing.find((item) => item.id === label.dataset.finishingPrice);
@@ -569,12 +625,12 @@ function readCurrentLine() {
   const choiceLabels = choices.map((choice) => product.choiceGroups.find((group) => group.id === choice.groupId)?.options.find((option) => option.id === choice.optionId)?.label).filter(Boolean);
   return {
     productId: product.id, productName: product.name, sheetCalculation: sheetController?.snapshot() || null, width, length, billedLength: base.billed, templateDesign,
-    ...(supportsRollPlacement(product) ? {rollPlacement, rollCalculationVersion:1, placementError} : {}),
-    imageWidthCm: !isUnit && !product.templateProduct ? Number(document.querySelector("#image-width")?.value) : null,
-    imageLengthCm: geometry?.imageLengthCm ?? null,
+    ...(supportsRollPlacement(product) ? {rollPlacement, ...(legacyPlacement ? {legacyPlacement:true} : {rollCalculationVersion:1}), placementError} : {}),
+    imageWidthCm: legacyPlacement ? old.imageWidthCm ?? null : !isUnit && !product.templateProduct ? Number(document.querySelector("#image-width")?.value) : null,
+    imageLengthCm: legacyPlacement ? old.imageLengthCm ?? null : geometry?.imageLengthCm ?? null,
     allowanceCm: geometry?.allowanceCm ?? 0, finalImageWidthCm: geometry?.finalImageWidthCm ?? null, finalImageLengthCm: geometry?.finalImageLengthCm ?? null,
     sizeVariantId: fixedVariant?.id || "", sizeVariantLabel: fixedVariant?.label || "", materialVariantId: materialVariant?.id || "", materialVariantLabel: materialVariant?.label || "", subVariantId: subVariant?.id || "", subVariantLabel: subVariant?.label || "", choices,
-    baseTotal: base.total, templateDesignTotal,
+    baseTotal: base.total, templateDesignTotal, ...(product.templateProduct ? {templateDesignQuantity} : {}),
     fileServiceId: fileService.id, fileServiceName: fileService.name, fileServicePrice: fileService.price, fileServiceQuantity, fileServiceNote,
     quantity, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice, discountApplied: base.discountApplied, finishing,
     finishingNames: finishing.map((f) => {
@@ -758,7 +814,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
       updatePreview();
     });
     shirtStockController = bindShirtStockSelection({ scope: document.querySelector('#order-detail'), productId: selectedProduct().id,
-      getStock: () => state.shirtStock, setStock: stock => { state.shirtStock = stock; }, getCart: () => state.cart,
+      getStock: () => state.shirtStock, setStock: stock => { state.shirtStock = stock; }, getCart: () => state.cart.filter(line => line.cartId !== configurationEditingLine?.cartId),
       readLine: readCurrentLine, api, onAdd, toast });
     return;
   }
@@ -768,7 +824,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     const radio = document.querySelector(`input[name="width"][value="${width}"]`); if (radio) radio.checked = true;
     updatePreview();
   }));
-  document.querySelectorAll('#image-width,#image-length,#allowance,#quantity,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll('#image-width,#image-length,#allowance,#quantity,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],#template-design-quantity,[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   bindFinishingDropdown(selectedProduct());
@@ -805,7 +861,9 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
   });
   document.querySelector("#design-enabled")?.addEventListener("change", syncDesignControls);
   syncDesignControls();
-  document.querySelector("#add-item")?.addEventListener("click", () => {
+  let submitting = false;
+  document.querySelector("#add-item")?.addEventListener("click", async event => {
+    if (submitting) return;
     const calculationError = sheetController?.validate();
     if (calculationError) return toast(calculationError, "error");
     const line = readCurrentLine();
@@ -813,7 +871,8 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     const controls = [...document.querySelectorAll(".configurator-body input:not([hidden])")].filter(input => !input.closest(".hidden"));
     if (controls.some(input => !input.reportValidity())) return;
     if (!Number.isSafeInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.previewTotal)) return toast("Jumlah produk atau ukuran tidak valid", "error");
-    onAdd(line);
+    submitting=true; const addButton=event.currentTarget;addButton.disabled=true;
+    try { await onAdd(line); } finally { submitting=false; if(dialog.open && addButton.isConnected) {addButton.disabled=false;updatePreview();} }
   });
 }
 
@@ -828,10 +887,12 @@ function blinkCartTotal() {
   total.addEventListener("animationend", () => total.classList.remove("total-added"), { once: true });
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) setTimeout(() => total.classList.remove("total-added"), 600);
 }
-function openProductConfigurator(productId, carryDraft = null) {
+function openProductConfigurator(productId, carryDraft = null, editCartId = null) {
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
   if (!dialog.open) syncDraft(document.querySelector("#checkout"));
+  configurationEditingLine = editCartId ? state.cart.find(line=>line.cartId===editCartId) : null;
+  const editingLine=configurationEditingLine, token={active:true};
   state.selectedProduct = product.id;
   sheetController = null;
   shirtStockController = null;
@@ -850,7 +911,7 @@ function openProductConfigurator(productId, carryDraft = null) {
     notesOpen: Boolean(detail.querySelector(".production-note-details")?.open)
   });
   detail.innerHTML = `<div class="detail-head configurator-head"><div><span class="product-category">${escapeHtml(product.category)}</span><h2>${escapeHtml(product.name)}</h2><p>${discountActive(product) ? `<span class="discount-badge">DISKON</span> ${escapeHtml(discountLabel(product))}` : `${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}`}</p></div><button class="detail-close" aria-label="Tutup konfigurasi">×</button></div><div class="detail-body configurator-body">${productConfigurationHtml(product)}</div>`;
-  const saved = carryDraft || configurationDrafts.get(product.id);
+  const saved = carryDraft || (editingLine ? {line:editingLine,fields:[],sheetDraft:cartSheetDraft(editingLine)} : configurationDrafts.get(product.id));
   if (saved) {
     if (product.dtfShirt) {
       detail.querySelector("#dtf-shirt-rows").innerHTML = saved.line.shirtVariants.map((variant, index) => dtfShirtRowHtml(index)).join("");
@@ -859,24 +920,37 @@ function openProductConfigurator(productId, carryDraft = null) {
     } else if (detail.querySelector("#finishing-grid")) {
       detail.querySelector("#finishing-grid").innerHTML = saved.line.finishing.filter(finish => product.finishing.some(item => item.id === finish.id)).map(finish => posFinishingRowHtml(product, finish)).join("") || finishingHtml(product);
     }
-    saved.fields.forEach(field => {
+    if(editingLine && !carryDraft) restoreCartEditor(detail,editingLine);
+    (saved.fields || []).forEach(field => {
       const input = field.id ? document.getElementById(field.id) : detail.querySelector(`[${field.attribute}="${CSS.escape(field.key)}"]`);
       if (input && detail.contains(input)) { input.value = field.value; if (["checkbox", "radio"].includes(input.type)) input.checked = field.checked; }
     });
     detail.querySelectorAll("[data-design-note]").forEach(input => { if (input.value) input.closest(".finish-note-row").classList.remove("hidden"); });
     if (detail.querySelector(".production-note-details")) detail.querySelector(".production-note-details").open = saved.notesOpen;
   }
-  const close = () => { configurationDrafts.set(product.id, capture()); dialog.close(); detail.replaceChildren(); };
+  const close = () => { token.active=false; if(!editCartId) configurationDrafts.set(product.id, capture()); dialog.close(); detail.replaceChildren(); };
   detail.querySelector(".detail-close").onclick = close;
   dialog.oncancel = event => { event.preventDefault(); close(); };
   let outsideDown = false;
   dialog.onpointerdown = event => { const rect = dialog.getBoundingClientRect(); outsideDown = event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom); };
   dialog.onclick = event => { const rect = dialog.getBoundingClientRect(); if (outsideDown && event.target === dialog && (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom)) close(); outsideDown = false; };
-  dialog.onclose = () => { if (dialog.open) return; configurationNotesCleanup?.(); configurationNotesCleanup = null; sheetController = null; shirtStockController = null; dialog.classList.remove("configurator-dialog","automatic-roll-dialog","outdoor-roll-dialog","product-config-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
+  dialog.onclose = () => { if (dialog.open) return; configurationNotesCleanup?.(); configurationNotesCleanup = null; sheetController = null; shirtStockController = null; configurationEditingLine = null; dialog.classList.remove("configurator-dialog","automatic-roll-dialog","outdoor-roll-dialog","product-config-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
   if (!dialog.open) dialog.showModal();
-  bindProductConfiguration(line => { state.cart.push(line); configurationDrafts.delete(product.id); if (product.a3Family) state.products.filter(item => item.a3Family === product.a3Family && item.a3Kind === product.a3Kind).forEach(item => configurationDrafts.delete(item.id)); if (needsFile(line, selectedProduct())) state.draft.fileReadiness = "UNCONFIRMED"; dialog.close(); detail.replaceChildren(); renderPos(); blinkCartTotal(); toast("Produk ditambahkan"); }, saved?.sheetDraft);
+  bindProductConfiguration(async line => {
+    const body=detail.querySelector('.configurator-body');body.inert=true;
+    try {
+      const changed = await mutateCart(cart => editCartId ? editCartLine(cart,editCartId,line) : addCartLine(cart,line,product), {
+        guard:()=>token.active && dialog.open && detail.contains(body),
+        afterCommit:()=>{token.active=false;configurationDrafts.delete(product.id);if(product.a3Family)state.products.filter(p=>p.a3Family===product.a3Family&&p.a3Kind===product.a3Kind).forEach(p=>configurationDrafts.delete(p.id));if(needsFile(line,product))state.draft.fileReadiness='UNCONFIRMED';dialog.close();detail.replaceChildren();}
+      });
+      if(changed){toast(editCartId?'Perubahan produk disimpan':'Produk ditambahkan');if(editCartId)root.querySelector(`[data-cart-row="${CSS.escape(editCartId)}"] .cart-edit-button`)?.focus({preventScroll:true});}
+    } catch(error) { if(token.active)toast(error.message,'error'); }
+    finally { if(body.isConnected)body.inert=false; }
+  }, saved?.sheetDraft);
+  if(editCartId) detail.querySelector('#add-item').textContent='Simpan Perubahan';
+
   configurationNotesCleanup = bindConfigurationNotes(detail);
-  const switchA3 = next => { if (next) { const draft = capture(); configurationDrafts.set(product.id, draft); openProductConfigurator(next.id, draft); } };
+  const switchA3 = next => { if (next) { const draft = capture(); configurationDrafts.set(product.id, draft); openProductConfigurator(next.id, draft, editCartId); } };
   detail.querySelectorAll("[data-a3-variant],[data-a3-print-mode],[data-a3-side]").forEach(button => button.onclick = () => {
     const variants = state.products.filter(item => item.active !== false && item.a3Family === product.a3Family && item.a3Kind === product.a3Kind);
     const desired = { a3Variant: button.dataset.a3Variant || product.a3Variant, a3PrintMode: button.dataset.a3PrintMode || product.a3PrintMode, a3Side: button.dataset.a3Side || product.a3Side };
@@ -908,27 +982,24 @@ function bindPos() {
     button.closest('.pos-categories').classList.toggle('categories-open', open);
   };
   document.querySelector("#configure-category-tabs")?.addEventListener("click", openCategoryOrderForm);
-  const setFlatQuantity = (productId, change, absolute = false) => {
-    const product = state.products.find((item) => item.id === productId && categoryKey(item) === state.selectedCategory && item.active !== false);
-    if (!product) return;
-    if (product.hasMaterialVariants || (!product.retailAtK && !product.quickSale)) return openProductConfigurator(productId);
-    const existing = state.cart.findIndex((line) => line.productId === productId);
-    const previousQuantity = existing >= 0 ? Number(state.cart[existing].quantity) : 0;
-    const quantity = absolute ? change : Math.max(0, (existing >= 0 ? Number(state.cart[existing].quantity) : 0) + change);
-    if (!Number.isSafeInteger(quantity) || quantity < 0) return toast("Jumlah harus bilangan bulat nol atau lebih", "error");
-    syncDraft(document.querySelector("#checkout"));
-    if (existing >= 0) state.cart.splice(existing, 1);
-    if (quantity) {
-      const base = productBase(product, 1, 1, quantity);
-      const line = { productId, productName: product.name, quantity, displaySize: `${quantity} ${product.unitName || "pcs"}`,
-        baseTotal: base.total, previewTotal: base.total, unitPrice: base.unitPrice, originalUnitPrice: base.originalUnitPrice,
-        fileServiceId: "READY", fileServiceName: "File Siap Cetak", fileServicePrice: 0, finishing: [], productionNote: "" };
-      state.cart.push(line);
-    }
-    renderPos();
-    if (quantity > previousQuantity) blinkCartTotal();
-    if (state.atkSearch || state.directSearch[product.category]) document.querySelector("#flat-search")?.focus();
+  const setFlatQuantity = async (productId, change, absolute = false) => {
+    const product = state.products.find(item=>item.id===productId && categoryKey(item)===state.selectedCategory && item.active!==false);
+    if(!product)return;
+    if(product.hasMaterialVariants || (!product.retailAtK && !product.quickSale))return openProductConfigurator(productId);
+    syncDraft(document.querySelector('#checkout'));
+    try {
+      await mutateCart(cart=>{
+        const existing=cart.find(line=>line.productId===productId&&plainRetailLine(line));
+        const quantity=absolute?change:Math.max(0,Number(existing?.quantity || 0)+change);
+        if(!Number.isSafeInteger(quantity)||quantity<0)throw new Error('Jumlah harus bilangan bulat nol atau lebih');
+        if(!quantity)return cart.filter(line=>line!==existing);
+        const line={productId,productName:product.name,width:1,length:1,quantity,fileServiceId:'READY',finishing:[],productionNote:''};
+        return existing?editCartLine(cart,existing.cartId,line):addCartLine(cart,line,product);
+      },{blink:(before,after)=>Number(after.find(l=>l.productId===productId&&plainRetailLine(l))?.quantity || 0)>Number(before.find(l=>l.productId===productId&&plainRetailLine(l))?.quantity || 0)});
+      if(state.atkSearch || state.directSearch[product.category])document.querySelector('#flat-search')?.focus();
+    }catch(error){if(state.view==='pos')renderPos();toast(error.message,'error');}
   };
+
   document.querySelectorAll("[data-atk-group]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout")); state.atkGroup = button.dataset.atkGroup; renderPos();
   }));
@@ -953,21 +1024,24 @@ function bindPos() {
     button.addEventListener("click", () => {
       const input = button.parentElement.querySelector("[data-flat-quantity]");
       if (!/^\d+$/.test(input.value.trim()) || !Number.isSafeInteger(Number(input.value))) return toast("Jumlah harus bilangan bulat nol atau lebih", "error");
-      setFlatQuantity(button.dataset.flatProduct, Math.max(0, Number(input.value) + Number(button.dataset.flatQty)), true);
+      const dirty = input.value !== input.defaultValue;
+      const next = Math.max(0, Number(input.value) + Number(button.dataset.flatQty));
+      input.value = String(next); input.defaultValue = String(next);
+      setFlatQuantity(button.dataset.flatProduct, dirty ? next : Number(button.dataset.flatQty), dirty);
     });
   });
   document.querySelectorAll("[data-flat-quantity]").forEach((input) => {
     input.addEventListener("focus", () => input.select());
     input.addEventListener("change", () => {
       if (!/^\d+$/.test(input.value.trim()) || !Number.isSafeInteger(Number(input.value))) {
-        input.value = state.cart.find((line) => line.productId === input.dataset.flatQuantity)?.quantity || 1;
+        input.value = state.cart.find((line) => line.productId === input.dataset.flatQuantity && plainRetailLine(line))?.quantity || 1;
         return toast("Jumlah harus bilangan bulat nol atau lebih", "error");
       }
       setFlatQuantity(input.dataset.flatQuantity, Number(input.value), true);
     });
     input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); input.blur(); } });
   });
-  document.querySelectorAll(".atk-pick,.atk-name").forEach((button) => button.addEventListener("click", () => setFlatQuantity(button.dataset.flatProduct, state.cart.some((line) => line.productId === button.dataset.flatProduct) ? 0 : 1)));
+  document.querySelectorAll(".atk-pick,.atk-name").forEach((button) => button.addEventListener("click", () => setFlatQuantity(button.dataset.flatProduct, state.cart.some((line) => line.productId === button.dataset.flatProduct && plainRetailLine(line)) ? 0 : 1, true)));
   const selectA3Family = (family) => {
     const candidates = state.products.filter((item) => item.active !== false && item.a3Kind === state.a3Kind && item.a3Family === family);
     state.selectedProduct = (candidates.find((item) => item.a3PrintMode === "BW" && item.a3Side === "1S")
@@ -1008,16 +1082,19 @@ function bindPos() {
     label.addEventListener("click", (event) => { event.preventDefault(); select(); });
     label.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); select(); } });
   });
-  document.querySelectorAll("[data-remove]").forEach((button) => button.onclick = () => {
-    syncDraft(document.querySelector("#checkout")); state.cart.splice(Number(button.dataset.remove), 1); renderPos();
+  document.querySelectorAll('[data-cart-row]').forEach(row=>row.addEventListener('click',event=>{if(!event.target.closest('[data-remove]'))openCartEditor(row.dataset.cartRow);}));
+  document.querySelectorAll('[data-remove]').forEach(button=>button.onclick=async event=>{
+    event.stopPropagation();syncDraft(document.querySelector('#checkout'));
+    try{await mutateCart(cart=>cart.filter(line=>line.cartId!==button.dataset.remove),{blink:false});}catch(error){toast(error.message,'error');}
   });
+
   const checkout = document.querySelector("#checkout");
   checkout.addEventListener("input", () => syncDraft(checkout));
   checkout.addEventListener("change", () => syncDraft(checkout));
   const createRequestId = crypto.randomUUID();
   let savingOrder = false;
   async function savePosOrder(openPayment = false) {
-    if (savingOrder) return; savingOrder = true;
+    if (savingOrder || cartPending) return; savingOrder = true;
     syncDraft(checkout);
     try {
       state.draft.phone = requiredPhone(state.draft.phone);
@@ -1442,7 +1519,8 @@ function cartLineFromPricedItem(item) {
     finishingNames: (item.finishing || []).map((finish) => `${finish.name} × ${finish.units}${finish.note ? ` (${finish.note})` : ""}`).join(", "),
     displaySize: item.displaySize, templateDesign: item.templateDesign || "", fileServiceId: item.fileService?.id || "READY",
     fileServiceName: item.fileService?.name || "File Siap Cetak", fileServicePrice: item.fileService?.price || 0, fileServiceQuantity: item.fileService?.quantity || 1, fileServiceNote: item.fileService?.note || "",
-    baseTotal: item.baseTotal, templateDesignTotal: item.templateDesignTotal || 0,
+    baseTotal: item.baseTotal, templateDesignTotal: item.templateDesignTotal || 0, templateDesignQuantity:item.templateDesignQuantity || 1,
+    unitPrice:item.unitPrice, originalUnitPrice:item.originalUnitPrice, discountApplied:item.discountApplied, priceBasis:item.priceBasis,
     productionNote: item.productionNote || "", previewTotal: item.subtotal
   };
   const product = state.products.find(product => product.id === item.productId);

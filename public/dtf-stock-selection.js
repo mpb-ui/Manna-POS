@@ -106,7 +106,7 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
       if (!await refresh() || !active()) return;
       const result = sync();
       if (!result.valid) return toast(result.message, 'error');
-      onAdd(readLine());
+      await onAdd(readLine());
     } finally { saving = false; sync(); }
   };
   retry.onclick = refresh;

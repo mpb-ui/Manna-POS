@@ -53,3 +53,26 @@
 @media(max-width:480px){.pos-layout .sticky-summary>.panel-head{padding:8px 16px}.pos-layout .sticky-summary>.panel-body{padding:16px;scroll-padding-bottom:calc(156px + env(safe-area-inset-bottom,0px))}.pos-layout .sticky-summary .cart-item{padding:12px;gap:10px}.pos-layout .sticky-summary .summary-row.total{padding-inline:16px;margin-inline:-16px}.pos-layout .sticky-summary .summary-row.total span:last-child{font-size:clamp(20px,6vw,24px);line-height:1.25}.pos-layout .sticky-summary .checkout-actions{bottom:-16px;margin:0 -16px -16px;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}}
 @media(max-width:480px){.pos-layout .sticky-summary .order-form .form-grid{grid-template-columns:minmax(0,1fr)}}
 @media(pointer:coarse){.pos-layout .sticky-summary .cart-item-footer>button{min-height:44px;min-width:44px;display:flex;align-items:center;justify-content:flex-end;margin-top:-10px;margin-bottom:-10px}}
+
+/* Editable cards and the simplified Figma checkout. */
+.pos-layout .sticky-summary .cart-item{cursor:pointer}
+.pos-layout .sticky-summary .cart-item:hover{border-color:#9bbbe7}
+.pos-layout .sticky-summary .cart-edit-button{display:block;width:100%;border:0;background:transparent;padding:0;margin:0;text-align:left;color:#17263c;font:inherit;line-height:inherit;cursor:pointer;overflow-wrap:anywhere}
+.pos-layout .sticky-summary .cart-edit-button:focus-visible{outline:2px solid #0a68f4;outline-offset:4px;border-radius:3px}
+.pos-layout .sticky-summary .cart-production-note{color:#52627a}
+.pos-layout .sticky-summary .checkout-customer{padding:20px;margin:0 -20px;background:#fff;border-block:1px solid #d7dfe9}
+.pos-layout .sticky-summary .checkout-footer{position:sticky;bottom:-20px;z-index:2;display:flex;flex-direction:column;gap:16px;flex-shrink:0;margin:-20px -20px -20px;padding:20px 24px calc(24px + env(safe-area-inset-bottom,0px));background:#fff;border-top:1px solid #d7dfe9;box-shadow:0 -3px 8px #0000001a;border-radius:0 0 11px 11px}
+.pos-layout .sticky-summary .checkout-footer .summary-row.total{min-height:37px;padding:0 0 8px;margin:0;background:transparent;border:0;font-size:18px;line-height:22px}
+.pos-layout .sticky-summary .checkout-footer .summary-row.total span:last-child{font-size:24px;line-height:29px}
+.pos-layout .sticky-summary .checkout-footer .checkout-actions{position:static;display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:10px;margin:0;padding:0;background:transparent;border:0;box-shadow:none}
+.pos-layout .sticky-summary .checkout-actions #cancel-edit{grid-column:1/-1}
+.pos-layout .sticky-summary .checkout-actions .secondary{color:#52627a}
+.pos-layout .sticky-summary .checkout-actions>button{min-width:0;white-space:normal;padding:8px 12px}
+.pos-layout .sticky-summary .cart-item-footer>button:disabled{opacity:.5;cursor:wait}
+.template-design-quantity{margin-top:12px;max-width:180px}
+@media(max-width:480px){
+  .pos-layout .sticky-summary .checkout-customer{margin-inline:-16px;padding:16px}
+  .pos-layout .sticky-summary .checkout-footer{bottom:-16px;margin:-20px -16px -16px;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px))}
+  .pos-layout .sticky-summary .checkout-footer .summary-row.total span:last-child{font-size:clamp(20px,6vw,24px);line-height:1.25}
+  .pos-layout .sticky-summary .checkout-actions>button{font-size:14px;padding:8px}
+}
