@@ -510,11 +510,11 @@ function cartHtml() {
 
 function checkoutHtml() {
   const total = state.cart.reduce((sum, item) => sum + item.previewTotal, 0);
-  return `<form id="checkout" class="order-form"><div class="form-grid checkout-customer">${can("customers.view")?'<div class="full" data-customer-deposit></div>':""}
-    <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
+  return `<form id="checkout" class="order-form"><div class="form-grid checkout-customer">
+    <div class="field full checkout-customer-name"><div class="customer-name-heading"><label for="checkout-customer-name">Nama pelanggan *</label>${can("customers.view")?'<button type="button" class="customer-search-trigger" data-choose-customer aria-haspopup="dialog">Cari Pelanggan</button>':""}</div><input id="checkout-customer-name" name="customerName" value="${escapeHtml(state.draft.customerName)}" required></div>
     <label class="field"><span>No. WhatsApp *</span><input name="phone" type="text" autocomplete="tel" required value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
-  </div><div class="checkout-footer"><div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><div class="checkout-actions"><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft"}</button><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></div></form>`;
+  </div><div class="checkout-footer">${can("customers.view")?'<div class="checkout-deposit-balance deposit-balance" data-customer-deposit hidden></div>':""}<div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><div class="checkout-actions"><button class="secondary full" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft"}</button><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></div></form>`;
 }
 
 let cartQueue = Promise.resolve(), cartPending = 0, configurationEditingLine = null;
@@ -1107,7 +1107,6 @@ function bindPos() {
     syncDraft(checkout);
     try {
       state.draft.phone = requiredPhone(state.draft.phone);
-      const depositPlan=customersUI.checkoutPlan();
       const payload = { ...state.draft, requestId: createRequestId, confirmed: openPayment, items: state.cart };
       const order = state.editingOrderId
         ? await api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
@@ -1116,7 +1115,7 @@ function bindPos() {
       state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
       await load(); toast(`${order.code} berhasil disimpan`);
       state.view = openPayment ? "pos" : "projects"; render();
-      if (openPayment) openPaymentDialog(order,depositPlan);
+      if (openPayment) openPaymentDialog(order);
     } catch (error) { toast(error.message, "error"); } finally { savingOrder = false; }
   }
   checkout.addEventListener("submit", async (event) => {
@@ -1486,7 +1485,10 @@ function bindPaymentForm(order, outstanding, initial={}) {
     if (!event.target.checked) form.elements.amount.value = formatMoneyValue(outstanding);
   };
   halfButton.onclick = () => { form.elements.amount.value = formatMoneyValue(Math.min(outstanding,Math.round(Number(order.total || 0)*0.5))); };
-  const depositReady=customersUI.mountPayment(form,order,initial);
+  const confirmButton = document.querySelector('#confirm-payment');
+  if (confirmButton) confirmButton.disabled = true;
+  let depositError;
+  const depositReady=customersUI.mountPayment(form,order,initial).catch(error=>{depositError=error;toast(error.message,"error");return null;}).finally(()=>{if(form.isConnected&&confirmButton)confirmButton.disabled=false;});
   let previewUrl;
   dialog.addEventListener("close", () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, { once: true });
   form.elements.poFile.addEventListener("change", () => {
@@ -1504,7 +1506,9 @@ function bindPaymentForm(order, outstanding, initial={}) {
     try {
       const depositController=await depositReady;
       if(!form.isConnected)return;
-      const depositValues=depositController.values();if(!form.reportValidity())return;
+      if(depositError)throw depositError;
+      const depositValues=await depositController.confirm();
+      if(!depositValues||!form.isConnected||!form.reportValidity())return;
       const values = {...Object.fromEntries(new FormData(form)),...depositValues}; values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
       const file = form.elements.poFile.files[0];
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);

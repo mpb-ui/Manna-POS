@@ -1,1 +1,46 @@
 .customer-dialog{width:min(850px,calc(100vw - 24px));max-height:calc(100dvh - 24px);padding:0;border:1px solid #d7dfe9;border-radius:12px;color:#17263c}.customer-dialog::backdrop{background:#14273d80}.customer-dialog .detail-head{position:sticky;top:0;z-index:2;background:#fff;align-items:center}.customer-dialog h2{font-size:20px;margin:0;overflow-wrap:anywhere}.customer-dialog-body{padding:20px;display:grid;gap:16px}.customer-form{display:grid;gap:16px}.customer-form input:not([type=checkbox]),.customer-form textarea,.customer-form select,.payment-deposit input:not([type=checkbox]),.payment-deposit select{width:100%;min-width:0;padding:10px 12px;border:1px solid #d7dfe9;border-radius:8px;font:inherit}.customer-form textarea{min-height:75px}.customer-toolbar,.customer-account,.customer-pages{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.customer-toolbar .search{flex:1;min-width:160px;max-width:320px}.customer-pages{padding:12px;justify-content:center}.customer-pages button{padding:8px 12px;border:1px solid #d7dfe9;border-radius:6px;background:#fff}.customer-pages button:disabled{opacity:.4}.customer-table{overflow-x:auto;max-width:100%}.customer-table table{width:100%;border-collapse:collapse;min-width:440px}.customer-table td,.customer-table th{padding:12px;text-align:left;border-bottom:1px solid #e6ebf1;vertical-align:top}.customer-table small,.customer-pick-row small{display:block;font-size:12px;color:#52627a;margin-top:4px;overflow-wrap:anywhere}.customer-table td{font-size:13px;max-width:280px;overflow-wrap:anywhere}.customer-pick-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid #d7dfe9;background:#fff;border-radius:8px;padding:12px;margin-bottom:8px;text-align:left;color:#17263c}.customer-pick-row:hover{background:#e9f1fe}.customer-pick-row b{font-size:13px;color:#0a68f4}.deposit-tag{white-space:nowrap}.deposit-tag.has-deposit{display:inline-block;background:#e9f1fe;color:#0a68f4;font-weight:700;border-radius:6px;padding:5px 8px}.deposit-balance,.deposit-due{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0;color:#52627a}.deposit-balance strong,.deposit-due strong{color:#0a68f4}.deposit-check{display:flex;align-items:center;gap:8px;font-size:13px;line-height:1.5}.deposit-check input{flex:0 0 16px;width:16px;height:16px;accent-color:#0a68f4}.customer-unlink{background:transparent;border:0;color:#bc3038;font-size:22px;padding:4px 8px}.customer-order-link{background:transparent;border:0;padding:0;color:#0a68f4;text-align:left;font:inherit;font-weight:700}.payment-deposit{display:grid;gap:12px;margin-bottom:18px;padding:14px;background:#f7f9fc;border:1px solid #d7dfe9;border-radius:8px}.payment-deposit p{font-size:13px;line-height:1.6;margin:0}.deposit-excess{display:grid;gap:10px;padding:12px;background:#fff5dc;border-radius:8px}.deposit-excess.hidden{display:none}.customer-order-receipts{margin-top:20px;display:grid;gap:12px}.customer-order-receipts h3{font-size:14px}.pos-layout [data-customer-deposit]{grid-column:1/-1;display:grid;gap:10px;font-size:12px}.pos-layout [data-customer-deposit] .secondary{font-size:12px;min-height:36px;padding:8px 10px}.pos-layout [data-customer-deposit] input[type=number]{height:36px}.deposit-report{padding:16px;display:grid;gap:16px}.deposit-report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.deposit-report-grid div{display:grid;gap:6px;padding:12px;background:#f7f9fc;border-radius:8px}.deposit-report-grid small{color:#52627a}.deposit-report-grid strong{font-size:18px;color:#0a68f4}@media(max-width:520px){.customer-dialog-body{padding:14px}.customer-pick-row{align-items:flex-start;flex-direction:column;gap:8px}.customer-account .secondary{white-space:normal}.customer-dialog .detail-head{padding:14px}.payment-deposit{padding:12px}.customer-order-receipts .payment-ledger-row{flex-wrap:wrap}}
+.customer-name-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.pos-layout .sticky-summary .customer-name-heading{font-size:12px;font-weight:600;line-height:15px}
+.customer-search-trigger{flex:none;border:0;background:none;color:#0a68f4;font:inherit;font-weight:650;padding:3px 0;cursor:pointer}
+.customer-search-trigger:hover{text-decoration:underline}
+.customer-search-trigger:focus-visible,.customer-picker-new:focus-visible{outline:2px solid #0a68f4;outline-offset:3px;border-radius:3px}
+.pos-layout [data-customer-deposit][hidden]{display:none}
+.customer-search-popup{position:fixed;margin:0;padding:0;max-width:none;box-shadow:0 5px 14px #17263c2b;border-radius:10px;overflow:hidden;display:flex;flex-direction:column}
+.customer-search-popup:not([open]){display:none}
+.customer-search-popup::backdrop{background:transparent}
+.customer-search-popup .customer-toolbar{flex:none;flex-wrap:nowrap;gap:10px;padding:9px 10px;border-bottom:1px solid #d7dfe9}
+.customer-search-popup .search{width:0;min-width:0;max-width:none;border:0;padding:4px 0;border-radius:0;background:transparent;font:inherit;box-shadow:none}
+.customer-search-popup .search:focus{outline:none}
+.customer-search-popup .search::-webkit-search-cancel-button{display:none}
+.customer-search-popup .customer-toolbar:focus-within{box-shadow:inset 0 0 0 2px #0a68f4}
+.customer-search-icon{display:flex;align-items:center;justify-content:center;flex:0 0 24px;width:24px;height:24px;border-radius:50%;background:#0a68f4}
+.customer-search-icon svg{width:16px;height:16px;stroke:#fff;stroke-width:1.8;stroke-linecap:round}
+.customer-picker-close{flex:none;border:0;background:none;color:#52627a;font-size:22px;line-height:1;padding:4px;cursor:pointer}
+.customer-search-popup [data-customer-results]{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.customer-search-popup [data-customer-results]>p{padding:12px 16px;margin:0;font-size:13px;color:#52627a}
+.customer-search-popup .customer-pick-row{margin:0;padding:10px 16px;border:0;border-bottom:1px solid #d7dfe9;border-radius:0;align-items:center;flex-direction:row;gap:12px;font:inherit}
+.customer-search-popup .customer-pick-row>span{min-width:0;overflow-wrap:anywhere}
+.customer-search-popup .customer-pick-row strong{font-size:14px}
+.customer-search-popup .customer-pick-row small{font-weight:650;margin-top:2px}
+.customer-search-popup .customer-pick-row b{flex:none;font-size:12px;white-space:nowrap}
+.customer-search-popup .customer-pick-row:focus-visible{outline:2px solid #0a68f4;outline-offset:-2px;background:#e9f1fe}
+.customer-picker-new{flex:none;min-height:38px;padding:9px 16px;background:#fff;border:0;border-top:1px solid #d7dfe9;color:#0a68f4;font:inherit;font-size:13px;font-weight:650;text-align:left;cursor:pointer}
+@media(max-width:380px){.customer-search-popup .customer-pick-row{padding:10px;gap:8px}.customer-search-popup .customer-pick-row b{font-size:11px}.customer-search-popup .customer-pick-row strong{font-size:13px}}
+.payment-deposit-summary{display:grid;gap:0;margin:0 0 16px;border:1px solid #d7dfe9;border-radius:10px;overflow:hidden}
+.payment-deposit-summary[hidden]{display:none}
+.payment-deposit-option{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:14px 16px;background:#f7f9fc}
+.payment-deposit-option .deposit-check{font-size:14px;cursor:pointer}
+.payment-deposit-option>strong{color:#0a68f4;font-size:16px;flex:none}
+.payment-total-due{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border-top:1px solid #d7dfe9;color:#0a68f4;background:#fff;font-size:18px;font-weight:700}
+.payment-total-due strong{white-space:nowrap}
+.deposit-confirm-dialog{width:min(510px,calc(100vw - 24px))}
+.deposit-confirm-dialog .detail-head h2{font-size:19px;line-height:1.45}
+.deposit-confirm-question{font-size:16px;font-weight:650;margin:0}
+.deposit-confirm-customer{font-size:13px;color:#52627a;overflow-wrap:anywhere;margin:0}
+.deposit-confirm-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;padding-top:8px}
+.deposit-confirm-actions button{min-height:44px;padding:10px 16px}
+@media(max-width:380px){.payment-deposit-option,.payment-total-due{padding:12px;gap:10px}.payment-total-due{font-size:16px}.payment-deposit-option .deposit-check{font-size:13px}.payment-deposit-option>strong{font-size:14px}.deposit-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.deposit-confirm-actions button{padding:10px 8px;font-size:13px}}
+.pos-layout .sticky-summary .checkout-deposit-balance{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;font-weight:650;line-height:20px;color:#17263c}
+.pos-layout .sticky-summary .checkout-deposit-balance[hidden]{display:none}
+.pos-layout .sticky-summary .checkout-deposit-balance strong{flex:none;color:#0a68f4}
+.pos-layout .sticky-summary>.panel-body:has(.checkout-deposit-balance:not([hidden])){scroll-padding-bottom:calc(210px + env(safe-area-inset-bottom,0px))}

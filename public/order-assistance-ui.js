@@ -89,7 +89,7 @@ export function createOrderAssistance(c) {
     const customerField=form.querySelector('[name="customerName"]');
     const names=[...new Set(c.state.orders.filter(o=>o.confirmed||o.paymentConfirmed).map(o=>o.customerName))];
     const list=document.createElement("datalist");list.id="assist-customers";list.innerHTML=names.map(name=>`<option value="${h(name)}"></option>`).join("");form.append(list);customerField.setAttribute("list",list.id);
-    const repeat=document.createElement("div");repeat.className="assist-repeat hidden";customerField.closest("label").after(repeat);
+    const repeat=document.createElement("div");repeat.className="assist-repeat hidden";customerField.closest(".field").after(repeat);
     const assistance=document.createElement("div");assistance.className="assist-checkout";
     assistance.innerHTML='<div data-stock-warning></div>';
     (form.querySelector(".checkout-footer") || form.querySelector(".checkout-actions")).before(assistance);
