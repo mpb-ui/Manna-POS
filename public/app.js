@@ -1,3 +1,5 @@
+import { createCustomersUI } from "./customers-ui.js";
+import { depositInvoiceLines } from "./customer-documents.js";
 import { openSheetProfiles } from "./sheet-profile-ui.js";
 import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.js";
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
@@ -20,7 +22,7 @@ import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
 import { createOrderAssistance, briefingProfileOptions } from "./order-assistance-ui.js";
-import { needsFile, unconfirmedDraft } from "./order-rules.js";
+import { needsFile, unconfirmedDraft, cancelled } from "./order-rules.js";
 import { finishingPriceForUnits, normalizeFinishingTiers, manualAreaFinishing, manualLfCutting } from "./finishing-pricing.js";
 import { mountEmployees, hasUnsavedPayroll, discardPayrollDrafts, clearEmployeeSession } from "./employees-ui.js";
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
@@ -76,6 +78,12 @@ const state = {
 const root = document.querySelector("#view-root");
 const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
+const customersUI=createCustomersUI({state,root,api,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
+  bindHeader:()=>root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();}),
+  openOrder:async id=>{try{const order=await api('/api/order-history/'+id);const index=state.orders.findIndex(o=>o.id===id);if(index>=0)state.orders[index]=order;else state.orders.push(order);if(dialog.open)dialog.close();openOrder(id);}catch(error){toast(error.message,'error');}},
+  print:html=>{printDocument.className='print-document payment-receipt';printDocument.innerHTML=html;showPrintDocument();}
+});
+window.addEventListener('customer-extra-payment',event=>openPaymentDialog(event.detail));
 const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, dateFormat, openOrder, toast });
 const assistance = createOrderAssistance({
   state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, deadlineLabel: formatProjectDeadline, canAuto: () => !hasUnsavedPayroll(),
@@ -83,7 +91,7 @@ const assistance = createOrderAssistance({
   refreshProjects: () => { if (state.view === "projects") renderProjectContent(state.projectCategory === "waiting" ? ["MENUNGGU_PEMBAYARAN"] : ["DESAIN", "CETAK", "FINISHING", "SELESAI"]); },
   useRepeat: quote => {
     state.cart = quote.items.map(cartLineFromPricedItem); state.editingOrderId = null;
-    state.draft = { customerName: quote.customerName, phone: quote.phone, deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
+    state.draft = { customerId:quote.customerId || null,customerName: quote.customerName, phone: quote.phone, deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
     state.selectedProduct = state.cart[0]?.productId || null;
     state.selectedCategory = categoryKey(state.products.find(p=>p.id===state.selectedProduct) || {});
     state.view = "pos"; configurationDrafts.clear(); dialog.close(); render(); blinkCartTotal();
@@ -123,7 +131,7 @@ function toast(message, type = "") {
 
 function showLogin() {
   closeNavigation();
-  orderHistory.reset();
+  orderHistory.reset(); customersUI.reset();
   clearEmployeeSession();
   state.currentUser = null;
   assistance.resetSession();
@@ -143,12 +151,12 @@ function showApp() {
 
 function can(permission) { return state.permissions.includes(permission); }
 const viewPermissions = { pos: "pos.view", "order-history": "orders.view", projects: "projects.orders", stock: "stock.view", reports: "reports.view", master: "master.view" };
-function canView(view) { return view === "employees" ? canManageSettings() : can(viewPermissions[view]); }
-function firstAllowedView() { return Object.keys(viewPermissions).find((view) => can(viewPermissions[view])) || "none"; }
+function canView(view) { if(view==="master")return can("master.view")||can("customers.view");return view === "employees" ? canManageSettings() : can(viewPermissions[view]); }
+function firstAllowedView() { return Object.keys(viewPermissions).find((view) => canView(view)) || "none"; }
 
 let loadSequence = 0;
 async function load() {
-  state.cartCheck = null;
+  state.cartCheck = null; customersUI.invalidate();
   const sequence = ++loadSequence;
   const data = await api(`/api/bootstrap?view=${encodeURIComponent(state.view)}`);
   if (sequence !== loadSequence) return;
@@ -479,6 +487,7 @@ function renderPos() {
   bindPos();
   assistance.mountCheckout(state.cartCheck?.cart === state.cart && Date.now()-state.cartCheck.at < 5000 ? state.cartCheck.data : null);
   syncCartBusy();
+  customersUI.mountCheckout();
 
 }
 
@@ -501,7 +510,7 @@ function cartHtml() {
 
 function checkoutHtml() {
   const total = state.cart.reduce((sum, item) => sum + item.previewTotal, 0);
-  return `<form id="checkout" class="order-form"><div class="form-grid checkout-customer">
+  return `<form id="checkout" class="order-form"><div class="form-grid checkout-customer">${can("customers.view")?'<div class="full" data-customer-deposit></div>':""}
     <label class="field full"><span>Nama pelanggan *</span><input name="customerName" value="${escapeHtml(state.draft.customerName)}" required></label>
     <label class="field"><span>No. WhatsApp *</span><input name="phone" type="text" autocomplete="tel" required value="${escapeHtml(state.draft.phone)}"></label>
     <label class="field"><span>Deadline</span><input name="deadline" type="datetime-local" value="${escapeHtml(state.draft.deadline)}"></label>
@@ -712,7 +721,7 @@ function toggleFinishing(input) {
 
 function syncDraft(form) {
   const values = Object.fromEntries(new FormData(form));
-  state.draft = { customerName: values.customerName || "", phone: values.phone || "", deadline: values.deadline || "", fileStatus: values.fileStatus || "SIAP_CETAK", fileReadiness: values.fileReadiness || state.draft.fileReadiness || "UNCONFIRMED" };
+  state.draft = { ...state.draft, customerName: values.customerName || "", phone: values.phone || "", deadline: values.deadline || "", fileStatus: values.fileStatus || "SIAP_CETAK", fileReadiness: values.fileReadiness || state.draft.fileReadiness || "UNCONFIRMED" };
 }
 
 function searchPopoverHtml(query = "") {
@@ -1098,6 +1107,7 @@ function bindPos() {
     syncDraft(checkout);
     try {
       state.draft.phone = requiredPhone(state.draft.phone);
+      const depositPlan=customersUI.checkoutPlan();
       const payload = { ...state.draft, requestId: createRequestId, confirmed: openPayment, items: state.cart };
       const order = state.editingOrderId
         ? await api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
@@ -1106,7 +1116,7 @@ function bindPos() {
       state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
       await load(); toast(`${order.code} berhasil disimpan`);
       state.view = openPayment ? "pos" : "projects"; render();
-      if (openPayment) openPaymentDialog(order);
+      if (openPayment) openPaymentDialog(order,depositPlan);
     } catch (error) { toast(error.message, "error"); } finally { savingOrder = false; }
   }
   checkout.addEventListener("submit", async (event) => {
@@ -1125,6 +1135,7 @@ function bindPos() {
 }
 
 function paymentStatus(order) {
+  if(cancelled(order))return "DIBATALKAN";
   if (Number(order.paidAmount || 0) >= Number(order.total || 0) && order.total > 0) return "LUNAS";
   return order.paymentConfirmed ? "BELUM_LUNAS" : "BELUM_BAYAR";
 }
@@ -1349,7 +1360,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   const showMoney = can("projects.money");
   const isDesign = order.status === "DESAIN" && state.view !== "order-history";
   const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
-  const outstanding = showMoney ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
+  const outstanding = showMoney && !cancelled(order) ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
   const detail = document.querySelector("#order-detail");
   const actionableItems = order.items.filter(item => can("projects.status") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item)));
   const primaryItem = actionableItems.find(item => item.itemId === focusedItemId) || actionableItems[0];
@@ -1424,6 +1435,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   });
   detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));
   dialog.showModal();
+  customersUI.mountOrder(detail,order).catch(error=>toast(error.message,"error"));
   assistance.mountOrder(order, detail.querySelector("#order-assistance"));
   if (focusedItemId) {
     const target = [...detail.querySelectorAll("[data-detail-item]")].find(element => element.dataset.detailItem === focusedItemId);
@@ -1432,14 +1444,15 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   if (showPayment) detail.querySelector("#payment-form-wrap")?.classList.remove("hidden");
 }
 
-function openPaymentDialog(order) {
+function openPaymentDialog(order, initial={}) {
+  if(cancelled(order))return toast("Pesanan dibatalkan tidak dapat menerima pembayaran","error");
   const outstanding = Math.max(0, Number(order.total) - Number(order.paidAmount || 0));
   const detail = document.querySelector("#order-detail");
   dialog.classList.add("payment-dialog");
   detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${escapeHtml(order.code)}</span><h2>Pembayaran</h2><p>${escapeHtml(order.customerName)}</p></div><button class="detail-close" aria-label="Tutup pembayaran">×</button></div><div class="detail-body"><div class="payment-order-summary">${order.items.map(item => `<div><strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize)}</small>${imageSizeNote(item) ? `<small>${escapeHtml(imageSizeNote(item))}</small>` : ""}</div>`).join("")}<div class="summary-row total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div></div>${paymentFormHtml(order,outstanding)}</div><div class="detail-actions"><button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button></div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
-  dialog.onclose = () => { dialog.classList.remove("payment-dialog"); dialog.onclose = null; detail.replaceChildren(); };
-  bindPaymentForm(order,outstanding); dialog.showModal();
+  dialog.onclose = () => { if(dialog.open)return;dialog.classList.remove("payment-dialog"); dialog.onclose = null; detail.replaceChildren(); };
+  bindPaymentForm(order,outstanding,initial); dialog.showModal();
 }
 
 function paymentFormHtml(order, outstanding) {
@@ -1452,7 +1465,7 @@ function paymentFormHtml(order, outstanding) {
   </div><div class="payment-balance"><span>Sudah dibayar: ${rupiah.format(order.paidAmount || 0)}</span><strong>Sisa: ${rupiah.format(outstanding)}</strong></div></form>`;
 }
 
-function bindPaymentForm(order, outstanding) {
+function bindPaymentForm(order, outstanding, initial={}) {
   const paymentRequestId = crypto.randomUUID();
   const form = document.querySelector("#payment-form");
   if (!form) return;
@@ -1473,6 +1486,7 @@ function bindPaymentForm(order, outstanding) {
     if (!event.target.checked) form.elements.amount.value = formatMoneyValue(outstanding);
   };
   halfButton.onclick = () => { form.elements.amount.value = formatMoneyValue(Math.min(outstanding,Math.round(Number(order.total || 0)*0.5))); };
+  const depositReady=customersUI.mountPayment(form,order,initial);
   let previewUrl;
   dialog.addEventListener("close", () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, { once: true });
   form.elements.poFile.addEventListener("change", () => {
@@ -1488,7 +1502,10 @@ function bindPaymentForm(order, outstanding) {
     submitting = true;
     const button = document.querySelector('#confirm-payment'); if (button) button.disabled = true;
     try {
-      const values = Object.fromEntries(new FormData(form)); values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
+      const depositController=await depositReady;
+      if(!form.isConnected)return;
+      const depositValues=depositController.values();if(!form.reportValidity())return;
+      const values = {...Object.fromEntries(new FormData(form)),...depositValues}; values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
       const file = form.elements.poFile.files[0];
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);
       const paidOrder = await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify({ ...values, requestId: paymentRequestId }) });
@@ -1538,7 +1555,7 @@ function cartLineFromPricedItem(item) {
 
 function startEditOrder(order) {
   state.cart = order.items.map(cartLineFromPricedItem);
-  state.draft = { customerName: order.customerName || "", phone: order.phone || "", deadline: localDateTimeInput(order.deadline), fileStatus: order.fileStatus || "SIAP_CETAK", fileReadiness: order.fileReadiness || "UNCONFIRMED" };
+  state.draft = { customerId:order.customerId || null, customerName: order.customerName || "", phone: order.phone || "", deadline: localDateTimeInput(order.deadline), fileStatus: order.fileStatus || "SIAP_CETAK", fileReadiness: order.fileReadiness || "UNCONFIRMED" };
   state.editingOrderId = order.id;
   state.selectedProduct = state.cart[0]?.productId || state.selectedProduct;
   state.selectedCategory = categoryKey(state.products.find((product) => product.id === state.selectedProduct) || {});
@@ -1554,7 +1571,7 @@ function printOrder(order, type) {
     <div class="print-meta"><b>${escapeHtml(order.code)}</b><span>${dateFormat.format(new Date(order.createdAt))} WITA</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
     ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item) ? `<br>${escapeHtml(imageSizeNote(item))}` : ""}<br>${escapeHtml(itemQuantityLabel(item))}<br>Status: ${escapeHtml(state.statusLabels[item.status] || item.status)} · PIC: ${escapeHtml(item.designPic || "—")}<br>Deadline: ${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "—"}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
-    ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div><div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
+    ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div>${depositInvoiceLines(order)}<div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(cancelled(order)?0:Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
     ${!isSpk ? `<p><b>Status pembayaran: ${escapeHtml(paymentStatus(order).replaceAll("_", " "))}</b><br>WhatsApp: ${escapeHtml(order.phone || "—")}</p>` : ""}<hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
   showPrintDocument();
 }
@@ -1607,6 +1624,7 @@ function drawReports() {
   if (state.reportTab === "machines") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Mesin</h2><span>Berdasarkan mesin yang terhubung ke produk</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Mesin</th><th>Pekerjaan</th><th>Qty</th>${capabilities.money ? "<th>Penjualan terkait</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.machines, capabilities)}</tbody></table></div></section>`;
   if (state.reportTab === "customers") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Pelanggan</h2><span>${report.customers.length} pelanggan</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Pelanggan</th><th>Order</th><th>Item</th><th>Pesanan Terakhir</th>${capabilities.money ? "<th>Penjualan</th><th>Dibayar</th>" : ""}</tr></thead><tbody>${report.customers.map((row, index) => `<tr><td><b>${index + 1}</b></td><td><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.phone || "Walk-in")}</small></td><td>${row.orders}</td><td>${row.items}</td><td>${projectDateFormat.format(new Date(row.lastOrderAt))}</td>${capabilities.money ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td>` : ""}</tr>`).join("") || '<tr><td colspan="7">Belum ada data pelanggan.</td></tr>'}</tbody></table></div></section>`;
   if (state.reportTab === "payments") content.innerHTML = `<div class="report-kpis report-sub-kpis">${reportMetric("Belum Bayar", report.paymentSummary.unpaid, "pesanan")}${reportMetric("Pembayaran Sebagian", report.paymentSummary.partial, "pesanan")}${reportMetric("Lunas", report.paymentSummary.paidOrders, "pesanan")}${capabilities.money ? reportMetric("Sisa Pembayaran", reportMoney(report.paymentSummary.outstanding), "sampai tanggal akhir laporan") : ""}</div>${capabilities.money ? reportPaymentTable(report.receipts, "Uang Masuk", false) : ""}${capabilities.money ? purchaseOrderReport(report.purchaseOrders || []) : ""}${reportSalesTable(report)}`;
+  if(state.reportTab==='payments'&&capabilities.money&&report.deposits){const d=report.deposits;content.insertAdjacentHTML('beforeend',`<section class="panel deposit-report"><h3>Deposit Pelanggan</h3><p class="product-note">Seluruh pelanggan pada periode tanggal ini. Saldo per tanggal akhir; tidak dibatasi filter produk/metode pembayaran.</p><div class="deposit-report-grid">${[['Deposit masuk',d.incoming],['Deposit digunakan',d.used],['Deposit dikembalikan ke pelanggan',d.refunds],['Pembayaran deposit dipulihkan',d.restored],['Saldo awal / koreksi',d.adjustments],['Saldo deposit tersisa',d.balance]].map(([label,n])=>`<div><small>${label}</small><strong>${rupiah.format(n)}</strong></div>`).join('')}</div><div class="customer-table"><table><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Transaksi</th><th>Mutasi</th><th>Saldo setelah</th></tr></thead><tbody>${d.rows.map(m=>`<tr><td>${dateFormat.format(new Date(m.createdAt))} WITA</td><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.kind)}<small>${escapeHtml(m.orderCode || '')}</small></td><td>${rupiah.format(m.amount)}</td><td>${rupiah.format(m.balanceAfter)}</td></tr>`).join('')||'<tr><td colspan="5">Belum ada mutasi.</td></tr>'}</tbody></table></div><small>Menampilkan maksimal 100 mutasi terbaru. Riwayat lengkap tersedia di Pelanggan.</small></section>`);}
   if (state.reportTab === "operations") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Beban Pekerjaan per Tahap</h2><span>Mempermudah identifikasi antrean produksi</span></div><div class="table-wrap"><table><thead><tr><th>Tahap</th><th>Pesanan</th><th>Item</th></tr></thead><tbody>${report.statuses.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${row.orders}</td><td>${row.items}</td></tr>`).join("") || '<tr><td colspan="3">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
   if (state.reportTab === "inventory") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Persediaan & Stok Minimum</h2><span>${report.inventory.filter((row) => row.low).length} bahan perlu diperiksa</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Kondisi</th>${capabilities.cost ? "<th>Nilai Stok</th>" : ""}</tr></thead><tbody>${report.inventory.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${escapeHtml(row.sku)}</td><td>${row.quantity.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td>${row.minStock.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td><span class="badge ${row.stockNeedsCount || row.low ? "warn" : "ok"}">${row.stockNeedsCount ? "PERLU STOK OPNAME" : row.low ? "PERLU DIPERIKSA" : "AMAN"}</span></td>${capabilities.cost ? `<td>${row.value == null ? "—" : reportMoney(row.value)}</td>` : ""}</tr>`).join("")}</tbody></table></div></section>`;
   if (state.reportTab === "receivables" && capabilities.money) content.innerHTML = reportPaymentTable(report.receivables, "Piutang Outstanding", true);
@@ -1656,17 +1674,17 @@ function exportReportCsv() {
   if (report.capabilities.money) headers.push("Nomor PO");
   if (report.capabilities.money) headers.push("Penjualan", "Dibayar", "Sisa"); if (report.capabilities.cost) headers.push("HPP Estimasi", "Laba", "Margin %");
   let data = report.rows.map((row) => { const values = [row.date, row.code, row.customer, row.products, row.itemCount, row.status, row.paymentStatus]; if (report.capabilities.money) values.push((row.poNumbers || []).join("; "), row.sales, row.paid, row.outstanding); if (report.capabilities.cost) values.push(row.cost, row.profit, Number(row.margin || 0).toFixed(2)); return values; });
-  if (report.capabilities.money && state.reportTab === "payments") { headers = ["Tanggal Pembayaran", "Invoice", "Customer", "Sumber", "Uang Masuk"]; data = report.receipts.map(row => [row.date,row.code,row.customer,row.method,row.paid]); }
+  if (report.capabilities.money && state.reportTab === "payments") { headers = ["Tanggal Pembayaran", "Invoice", "Customer", "Sumber", "Uang Masuk"]; data = report.receipts.map(row => [row.date,row.code,row.customer,row.method,row.paid]); if(report.deposits){data.push([], ["Ringkasan Deposit (seluruh pelanggan)","","","", ""],...[["Deposit masuk",report.deposits.incoming],["Deposit digunakan",report.deposits.used],["Refund deposit",report.deposits.refunds],["Pemulihan pembayaran",report.deposits.restored],["Saldo awal / koreksi",report.deposits.adjustments],["Saldo deposit akhir",report.deposits.balance]].map(([label,n])=>[label,"","","",n]));} }
   if (report.capabilities.money && state.reportTab === "receivables") { headers = ["Tanggal Pesanan", "Invoice", "Customer", "Nilai Pesanan", "Dibayar", "Sisa"]; data = report.receivables.map(row => [row.date,row.code,row.customer,row.sales,row.paid,row.outstanding]); }
   const blob = new Blob(["\uFEFF" + [headers, ...data].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `laporan-manna-${report.range.from}-${report.range.to}.csv`; link.click(); URL.revokeObjectURL(link.href);
 }
 function printReport() {
-  const report = state.report; printDocument.className = "print-document report-print"; printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">LAPORAN BISNIS</div><p>Periode ${report.range.from} — ${report.range.to} · Sumber ${escapeHtml(report.paymentMethod || "Semua Sumber")}</p><hr><div class="print-report-summary"><div>Pesanan <b>${report.summary.orders}</b></div><div>Item <b>${report.summary.items}</b></div>${report.capabilities.money ? `<div>Penjualan <b>${reportMoney(report.summary.sales)}</b></div><div>Uang Masuk <b>${reportMoney(report.summary.paid)}</b></div><div>Piutang Outstanding <b>${reportMoney(report.summary.outstanding)}</b></div>` : ""}${report.capabilities.cost ? `<div>Laba Estimasi <b>${reportMoney(report.summary.profit)}</b></div><div>Margin <b>${reportPercent(report.summary.margin)}</b></div>` : ""}</div><h3>Insight</h3>${report.insights.map((item) => `<p>• ${escapeHtml(item)}</p>`).join("")}<h3>Produk Teratas</h3><table><thead><tr><th>Produk</th><th>Qty</th>${report.capabilities.money ? "<th>Penjualan</th>" : ""}</tr></thead><tbody>${report.products.slice(0, 10).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.quantity}</td>${report.capabilities.money ? `<td>${reportMoney(row.sales)}</td>` : ""}</tr>`).join("")}</tbody></table>`; document.body.classList.add("printing"); window.onafterprint = () => { document.body.classList.remove("printing"); printDocument.innerHTML = ""; }; window.print();
+  const report = state.report; printDocument.className = "print-document report-print"; printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">LAPORAN BISNIS</div><p>Periode ${report.range.from} — ${report.range.to} · Sumber ${escapeHtml(report.paymentMethod || "Semua Sumber")}</p><hr><div class="print-report-summary"><div>Pesanan <b>${report.summary.orders}</b></div><div>Item <b>${report.summary.items}</b></div>${report.capabilities.money ? `<div>Penjualan <b>${reportMoney(report.summary.sales)}</b></div><div>Uang Masuk <b>${reportMoney(report.summary.paid)}</b></div><div>Piutang Outstanding <b>${reportMoney(report.summary.outstanding)}</b></div>` : ""}${report.capabilities.cost ? `<div>Laba Estimasi <b>${reportMoney(report.summary.profit)}</b></div><div>Margin <b>${reportPercent(report.summary.margin)}</b></div>` : ""}</div>${report.capabilities.money && report.deposits ? `<h3>Deposit Pelanggan · Seluruh Pelanggan</h3><p>Masuk ${reportMoney(report.deposits.incoming)} · Digunakan ${reportMoney(report.deposits.used)} · Refund ${reportMoney(report.deposits.refunds)} · Saldo akhir ${reportMoney(report.deposits.balance)}</p>`:""}<h3>Insight</h3>${report.insights.map((item) => `<p>• ${escapeHtml(item)}</p>`).join("")}<h3>Produk Teratas</h3><table><thead><tr><th>Produk</th><th>Qty</th>${report.capabilities.money ? "<th>Penjualan</th>" : ""}</tr></thead><tbody>${report.products.slice(0, 10).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.quantity}</td>${report.capabilities.money ? `<td>${reportMoney(row.sales)}</td>` : ""}</tr>`).join("")}</tbody></table>`; document.body.classList.add("printing"); window.onafterprint = () => { document.body.classList.remove("printing"); printDocument.innerHTML = ""; }; window.print();
 }
 
 function masterHeader(title, includeSummary = true) {
-  const labels = { products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
-  const allowed = { products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
+  const labels = { customers:"Pelanggan",products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
+  const allowed = { customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
   return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
     ${includeSummary ? `<div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => !item.stockNeedsCount && Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>` : ""}
     <div class="master-tabs">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
@@ -1684,9 +1702,10 @@ function assetContext() {
 }
 
 function renderMaster() {
-  const allowedTabs = [["products", "master.products"], ["materials", "master.materials"], ["finishings", "master.finishings"], ["machines", "master.machines"], ["users", "users.manage"]].filter(([, permission]) => can(permission)).map(([id]) => id);
+  const allowedTabs = [["customers","customers.view"],["products", "master.products"], ["materials", "master.materials"], ["finishings", "master.finishings"], ["machines", "master.machines"], ["users", "users.manage"]].filter(([, permission]) => can(permission)).map(([id]) => id);
   if (canManageSettings()) allowedTabs.push("categories", "pics", "assets");
   if (!allowedTabs.includes(state.masterTab)) state.masterTab = allowedTabs[0] || "users";
+  if (state.masterTab === "customers")return customersUI.mountMaster();
   if (state.masterTab === "assets") return mountAssets(assetContext());
   if (["categories", "pics"].includes(state.masterTab)) return renderSettingsMaster();
   const title = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin", users: "User" }[state.masterTab];

@@ -1,3 +1,5 @@
+import { registerCustomerRoutes } from './lib/customer-routes.js';
+import { resolveOrderCustomer, initializeCustomers, allocateCustomerPayment, checkOperation, finishOperation, cancelCustomerOrder, CUSTOMER_SCHEMA_VERSION } from './lib/customer-deposits.js';
 import { requiredPhone } from "./public/customer-validation.js";
 import { registerSheetProfileRoutes, validateProductCalculator } from "./lib/sheet-calculator.js";
 import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
@@ -65,7 +67,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
@@ -141,7 +143,7 @@ function sanitizeOrder(order, user) {
   const copy = structuredClone(order);
   const canSeeMoney = hasPermission(user, "projects.money");
   if (!canSeeMoney) {
-    delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
+    delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
     copy.items.forEach((item) => {
       ["unitPrice", "originalUnitPrice", "baseTotal", "finishingTotal", "fileServiceTotal", "templateDesignTotal", "subtotal"].forEach((key) => delete item[key]);
       (item.finishing || []).forEach((finish) => { delete finish.unitPrice; delete finish.subtotal; });
@@ -240,7 +242,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
         result.assistanceSummary = { issueCount: completeness(order, state.products).length, checklistDone: checklist.reduce((n, i) => n + i.steps.filter(s => s.done).length, 0), checklistTotal: checklist.reduce((n, i) => n + i.steps.length, 0) };
         return result;
       }),
-      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovementCount: canStock ? state.stockMovements.length : 0, stockMovements: canStock ? state.stockMovements.slice(0, view === "full" ? 50 : 15) : [], statusLabels: STATUS_LABEL,
+      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovementCount: canStock ? state.stockMovements.length : 0, stockMovements: canStock ? state.stockMovements.slice(0, view === "full" ? 50 : 15) : [], statusLabels: {...STATUS_LABEL,BATAL:"Dibatalkan"},
       users: includeMaster && permissions.includes("users.manage") ? state.users.filter((item) => !item.deletedAt).map(publicUser) : [],
       auditLogs: includeMaster && permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
     });
@@ -669,6 +671,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         updatedAt: now(),
         timeline: []
       };
+      if(req.body.customerId)resolveOrderCustomer(state,order,req.body.customerId);
       initializeOrderItems(order);
       activity(state, order, "Pesanan dibuat di POS", req.user.name);
       audit(state, req.user, "ORDER_CREATE", `Membuat pesanan ${order.code}`, { orderId: order.id, total: order.total });
@@ -691,6 +694,8 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       order.customerName = String(req.body.customerName).trim();
       order.phone = requiredPhone(req.body.phone);
+      // An unpaid draft may select a different account; no balance moves here.
+      delete order.customerId; if(req.body.customerId)resolveOrderCustomer(state,order,req.body.customerId);
       order.deadline = req.body.deadline || null;
       order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
       order.fileReadiness = FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED";
@@ -727,20 +732,20 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       const type = req.body.type === "PO" ? "PO" : "PAYMENT";
       const method = type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim();
       const amount = type === "PO" ? 0 : Number(req.body.amount || 0);
-      if (req.body.requestId) {
-        const previous = order.payments.find(payment => payment.requestId === req.body.requestId);
-        if (previous) {
-          if (previous.amount !== amount || previous.type !== type || previous.method !== (type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim())) throw new Error("Permintaan pembayaran sudah dipakai untuk data berbeda");
-          return order;
-        }
-      }
+      initializeCustomers(state);
+      if(String(req.body.note || "").length>1000||String(req.body.reference || "").length>150)throw new Error("Catatan atau referensi pembayaran terlalu panjang");
+      const fingerprintPayload=['payment',order.id,type,method,amount,req.body.depositAmount ?? 0,req.body.customerId || '',req.body.excessAction || '',req.body.confirmDeposit===true,String(req.body.reference || ''),String(req.body.note || ''),String(req.body.poNumber || '')];
+      const operation=req.body.requestId?checkOperation(state,req.body.requestId,fingerprintPayload,req.user):null;
+      if(operation?.old)return order;
+      if(req.body.requestId){const previous=order.payments.find(p=>p.requestId===req.body.requestId);if(previous){if(previous.amount!==amount||previous.type!==type||previous.method!==method)throw new Error('Permintaan pembayaran sudah dipakai untuk data berbeda');return order;}}
       if (!Number.isFinite(amount) || amount < 0) throw new Error("Nominal pembayaran tidak valid");
       const outstanding = Math.max(0, order.total - order.paidAmount);
       const poNumber = String(req.body.poNumber || "").trim();
       const poAttachment = req.body.poAttachment || null;
-      if (type === "PAYMENT" && !method) throw new Error("Metode pembayaran wajib dipilih");
-      if (type === "PAYMENT" && amount <= 0) throw new Error("Nominal pembayaran wajib diisi");
-      if (amount > outstanding) throw new Error("Nominal diterima melebihi sisa tagihan");
+      if (type === "PAYMENT" && amount>0 && !method) throw new Error("Metode pembayaran wajib dipilih");
+      if (type === "PAYMENT" && amount <= 0 && !Number(req.body.depositAmount)) throw new Error("Nominal pembayaran wajib diisi");
+      if (amount > outstanding && !req.body.excessAction) throw new Error("Nominal diterima melebihi sisa tagihan");
+      if(type === "PO" && Number(req.body.depositAmount))throw new Error("Pencatatan PO tidak dapat memakai deposit; catat pembayaran secara terpisah");
       if (type === "PO" && !poNumber) throw new Error("Nomor PO wajib diisi");
       if (!order.paymentConfirmed) ensureShirtStock(state, order);
       if (poAttachment) {
@@ -748,9 +753,9 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
         if (!/^data:image\/(png|jpe?g|webp);base64,/i.test(String(poAttachment.dataUrl || ""))) throw new Error("Data gambar PO tidak valid");
         if (String(poAttachment.dataUrl).length > 3_500_000) throw new Error("Ukuran gambar PO maksimal 2,5 MB");
       }
-      const payment = { id: crypto.randomUUID(), requestId: req.body.requestId || null, method, type, amount, poNumber, poAttachment: poAttachment ? { name: text(poAttachment.name), type: text(poAttachment.type), dataUrl: poAttachment.dataUrl } : null, createdAt: now(), actor: req.user.name, actorId: req.user.id, note: text(req.body.note), sequence: order.payments.filter(payment => payment.type !== "PO" && Number(payment.amount) > 0).length + 1, orderTotal: order.total, paidBefore: order.paidAmount, paidAfter: order.paidAmount + amount, balanceAfter: Math.max(0, order.total - order.paidAmount - amount) };
-      order.payments.push(payment);
-      order.paidAmount += amount;
+      let allocation;
+      if(type==='PO')order.payments.push({id:crypto.randomUUID(),requestId:req.body.requestId || null,method,type,amount:0,poNumber,poAttachment:poAttachment?{name:text(poAttachment.name),type:text(poAttachment.type),dataUrl:poAttachment.dataUrl}:null,createdAt:now(),actor:req.user.name,actorId:req.user.id,note:text(req.body.note)});
+      else allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
       order.paymentConfirmed = true;
       order.confirmed = true; order.confirmedAt ||= now();
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
@@ -763,11 +768,25 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       for (const item of retailItems) activity(state, order, `Penjualan ${item.productName}: stok satuan dicatat; ${item.status === "DIAMBIL" ? "pesanan diambil" : "barang siap diserahkan"}`, req.user.name, { itemId: item.itemId, productName: item.productName });
       order.updatedAt = now();
       activity(state, order, `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
-      audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount });
+      audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount, depositUsed:allocation?.used || 0,depositCredit:allocation?.credit || 0 });
+      if(allocation?.credit)activity(state,order,"Kelebihan pembayaran disimpan sebagai deposit pelanggan",req.user.name);
+      if(allocation?.used)activity(state,order,"Pembayaran melalui deposit dicatat",req.user.name);
+      if(operation)finishOperation(state,req.body.requestId,operation.fingerprint,req.user,{orderId:order.id});
       return order;
     });
     res.json(result);
   } catch (error) { next(error); }
+});
+
+
+app.post('/api/orders/:id/cancel',requirePermission('deposit.manage'),async(req,res,next)=>{
+  try{
+    if(!['OWNER','ADMIN'].includes(req.user.role))return res.status(403).json({error:'Pembatalan pembayaran hanya untuk Owner/Admin'});
+    const result=await store.mutate(state=>{const order=state.orders.find(o=>o.id===req.params.id);if(!order)throw new Error('Pesanan tidak ditemukan');normalizeOrder(order);const wasCancelled=Boolean(order.cancelledAt);cancelCustomerOrder(state,order,req.body,req.user);if(!wasCancelled){activity(state,order,`Pesanan dibatalkan: ${order.cancelReason}. Stok fisik tidak otomatis dikembalikan.`,req.user.name);audit(state,req.user,'ORDER_CANCEL',`Membatalkan ${order.code}`,{orderId:order.id,reason:order.cancelReason,disposition:req.body.disposition});}return order;});res.json(result);
+  }catch(error){next(error);}
+});
+app.get('/api/orders/:id/cash-receipts',requirePermission('pos.payment'),async(req,res,next)=>{
+  try{const state=await store.read();if(!state.orders.some(o=>o.id===req.params.id))throw new Error('Pesanan tidak ditemukan');res.json((state.cashReceipts || []).filter(r=>r.orderId===req.params.id));}catch(error){next(error);}
 });
 
 app.patch("/api/orders/:id/deadline", async (req, res, next) => {
@@ -817,6 +836,7 @@ app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), as
 
 registerItemWorkflowRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder, activity, audit, now });
 registerOrderHistoryRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder });
+registerCustomerRoutes(app, { store, requirePermission, audit });
 
 app.patch("/api/orders/:id/status", async (req, res, next) => {
   if (!hasPermission(req.user, "projects.status") && !(req.body.status === STATUS.PICKED_UP && hasPermission(req.user, "orders.pickup"))) return res.status(403).json({ error: "Anda tidak memiliki akses mengubah status ini" });
@@ -1008,7 +1028,7 @@ app.use(express.static("public"));
 app.get("/{*path}", (_req, res) => res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status(400).json({ error: error.message || "Terjadi kesalahan" });
+  res.status([403,404,409].includes(error.status)?error.status:400).json({ error: error.message || "Terjadi kesalahan" });
 });
 
 await store.init();

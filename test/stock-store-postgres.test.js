@@ -1,10 +1,11 @@
+import { appendDeposit,allocateCustomerPayment,finishOperation } from '../lib/customer-deposits.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture({legacyLf=false}={}) {
+async function databaseFixture({legacyLf=false,legacyCustomer=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
  const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();delete data.stockSchemaVersion;
  if (legacyLf) {
@@ -13,6 +14,7 @@ async function databaseFixture({legacyLf=false}={}) {
   const materialIds=new Set(data.materials.map(m=>m.id));data.inventory=data.inventory.filter(row=>!row.materialId||materialIds.has(row.materialId));
   for(const p of data.products){delete p.rollStockBindings;delete p.rollStockSources;delete p.rollCapacities;}
  }
+ if(legacyCustomer){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;delete data.customerSchemaVersion;delete data.customers;delete data.depositLedger;delete data.cashReceipts;delete data.customerOperations;delete data.customerAccessVersion;}
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -54,4 +56,23 @@ test("LF width migration keeps a raw backup, preserves old balances, creates emp
  const added=f.getState().materials.filter(m=>m.lfRollGroup);assert.equal(added.length,16);assert(added.every(m=>f.getState().inventory.find(row=>row.materialId===m.id).quantity===0));assert.deepEqual(f.getState().orders,f.data.orders);
  const first=structuredClone(f.getState());await f.store.init();assert.deepEqual(f.getState(),first);assert.equal(f.backups.size,1);
  const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups'));const update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(backup<update);
+});
+
+
+test("customer migration backs up raw production state before adding empty ledgers without rewriting orders or inventory",async()=>{
+ const f=await databaseFixture({legacyCustomer:true});await f.store.init();assert.equal(f.store.customerBackupVerified,true);assert.deepEqual(f.backups.get('customer-deposits-v1'),f.data);assert.deepEqual(f.getState().orders,f.data.orders);assert.deepEqual(f.getState().inventory,f.data.inventory);assert.deepEqual(f.getState().customers,[]);assert.deepEqual(f.getState().depositLedger,[]);assert.equal(f.getState().customerSchemaVersion,1);
+ const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups'));const update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(backup<update);assert(f.queries.slice(0,backup).some(q=>q.sql.endsWith('FOR UPDATE')));const raw=structuredClone(f.backups.get('customer-deposits-v1'));await f.store.init();assert.deepEqual(f.backups.get('customer-deposits-v1'),raw);assert.equal(f.backups.size,1);
+});
+test("customer migration stops before modifying state when its durable backup fails",async()=>{
+ const f=await databaseFixture({legacyCustomer:true}),connect=f.store.pool.connect;f.store.pool.connect=async()=>{const connection=await connect();return {...connection,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return connection.query(sql,params);}};};const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');assert(!f.store.customerBackupVerified);
+});
+
+
+test("PostgreSQL deposit spending, cash receipt and order payment share one locked atomic patch and rollback together",async()=>{
+ const f=await databaseFixture();await f.store.init();const user={id:'owner',name:'Owner'};
+ await f.store.mutate(state=>{state.customers.push({id:'pg-c',name:'Customer',phone:'081234567890'});appendDeposit(state,'pg-c',20000,'OPENING',user);state.orders.push({id:'pg-o',code:'PG',customerId:'pg-c',customerName:'Customer',phone:'081234567890',total:125000,paidAmount:0,payments:[],items:[],status:'DESAIN',createdAt:new Date().toISOString()});});
+ const before=structuredClone(f.getState());f.queries.length=0;
+ await f.store.mutate(state=>{allocateCustomerPayment(state,state.orders.find(o=>o.id==='pg-o'),{amount:105000,depositAmount:20000,method:'TRANSFER',requestId:'pg-pay'},user,{canUse:true});finishOperation(state,'pg-pay','pg-test',user,{orderId:'pg-o'});});
+ const updates=f.queries.filter(q=>q.sql.startsWith('UPDATE app_state SET data = data ||'));assert.equal(updates.length,1);const patch=JSON.parse(updates[0].params[0]);for(const key of ['orders','depositLedger','cashReceipts','customerOperations'])assert(Object.hasOwn(patch,key));assert(!Object.hasOwn(patch,'inventory'));assert.equal(f.getState().orders.find(o=>o.id==='pg-o').paidAmount,125000);assert(f.queries.some(q=>q.sql.endsWith('FOR UPDATE')));assert.equal(f.queries.at(-1).sql,'COMMIT');assert.deepEqual(f.getState().inventory,before.inventory);
+ const paid=structuredClone(f.getState());await assert.rejects(f.store.mutate(state=>{appendDeposit(state,'pg-c',50000,'CORRECTION',user);state.orders[0].paidAmount=999;throw new Error('financial rollback');}));assert.deepEqual(f.getState(),paid);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
 });
