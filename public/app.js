@@ -1,3 +1,4 @@
+import { mountPosSearch } from "./pos-search.js";
 import { createCustomersUI } from "./customers-ui.js";
 import { depositInvoiceLines } from "./customer-documents.js";
 import { openSheetProfiles } from "./sheet-profile-ui.js";
@@ -38,14 +39,14 @@ function localDateTimeInput(value) {
 }
 function makassarInputToIso(value) { return value ? new Date(`${value}:00+08:00`).toISOString() : ""; }
 const defaultProductCategories = [
-  ["all", "Semua"], ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
+  ["all", "Home"], ["outdoor", "Outdoor"], ["print-a3", "Print A3+"], ["lf-poster", "LF Poster"],
   ["lf-sticker", "LF Sticker"], ["display-banner", "Display & Banner"],
   ["merchandise", "Merchandise"], ["sablon-dtf", "Sablon DTF"], ["atk", "ATK"], ["akrilik", "Akrilik"], ["stempel", "Stempel"]
 ];
 function slug(value) { return String(value || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
 function productCategories() {
   const labels = state.catalogOptions?.categories?.length ? state.catalogOptions.categories : defaultProductCategories.filter(([id]) => id !== "all").map(([, label]) => label);
-  return [["all", "Semua"], ...labels.map((label) => [categoryId(label), label])];
+  return [["all", "Home"], ...labels.map((label) => [categoryId(label), label])];
 }
 function categoryId(label, kind = "products") { return state.catalogOptions[kind === "products" ? "categoryKeys" : "materialCategoryKeys"]?.[label] || slug(label); }
 function canManageSettings() { return ["OWNER", "ADMIN"].includes(state.currentUser?.role); }
@@ -170,7 +171,12 @@ async function load() {
   assistance.onLoad();
 }
 
+let productSearchCleanup;
 function render() {
+  if (state.view !== "pos") {
+    productSearchCleanup?.();
+    productSearchCleanup = null;
+  }
   document.querySelectorAll(".nav-item").forEach((button) => {
     const active = button.dataset.view === state.view;
     button.classList.toggle("active", active);
@@ -410,19 +416,15 @@ function templateOptionsHtml(product) {
   return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div>${quantitySelectorHtml()}<label class="field template-design-quantity"><span>Jumlah Design Template</span><input id="template-design-quantity" type="number" min="1" step="1" value="1"></label>`;
 }
 
+const catalogRocket = '<svg class="catalog-heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5c3-2 6-2 7-2 0 1 0 4-2 7l-6 6-5-5 6-6Z"/><circle cx="16" cy="8" r="1.5"/><path d="m8 11-4 1-2 4 6-1m5 1-1 4-4 2 1-6m-3 2-3 3"/></svg>';
 function catalogCardHtml(product, promo = false) {
-  return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}">
-    <div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong><span>${escapeHtml(product.category)}</span></div>
-    ${promo ? `<div class="catalog-promo-copy"><b>DISKON</b><p>${escapeHtml(discountLabel(product))}</p></div>` : ""}
-    <div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong>`}<small>${escapeHtml(product.unitLabel)}</small></div>
-  </button>`;
+  return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}"><div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong></div><div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><small>${escapeHtml(product.unitLabel)}</small><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong><small>${escapeHtml(product.unitLabel)}</small>`}</div></button>`;
 }
 
 function allCatalogHtml() {
   const bestsellers = state.products.filter((product) => product.featured);
   const promos = state.products.filter((product) => discountActive(product));
-  return `<div class="catalog-section"><div class="catalog-heading"><div><span>A</span><div><h3>Produk Terlaris</h3><p>Produk yang paling sering dipilih kasir.</p></div></div><b>${bestsellers.length} produk</b></div><div class="catalog-grid">${bestsellers.map((product) => catalogCardHtml(product)).join("") || '<div class="catalog-empty">Belum ada produk terlaris.</div>'}</div></div>
-    <div class="catalog-section promo-section"><div class="catalog-heading"><div><span>B</span><div><h3>Produk Sedang Promo</h3><p>Promo aktif akan hilang otomatis setelah periodenya berakhir.</p></div></div><b>${promos.length} promo aktif</b></div><div class="catalog-grid">${promos.map((product) => catalogCardHtml(product, true)).join("") || '<div class="catalog-empty">Belum ada promo yang sedang aktif.</div>'}</div></div>`;
+  return `<div class="pos-home"><section class="catalog-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Terlaris</h3></div><div class="catalog-grid">${bestsellers.map((product) => catalogCardHtml(product)).join("") || '<div class="catalog-empty">Belum ada produk terlaris.</div>'}</div></section><section class="catalog-section promo-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Sedang Promo</h3></div><div class="catalog-grid">${promos.map((product) => catalogCardHtml(product, true)).join("") || '<div class="catalog-empty">Belum ada promo yang sedang aktif.</div>'}</div></section></div>`;
 }
 
 function productConfigurationHtml(product) {
@@ -479,9 +481,7 @@ function renderPos() {
     : `<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid pos-layout">
     <aside class="pos-categories" aria-label="Kategori produk"><div class="pos-category-heading"><strong>Kategori</strong>${canManageSettings() ? '<button class="category-settings-button" type="button" id="configure-category-tabs" aria-label="Atur urutan kategori" title="Atur urutan kategori">✎</button>' : ""}</div><button type="button" class="pos-category-toggle" aria-expanded="false" aria-controls="pos-category-list">Kategori: ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "Semua")} <span class="ui-chevron" aria-hidden="true"></span></button><div id="pos-category-list" class="category-tabs" role="tablist" aria-label="Kategori produk" aria-orientation="vertical">${categoryTabs}</div></aside>
-    <section class="panel"><div class="panel-head product-panel-head"><h2>${state.editingOrderId ? "Edit Draft Pesanan" : "Produk"}</h2><div class="product-search-wrap"><span>⌕</span><input id="product-search" type="search" placeholder="Cari produk…" autocomplete="off"><kbd>Ctrl K</kbd><div id="search-popover" class="search-popover hidden"></div></div></div><div class="panel-body">
-      <div class="category-content">${productContent}</div>
-    </div></section>
+    <section class="pos-workspace" aria-label="Pencarian dan katalog produk"><div class="pos-search-shell"><div class="pos-search-row"><span class="pos-search-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg></span><input id="product-search" type="search" placeholder="Cari nama produk..." aria-label="Cari nama produk di semua kategori" role="combobox" aria-autocomplete="list" aria-controls="pos-search-results" aria-expanded="false" autocomplete="off"><kbd>Ctrl K</kbd></div><div id="search-popover" class="search-popover" hidden><div id="pos-search-results" class="search-results" role="listbox" aria-label="Hasil pencarian produk"></div></div><span class="visually-hidden" data-search-status role="status" aria-live="polite"></span></div>${state.editingOrderId?'<p class="pos-editing-label">Edit Draft Pesanan</p>':''}<div class="panel pos-catalog-panel"><div class="panel-body"><div class="category-content">${productContent}</div></div></div></section>
     <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
   bindPos();
@@ -724,16 +724,6 @@ function syncDraft(form) {
   state.draft = { ...state.draft, customerName: values.customerName || "", phone: values.phone || "", deadline: values.deadline || "", fileStatus: values.fileStatus || "SIAP_CETAK", fileReadiness: values.fileReadiness || state.draft.fileReadiness || "UNCONFIRMED" };
 }
 
-function searchPopoverHtml(query = "") {
-  const normalized = query.trim().toLowerCase();
-  const products = normalized
-    ? state.products.filter((product) => `${product.name} ${product.category}`.toLowerCase().includes(normalized)).slice(0, 7)
-    : state.products.filter((product) => product.featured).slice(0, 4);
-  const title = normalized ? "Saran pencarian" : "Quick Search · Bestseller";
-  if (!products.length) return `<div class="search-popover-head">${title}</div><div class="search-empty">Produk tidak ditemukan</div>`;
-  return `<div class="search-popover-head">${title}</div><div class="search-results">${products.map((product, index) => `<button type="button" class="search-result ${index === 0 ? "keyboard-active" : ""}" data-search-product="${product.id}"><span class="search-result-icon">▦</span><span><strong>${escapeHtml(product.name)}</strong><small>${escapeHtml(product.category)} · ${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}</small></span><b>›</b></button>`).join("")}</div><div class="search-help">↑↓ Navigasi &nbsp; Enter Pilih &nbsp; Esc Tutup</div>`;
-}
-
 function selectSearchProduct(productId) {
   const product = state.products.find((item) => item.id === productId);
   if (!product) return;
@@ -742,44 +732,23 @@ function selectSearchProduct(productId) {
   state.selectedCategory = categoryKey(product);
   renderPos();
   openProductConfigurator(product.id);
+  if (dialog.open) {
+    const identity = state.currentUser?.id;
+    dialog.addEventListener('close', () => {
+      if (!dialog.open && state.view === 'pos' && state.currentUser?.id === identity && window.matchMedia('(pointer:fine)').matches) {
+        root.querySelector('#product-search')?.focus({ preventScroll: true });
+      }
+    }, { once: true });
+  }
 }
 
 function bindProductSearch() {
-  const search = document.querySelector("#product-search");
-  const popover = document.querySelector("#search-popover");
-  if (!search || !popover) return;
-  let activeIndex = 0;
-  const refresh = () => {
-    popover.innerHTML = searchPopoverHtml(search.value);
-    popover.classList.remove("hidden");
-    activeIndex = 0;
-    popover.querySelectorAll("[data-search-product]").forEach((button) => button.onclick = () => selectSearchProduct(button.dataset.searchProduct));
-  };
-  const move = (direction) => {
-    const results = [...popover.querySelectorAll("[data-search-product]")];
-    if (!results.length) return;
-    activeIndex = (activeIndex + direction + results.length) % results.length;
-    results.forEach((item, index) => item.classList.toggle("keyboard-active", index === activeIndex));
-  };
-  search.addEventListener("focus", refresh);
-  search.addEventListener("input", refresh);
-  search.addEventListener("keydown", (event) => {
-    if (event.key === "ArrowDown") { event.preventDefault(); move(1); }
-    if (event.key === "ArrowUp") { event.preventDefault(); move(-1); }
-    if (event.key === "Enter") {
-      const result = popover.querySelectorAll("[data-search-product]")[activeIndex];
-      if (result) { event.preventDefault(); selectSearchProduct(result.dataset.searchProduct); }
-    }
-    if (event.key === "Escape") { popover.classList.add("hidden"); search.blur(); }
+  productSearchCleanup?.();
+  productSearchCleanup = mountPosSearch({
+    root, products: state.products, escapeHtml,
+    price: product => rupiah.format(promoPrice(product, product.price)),
+    onSelect: selectSearchProduct
   });
-  document.onkeydown = (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
-      event.preventDefault(); search.focus();
-    }
-  };
-  document.onclick = (event) => {
-    if (!event.target.closest(".product-search-wrap")) popover.classList.add("hidden");
-  };
 }
 
 function bindProductConfiguration(onAdd, sheetSaved = null) {
