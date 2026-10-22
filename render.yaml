@@ -1,0 +1,35 @@
+# Production deployment. Review current pricing in Render before applying.
+# Use the smallest paid plans: free Postgres expires after 30 days.
+services:
+  - type: web
+    name: manna-pos
+    runtime: node
+    region: singapore
+    plan: 0.5c-512mb
+    repo: https://github.com/mpb-ui/Manna-POS
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: >-
+      node -e 'if (!process.env.DATABASE_URL) { console.error("DATABASE_URL is required"); process.exit(1); }' && npm start
+    autoDeployTrigger: commit
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: manna-pos-db
+          property: connectionString
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: APP_PIN
+        sync: false
+
+databases:
+  - name: manna-pos-db
+    region: singapore
+    plan: 0.1c-256mb
+    diskSizeGB: 1
+    databaseName: manna_pos_db
+    user: manna_pos_db_user
+    ipAllowList: []
