@@ -4,13 +4,26 @@ Render menjadi tujuan deployment Manna POS. Source: `mpb-ui/Manna-POS`, branch `
 Konfigurasi infrastruktur ada di `render.yaml`. Railway tetap menjadi sumber data
 lama sampai pemindahan dan pemeriksaan data selesai.
 
+## Resource aktif
+
+Resource Render dibuat langsung di workspace **mpb** pada 22 Oktober 2026:
+
+- Web service: `srv-dbcnj6mi0phs73fe1rpg`, https://manna-pos.onrender.com
+- Database: `dpg-dbcnd3favr4c73dqtap0-a`, database `manna_pos_db`, user `manna_pos_db_user`.
+- Web service dashboard: https://dashboard.render.com/web/srv-dbcnj6mi0phs73fe1rpg
+
+Environment awal dikelola langsung di Render. Jangan membuat resource duplikat.
+`render.yaml` diselaraskan dengan resource ini untuk dokumentasi dan adopsi Blueprint
+di kemudian hari; resource belum dikelola oleh Blueprint sampai adopsi itu dilakukan.
+`APP_PIN` awal dibuat acak dan dapat dilihat oleh Owner di Environment web service.
+
 ## Infrastruktur
 
 | Resource | Konfigurasi |
 | --- | --- |
 | Web service | `manna-pos`, Node.js, Singapore, `0.5c-512mb` |
 | PostgreSQL | `manna-pos-db`, Singapore, `0.1c-256mb`, penyimpanan awal 1 GB |
-| Build / start | `npm ci --omit=dev` / `npm start` |
+| Build / start | `npm ci --omit=dev` / pemeriksaan `DATABASE_URL`, lalu `npm start` |
 | Health check | `/api/health` |
 | Auto-deploy | Commit pada `main`, melalui integrasi GitHub yang terhubung ke Render |
 | Database | Koneksi internal; koneksi publik diblokir secara default |
@@ -21,7 +34,10 @@ dapat diperbesar bila data lama membutuhkan ruang lebih dari 1 GB. Jangan memaka
 Postgres Free untuk data operasional: paket itu kedaluwarsa setelah 30 hari dan
 dihapus setelah masa tenggang jika tidak ditingkatkan. Web Free juga tidur saat idle.
 
-## Membuat resource
+## Adopsi Blueprint atau instalasi ulang
+
+Resource aktif di atas sudah dibuat. Langkah berikut adalah untuk adopsi Blueprint
+atau instalasi baru; tinjau resource yang akan dikelola agar tidak membuat duplikat.
 
 1. Pastikan workspace Render adalah **mpb** dan GitHub terhubung dengan akses ke repo ini.
 2. Buka https://dashboard.render.com/blueprint/new?repo=https://github.com/mpb-ui/Manna-POS
@@ -86,7 +102,8 @@ agar rollback tidak menghilangkan transaksi.
 - Nonaktifkan auto-deploy aplikasi lama di Railway setelah cutover terverifikasi.
   Menghapus `railway.toml` saja tidak memutus integrasi deploy Railway.
 
-Konfigurasi resource dan environment yang tercantum di Blueprint dikelola dari
-`render.yaml`; perubahan manual pada field tersebut bisa ditimpa saat sync berikutnya.
+Jika resource kemudian diadopsi oleh Blueprint, konfigurasi resource dan environment
+yang tercantum dikelola dari `render.yaml`; perubahan manual pada field tersebut bisa
+ditimpa saat sync berikutnya. Selama belum diadopsi, pengaturan live dikelola di Render.
 `APP_PIN` dikelola langsung di Render setelah pembuatan awal. Jangan menggandakan
 perintah deploy manual ketika push sudah memicu auto-deploy.

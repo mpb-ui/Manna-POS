@@ -9,7 +9,8 @@ services:
     repo: https://github.com/mpb-ui/Manna-POS
     branch: main
     buildCommand: npm ci --omit=dev
-    startCommand: npm start
+    startCommand: >-
+      node -e 'if (!process.env.DATABASE_URL) { console.error("DATABASE_URL is required"); process.exit(1); }' && npm start
     autoDeployTrigger: commit
     healthCheckPath: /api/health
     envVars:
@@ -29,6 +30,6 @@ databases:
     region: singapore
     plan: 0.1c-256mb
     diskSizeGB: 1
-    databaseName: manna_pos
-    user: manna_pos
+    databaseName: manna_pos_db
+    user: manna_pos_db_user
     ipAllowList: []
