@@ -81,7 +81,15 @@ Tanpa `DATABASE_URL`, aplikasi memakai penyimpanan memory untuk development. Unt
 | `DATABASE_URL` | PostgreSQL connection string |
 | `APP_PIN` | PIN login operasional |
 | `SESSION_SECRET` | Secret untuk cookie sesi |
-| `NODE_ENV` | Isi `production` pada Railway |
+| `NODE_ENV` | Isi `production` pada Render |
+
+## Deployment
+
+Deployment Manna POS menggunakan **Render** dari branch `main`. Blueprint pada
+[`render.yaml`](render.yaml) menyiapkan web service dan PostgreSQL di Singapore,
+koneksi database internal, secret sesi baru, serta auto-deploy dari GitHub.
+Panduan pembuatan resource, pemindahan data Railway, dan verifikasi cutover tersedia
+di [docs/render-deployment.md](docs/render-deployment.md).
 
 ## Catatan data awal
 
