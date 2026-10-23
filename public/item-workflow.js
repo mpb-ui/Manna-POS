@@ -53,7 +53,8 @@ export function projectJobs(orders) {
 }
 
 export function roleCanAdvance(role, current, target) {
-  if (["OWNER", "ADMIN", "MANAGER", "CASHIER"].includes(role)) return true;
+  if (["OWNER", "ADMIN", "MANAGER"].includes(role)) return true;
+  if (role === "CASHIER") return current === "FINISHING" && target === "SELESAI" || current === "SELESAI" && target === "DIAMBIL";
   if (role === "DESIGN") return current === "DESAIN" && target === "CETAK";
   if (role === "PRINT") return ["CETAK", "FINISHING"].includes(current) && ["FINISHING", "SELESAI"].includes(target);
   return false;

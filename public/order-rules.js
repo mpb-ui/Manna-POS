@@ -1,6 +1,9 @@
 // Shared, read-only rules. File readiness is confirmed by a person, not inferred
 // from a design fee or from the historic "SIAP_CETAK" order field.
 export const FILE_READINESS = ["UNCONFIRMED", "MISSING", "RECEIVED", "READY"];
+export function paymentHistoryVisible(role) {
+  return ["OWNER", "MANAGER", "CASHIER"].includes(role);
+}
 export function witaDay(value = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
 }

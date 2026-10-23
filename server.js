@@ -10,7 +10,7 @@ import { LF_ROLL_VERSION } from "./lib/lf-rolls.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
 import { workflowSnapshot, checklistForOrder } from "./lib/order-assistance.js";
-import { FILE_READINESS, completeness, cancelled } from "./public/order-rules.js";
+import { FILE_READINESS, completeness, cancelled, paymentHistoryVisible } from "./public/order-rules.js";
 import { assetReport } from "./lib/assets.js";
 import { aggregateReport } from "./lib/reports.js";
 import { normalizeFinishingTiers } from "./public/finishing-pricing.js";
@@ -23,7 +23,7 @@ import { Store } from "./lib/store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
 import { DTF_COLORS, DTF_SIZES, DTF_SHIRT_MATERIALS } from "./lib/dtf-catalog.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
-import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRole, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
+import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRole, canRequestStatus, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -142,6 +142,7 @@ function sanitizeProduct(product, user) {
 function sanitizeOrder(order, user) {
   const copy = structuredClone(order);
   const canSeeMoney = hasPermission(user, "projects.money");
+  if (!paymentHistoryVisible(user.role)) { delete copy.payments; delete copy.cashReceipts; }
   if (!canSeeMoney) {
     delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
     copy.items.forEach((item) => {
@@ -678,7 +679,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
       state.orders.unshift(order);
       return order;
     });
-    res.status(201).json(result);
+    res.status(201).json(sanitizeOrder(result, req.user));
   } catch (error) { next(error); }
 });
 
@@ -718,7 +719,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       audit(state, req.user, "ORDER_UPDATE", `Memperbarui draft ${order.code}`, { orderId: order.id });
       return order;
     });
-    res.json(result);
+    res.json(sanitizeOrder(result, req.user));
   } catch (error) { next(error); }
 });
 
@@ -774,7 +775,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       if(operation)finishOperation(state,req.body.requestId,operation.fingerprint,req.user,{orderId:order.id});
       return order;
     });
-    res.json(result);
+    res.json(sanitizeOrder(result, req.user));
   } catch (error) { next(error); }
 });
 
@@ -782,10 +783,11 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
 app.post('/api/orders/:id/cancel',requirePermission('deposit.manage'),async(req,res,next)=>{
   try{
     if(!['OWNER','ADMIN'].includes(req.user.role))return res.status(403).json({error:'Pembatalan pembayaran hanya untuk Owner/Admin'});
-    const result=await store.mutate(state=>{const order=state.orders.find(o=>o.id===req.params.id);if(!order)throw new Error('Pesanan tidak ditemukan');normalizeOrder(order);const wasCancelled=Boolean(order.cancelledAt);cancelCustomerOrder(state,order,req.body,req.user);if(!wasCancelled){activity(state,order,`Pesanan dibatalkan: ${order.cancelReason}. Stok fisik tidak otomatis dikembalikan.`,req.user.name);audit(state,req.user,'ORDER_CANCEL',`Membatalkan ${order.code}`,{orderId:order.id,reason:order.cancelReason,disposition:req.body.disposition});}return order;});res.json(result);
+    const result=await store.mutate(state=>{const order=state.orders.find(o=>o.id===req.params.id);if(!order)throw new Error('Pesanan tidak ditemukan');normalizeOrder(order);const wasCancelled=Boolean(order.cancelledAt);cancelCustomerOrder(state,order,req.body,req.user);if(!wasCancelled){activity(state,order,`Pesanan dibatalkan: ${order.cancelReason}. Stok fisik tidak otomatis dikembalikan.`,req.user.name);audit(state,req.user,'ORDER_CANCEL',`Membatalkan ${order.code}`,{orderId:order.id,reason:order.cancelReason,disposition:req.body.disposition});}return order;});res.json(sanitizeOrder(result, req.user));
   }catch(error){next(error);}
 });
 app.get('/api/orders/:id/cash-receipts',requirePermission('pos.payment'),async(req,res,next)=>{
+  if(!paymentHistoryVisible(req.user.role))return res.status(403).json({error:'Riwayat pembayaran hanya tersedia untuk Owner, Manager, dan Kasir'});
   try{const state=await store.read();if(!state.orders.some(o=>o.id===req.params.id))throw new Error('Pesanan tidak ditemukan');res.json((state.cashReceipts || []).filter(r=>r.orderId===req.params.id));}catch(error){next(error);}
 });
 
@@ -839,7 +841,7 @@ registerOrderHistoryRoutes(app, { store, requirePermission, normalizeOrder, sani
 registerCustomerRoutes(app, { store, requirePermission, audit });
 
 app.patch("/api/orders/:id/status", async (req, res, next) => {
-  if (!hasPermission(req.user, "projects.status") && !(req.body.status === STATUS.PICKED_UP && hasPermission(req.user, "orders.pickup"))) return res.status(403).json({ error: "Anda tidak memiliki akses mengubah status ini" });
+  if (!canRequestStatus(req.user, req.body.status)) return res.status(403).json({ error: "Anda tidak memiliki akses mengubah status ini" });
   try {
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);

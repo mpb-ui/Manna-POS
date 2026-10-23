@@ -772,3 +772,5 @@ input[name="deadline"]{cursor:pointer}
 .project-panel .project-phone{color:var(--ink)}
 .project-deadline-warning{display:inline-block;width:14px;height:14px;margin-left:4px;vertical-align:-2px}
 .project-deadline-tail{display:inline-block;white-space:nowrap}
+
+.detail-body > .payment-form-wrap:first-child { margin: 0 0 16px; }
