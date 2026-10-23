@@ -5,7 +5,7 @@ import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture({legacyLf=false,legacyCustomer=false}={}) {
+async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
  const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();delete data.stockSchemaVersion;
  if (legacyLf) {
@@ -15,6 +15,7 @@ async function databaseFixture({legacyLf=false,legacyCustomer=false}={}) {
   for(const p of data.products){delete p.rollStockBindings;delete p.rollStockSources;delete p.rollCapacities;}
  }
  if(legacyCustomer){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;delete data.customerSchemaVersion;delete data.customers;delete data.depositLedger;delete data.cashReceipts;delete data.customerOperations;delete data.customerAccessVersion;}
+ if(legacyInvoice){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.invoiceNumberVersion;delete data.invoiceNumberMigration;data.orders[0].code='MP-20261023-0001';data.cashReceipts=[{orderId:'legacy',orderCode:'MP-20261023-0001',amount:123}];}
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -75,4 +76,28 @@ test("PostgreSQL deposit spending, cash receipt and order payment share one lock
  await f.store.mutate(state=>{allocateCustomerPayment(state,state.orders.find(o=>o.id==='pg-o'),{amount:105000,depositAmount:20000,method:'TRANSFER',requestId:'pg-pay'},user,{canUse:true});finishOperation(state,'pg-pay','pg-test',user,{orderId:'pg-o'});});
  const updates=f.queries.filter(q=>q.sql.startsWith('UPDATE app_state SET data = data ||'));assert.equal(updates.length,1);const patch=JSON.parse(updates[0].params[0]);for(const key of ['orders','depositLedger','cashReceipts','customerOperations'])assert(Object.hasOwn(patch,key));assert(!Object.hasOwn(patch,'inventory'));assert.equal(f.getState().orders.find(o=>o.id==='pg-o').paidAmount,125000);assert(f.queries.some(q=>q.sql.endsWith('FOR UPDATE')));assert.equal(f.queries.at(-1).sql,'COMMIT');assert.deepEqual(f.getState().inventory,before.inventory);
  const paid=structuredClone(f.getState());await assert.rejects(f.store.mutate(state=>{appendDeposit(state,'pg-c',50000,'CORRECTION',user);state.orders[0].paidAmount=999;throw new Error('financial rollback');}));assert.deepEqual(f.getState(),paid);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
+});
+
+test("invoice conversion backs up raw PostgreSQL state under lock before updating references", async () => {
+ const f = await databaseFixture({legacyInvoice:true});
+ await f.store.init();
+ assert.equal(f.store.invoiceBackupVerified,true);
+ assert.deepEqual(f.backups.get('invoice-numbers-v1'),f.data);
+ assert.equal(f.getState().orders[0].code,'INV-102326-001');
+ assert.equal(f.getState().cashReceipts[0].orderCode,'INV-102326-001');
+ assert.equal(f.getState().cashReceipts[0].amount,123);
+ assert.deepEqual(f.getState().orders[0].payments,f.data.orders[0].payments);
+ assert.deepEqual(f.getState().inventory,f.data.inventory);
+ const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups'));
+ const update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));
+ assert(backup<update);assert(f.queries.slice(0,backup).some(q=>q.sql.endsWith('FOR UPDATE')));
+ const converted=structuredClone(f.getState());await f.store.init();
+ assert.deepEqual(f.getState(),converted);assert.equal(f.backups.size,1);
+});
+
+test("invoice conversion stops without changing data if its PostgreSQL backup fails", async () => {
+ const f=await databaseFixture({legacyInvoice:true}),connect=f.store.pool.connect;
+ f.store.pool.connect=async()=>{const connection=await connect();return {...connection,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return connection.query(sql,params);}};};
+ const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);
+ assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');assert(!f.store.invoiceBackupVerified);
 });

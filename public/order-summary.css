@@ -76,3 +76,10 @@
   .pos-layout .sticky-summary .checkout-footer .summary-row.total span:last-child{font-size:clamp(20px,6vw,24px);line-height:1.25}
   .pos-layout .sticky-summary .checkout-actions>button{font-size:14px;padding:8px}
 }
+
+.checkout-deadline-controls{display:grid;grid-template-columns:minmax(120px,1fr) 72px 8px 78px;gap:6px;align-items:center}
+.checkout-deadline-controls input,.checkout-deadline-controls select{min-width:0;width:100%;font-variant-numeric:tabular-nums}
+#checkout .checkout-deadline-controls select{padding-left:8px!important;padding-right:24px!important;background-position:right 6px center!important}
+.checkout-deadline>span small{font-weight:400;color:#6b7e9a}
+.deadline-legacy-note{color:#6b7e9a;line-height:1.4}
+@media(max-width:420px){.checkout-deadline-controls{grid-template-columns:minmax(105px,1fr) 64px 6px 68px;gap:4px}}

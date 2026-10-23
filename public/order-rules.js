@@ -52,3 +52,10 @@ export function itemChecklist(item, product = {}) {
   steps.push({ key: "quantity", phase: "FINISHING", label: "Periksa jumlah & kualitas akhir" });
   return steps;
 }
+
+export function canCancelOrder(order, role, permissions = []) {
+  if (cancelled(order)) return false;
+  if (role === "OWNER" && permissions.includes("deposit.manage")) return true;
+  const unpaid = order.status === "MENUNGGU_PEMBAYARAN" && !order.paymentConfirmed && !Number(order.paidAmount || 0) && !(order.payments || []).some(payment => payment.type === "PO" || Number(payment.amount) > 0);
+  return unpaid && permissions.includes("pos.edit");
+}
