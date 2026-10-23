@@ -24,7 +24,7 @@ import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
 import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
 import { createOrderAssistance, briefingProfileOptions } from "./order-assistance-ui.js";
-import { needsFile, unconfirmedDraft, cancelled } from "./order-rules.js";
+import { needsFile, unconfirmedDraft, cancelled, paymentHistoryVisible } from "./order-rules.js";
 import { finishingPriceForUnits, normalizeFinishingTiers, manualAreaFinishing, manualLfCutting } from "./finishing-pricing.js";
 import { mountEmployees, hasUnsavedPayroll, discardPayrollDrafts, clearEmployeeSession } from "./employees-ui.js";
 installDatePickers();
@@ -1300,7 +1300,7 @@ function itemWorkflowHtml(order, item) {
   if (item.stockTiming === "SALE") return `<div class="item-workflow"><strong class="item-status">Barang Dagangan · ${escapeHtml(state.statusLabels[item.status] || item.status)}</strong></div>`;
   const editableDeadline = ["OWNER", "CASHIER"].includes(state.currentUser.role) || state.currentUser.role === "MANAGER" && can("pos.edit");
   const active = ["DESAIN", "CETAK", "FINISHING", "SELESAI"].includes(item.status);
-  const canAdvance = can("projects.status") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item));
+  const canAdvance = (can("projects.status") || state.currentUser.role === "CASHIER" && can("orders.pickup") && item.status === "FINISHING") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item));
   return `<div class="item-workflow"><strong class="item-status">${escapeHtml(state.statusLabels[item.status])}</strong><label class="item-pic-field"><span>PIC</span>${can("projects.assign") && active ? `<select class="project-pic-select pic-${picColor(item)}" data-item-pic="${item.itemId}" aria-label="PIC ${escapeHtml(item.productName)}"><option value="" disabled ${item.designPic ? "" : "selected"}>-</option>${picSelectOptions(item)}</select>` : `<b class="project-pic-static pic-${picColor(item)}">${escapeHtml(item.designPic || "-")}</b>`}</label><div class="item-deadline"><span>Deadline</span>${editableDeadline ? `<form data-item-deadline="${item.itemId}"><input type="datetime-local" name="deadline" aria-label="Deadline ${escapeHtml(item.productName)} (WITA)" value="${localDateTimeInput(item.deadline)}"><button type="submit" class="secondary">Simpan</button></form>` : `<b>${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "-"}</b>`}</div>${canAdvance ? `<button type="button" class="primary item-advance" data-item-advance="${item.itemId}">${item.status === "FINISHING" ? "Selesaikan Produk" : nextAction(item)}</button>` : ""}</div>`;
 }
 
@@ -1325,15 +1325,15 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
   const outstanding = showMoney && !cancelled(order) ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
   const detail = document.querySelector("#order-detail");
-  const actionableItems = order.items.filter(item => can("projects.status") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item)));
-  const primaryItem = actionableItems.find(item => item.itemId === focusedItemId) || actionableItems[0];
+  const paymentForm = can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : "";
   detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${order.code}</span><h2 style="margin:5px 0 0">${escapeHtml(order.customerName)}</h2></div><button class="detail-close">×</button></div><div class="detail-body">
+    ${isWaiting ? paymentForm : ""}
     <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
     <div class="order-items-detail">${order.items.map((item,index) => `<div class="detail-item status-${item.status.toLowerCase()}" data-detail-item="${item.itemId}" tabindex="-1"><span class="item-number">${index+1}</span><div class="detail-item-content">${itemDetail(item)}${itemWorkflowHtml(order,item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
     ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
     <div id="order-assistance" class="order-assistance"></div>
-    ${showMoney && can("orders.view") ? `<section class="payment-ledger"><h3>Riwayat pembayaran</h3>${paymentReceipts(order).map(payment => `<div class="payment-ledger-row"><div><strong>${rupiah.format(payment.amount)} · ${escapeHtml(payment.method)}</strong><small>${dateFormat.format(new Date(payment.createdAt))} WITA · ${escapeHtml(payment.actor || "Riwayat lama")}</small></div><button class="secondary" data-print-payment="${escapeHtml(payment.id)}">Cetak Bukti #${payment.sequence}</button></div>`).join("") || '<p>Belum ada pembayaran diterima.</p>'}${(order.payments || []).filter(payment => payment.type === "PO").map(payment => `<p>PO / Tempo · ${escapeHtml(payment.poNumber)} · ${dateFormat.format(new Date(payment.createdAt))} WITA</p>`).join("")}</section>` : ""}
-    ${can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : ""}
+    ${showMoney && can("orders.view") && paymentHistoryVisible(state.currentUser.role) ? `<section class="payment-ledger"><h3>Riwayat pembayaran</h3>${paymentReceipts(order).map(payment => `<div class="payment-ledger-row"><div><strong>${rupiah.format(payment.amount)} · ${escapeHtml(payment.method)}</strong><small>${dateFormat.format(new Date(payment.createdAt))} WITA · ${escapeHtml(payment.actor || "Riwayat lama")}</small></div><button class="secondary" data-print-payment="${escapeHtml(payment.id)}">Cetak Bukti #${payment.sequence}</button></div>`).join("") || '<p>Belum ada pembayaran diterima.</p>'}${(order.payments || []).filter(payment => payment.type === "PO").map(payment => `<p>PO / Tempo · ${escapeHtml(payment.poNumber)} · ${dateFormat.format(new Date(payment.createdAt))} WITA</p>`).join("")}</section>` : ""}
+    ${!isWaiting ? paymentForm : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
   </div><div class="detail-actions">
       ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}
@@ -1342,7 +1342,6 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
       ${showMoney && can("orders.view") ? '<button id="print-invoice" class="secondary">Nota Ulang</button>' : ""}
       ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
       ${isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
-      ${primaryItem ? `<span class="detail-action-product">Produk ${order.items.indexOf(primaryItem)+1}: ${escapeHtml(primaryItem.productName)}</span><button type="button" class="primary" data-item-advance="${primaryItem.itemId}">${primaryItem.status === "FINISHING" ? "Selesaikan Produk" : nextAction(primaryItem)}</button>` : ""}
       ${(can("projects.status") || can("orders.pickup")) && order.status === "SELESAI" && roleCanAdvance(state.currentUser.role, order.status, "DIAMBIL") ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
     </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
@@ -1399,7 +1398,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   dialog.showModal();
   customersUI.mountOrder(detail,order).catch(error=>toast(error.message,"error"));
   assistance.mountOrder(order, detail.querySelector("#order-assistance"));
-  if (focusedItemId) {
+  if (focusedItemId && !(isWaiting && paymentForm)) {
     const target = [...detail.querySelectorAll("[data-detail-item]")].find(element => element.dataset.detailItem === focusedItemId);
     target?.classList.add("focused-item"); target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "center" });
   }
