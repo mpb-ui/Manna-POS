@@ -1,4 +1,5 @@
 import { mountPosSearch } from "./pos-search.js";
+import { installDatePickers } from "./date-picker.js";
 import { createCustomersUI } from "./customers-ui.js";
 import { depositInvoiceLines } from "./customer-documents.js";
 import { openSheetProfiles } from "./sheet-profile-ui.js";
@@ -26,6 +27,7 @@ import { createOrderAssistance, briefingProfileOptions } from "./order-assistanc
 import { needsFile, unconfirmedDraft, cancelled } from "./order-rules.js";
 import { finishingPriceForUnits, normalizeFinishingTiers, manualAreaFinishing, manualLfCutting } from "./finishing-pricing.js";
 import { mountEmployees, hasUnsavedPayroll, discardPayrollDrafts, clearEmployeeSession } from "./employees-ui.js";
+installDatePickers();
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
 const projectDateFormat = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Makassar" });
@@ -937,15 +939,8 @@ function openProductConfigurator(productId, carryDraft = null, editCartId = null
   updatePreview();
 }
 
-function bindDeadlinePicker(scope = document) {
-  scope.querySelectorAll('input[name="deadline"]').forEach(input => input.addEventListener("click", () => {
-    try { input.showPicker?.(); } catch { /* Keyboard entry remains available where the native picker is unsupported. */ }
-  }));
-}
-
 function bindPos() {
   bindProductSearch();
-  bindDeadlinePicker();
   const tabs = document.querySelector(".category-tabs");
   tabs.addEventListener("keydown", event => {
     const buttons = [...tabs.querySelectorAll('[data-category]')], index = buttons.indexOf(document.activeElement);
@@ -1352,7 +1347,6 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     </div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   detail.querySelector("#edit-order")?.addEventListener("click", () => startEditOrder(order));
-  bindDeadlinePicker(detail);
   bindPaymentForm(order, outstanding);
   const updateItem = async (itemId, field, body, control) => {
     const related = [...detail.querySelectorAll("[data-item-advance]")].filter(button => button.dataset.itemAdvance === itemId);

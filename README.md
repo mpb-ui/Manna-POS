@@ -31,6 +31,7 @@ MVP POS dan project management untuk digital printing Manna Print. Katalog awal 
 - Pembulatan panjang tagihan per 50 cm, minimum 1 meter.
 - Alur kerja: Menunggu Pembayaran → Design → Cetak → Finishing → Selesai → Diambil.
 - Draft dapat diedit selama masih Menunggu Pembayaran.
+- Status Order memakai tabel compact tujuh kolom, tanggal di bawah invoice, deadline relatif dalam WITA, status campuran ringkas, serta filter status pembayaran dan metode pembayaran aktual. Search menerima invoice/nama sebagian, akhiran WA (termasuk empat digit terakhir), dan total persis. `55000` dapat cocok dengan WA atau total; `55.000`/`Rp 55.000` khusus total. Hasil tidak diduplikasi dan tetap mengikuti hak akses nilai uang. Seluruh area input tanggal membuka kalender, termasuk pada dialog dan halaman yang dimuat belakangan.
 - Popup **Pembayaran** dari POS tetap berada di atas POS, dengan form selalu terbuka dan tombol floating **Konfirmasi Pembayaran**. Metode Tunai/QRIS/Transfer berupa chips; toggle **Pembayaran DP** membuka shortcut 50%. Nominal tetap bisa diketik manual dan tab PO tetap tersedia.
 - Tab **Pembayaran PO** dengan nomor PO dan unggahan gambar PO opsional yang dapat ditelusuri dari Laporan.
 - PIC Operator Design baru diisi setelah pembayaran dikonfirmasi.
