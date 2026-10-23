@@ -32,7 +32,7 @@ export function historySearchMatch(order, value, money = true) {
   const amountMatches = money && amount !== null && Number.isSafeInteger(amount) && Number(order.total) === amount;
   // A currency prefix or grouped amount explicitly selects Total.
   if (nominal && (nominal[1] || /[.,]/.test(nominal[2]) && !nominal[2].startsWith("0"))) return amountMatches;
-  const invoiceMatches = String(order.code || "").toLocaleLowerCase("id-ID").includes(query);
+  const invoiceMatches = [order.code, ...(order.invoiceAliases || [])].some(code => String(code || "").toLocaleLowerCase("id-ID").includes(query));
   if (/^(?:inv|mp)-/i.test(query) || /^\d{6}-\d{3,}$/.test(query)) return invoiceMatches;
   const nameMatches = String(order.customerName || "").toLocaleLowerCase("id-ID").includes(query);
   const phoneQuery = /^\+?[\d\s().-]+$/.test(query) ? phoneDigits(query) : "";

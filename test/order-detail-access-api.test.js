@@ -111,6 +111,50 @@ test("detail order: nomor bebas, riwayat per role, dan Kasir hanya menyelesaikan
     await ok(`/api/orders/${single.id}/items/${single.items[0].itemId}/design-pic`, "PATCH", { designPic: "Gema" });
     for (const status of ["CETAK", "FINISHING"]) await ok(`/api/orders/${single.id}/status`, "PATCH", { status });
     assert.equal((await ok(`/api/orders/${single.id}/status`, "PATCH", { status: "SELESAI" }, sessions.cash)).status, "SELESAI");
+    // Unpaid waiting orders can be cancelled by operational accounts, while a
+    // confirmed payment (including PO with zero cash) makes cancellation Owner-only.
+    for (const name of ["cash", "manager", "administrator"]) {
+      const draft = await ok("/api/orders", "POST", { customerName: "Cancel " + name, phone: "1", items: [item] });
+      const body = { requestId: "cancel-unpaid-" + name, reason: "Customer batal", disposition: "REFUND" };
+      const beforeStock = (await ok("/api/bootstrap?view=stock")).inventory;
+      const cancelled = await ok(`/api/orders/${draft.id}/cancel`, "POST", body, sessions[name]);
+      assert.equal(cancelled.status, "BATAL");
+      await ok(`/api/orders/${draft.id}/cancel`, "POST", body, sessions[name]);
+      assert.equal((await ok(`/api/order-history/${draft.id}`)).timeline.filter(row => row.message.includes("Pesanan dibatalkan:")).length, 1);
+      assert.deepEqual((await ok("/api/bootstrap?view=stock")).inventory, beforeStock);
+    }
+    for (const type of ["PAYMENT", "PO"]) {
+      let paid = await ok("/api/orders", "POST", { customerName: "Cancel " + type, phone: "1", items: [item] });
+      paid = await ok(`/api/orders/${paid.id}/payments`, "POST", type === "PO" ? { type, poNumber: "PO-01" } : { amount: 1000, method: "TUNAI" });
+      const before = await ok(`/api/order-history/${paid.id}`);
+      for (const name of ["cash", "cash-custom", "manager", "administrator", "design", "print", "warehouse"]) {
+        const denied = await request(`/api/orders/${paid.id}/cancel`, "POST", { requestId: "denied-" + type + name, reason: "Unauthorized", disposition: "REFUND", method: "TRANSFER" }, sessions[name]);
+        assert.equal(denied.status, 403, type + name);
+      }
+      assert.deepEqual(await ok(`/api/order-history/${paid.id}`), before);
+      const body = { requestId: "owner-cancel-" + type, reason: "Owner menyetujui", disposition: "REFUND", method: "TRANSFER" };
+      assert.equal((await ok(`/api/orders/${paid.id}/cancel`, "POST", body)).status, "BATAL");
+      await ok(`/api/orders/${paid.id}/cancel`, "POST", body);
+      const receipts = await ok(`/api/orders/${paid.id}/cash-receipts`);
+      assert.equal(receipts.filter(row => row.kind === "REFUND").length, type === "PAYMENT" ? 1 : 0);
+    }
+    const timed = await ok("/api/orders", "POST", { customerName: "Deadline", phone: "1", deadline: "2026-10-23T08:15", items: [item] });
+    assert.equal(timed.deadline, "2026-10-23T00:15:00.000Z");
+    assert.match(timed.code, /^INV-\d{6}-\d{3,}$/);
+    for (const deadline of ["2026-10-23T07:45", "2026-10-23T18:15", "2026-10-23T09:10"]) {
+      assert.equal((await request("/api/orders", "POST", { customerName: "Invalid", phone: "1", deadline, items: [item] })).status, 400);
+      assert.equal((await request(`/api/orders/${timed.id}`, "PUT", { customerName: "Invalid", phone: "1", deadline, items: [item] })).status, 400);
+    }
+    assert.equal((await ok(`/api/order-history/${timed.id}`)).customerName, "Deadline");
+    assert.equal((await ok(`/api/order-history/${timed.id}`)).deadline, timed.deadline);
+    const race = await ok("/api/orders", "POST", { customerName: "Race", phone: "1", items: [item] });
+    const outcomes = await Promise.all([
+      request(`/api/orders/${race.id}/payments`, "POST", { amount: 1000, method: "TUNAI" }),
+      request(`/api/orders/${race.id}/cancel`, "POST", { requestId: "race-cancel", reason: "Cancel draft", disposition: "REFUND" }, sessions.cash)
+    ]);
+    assert.ok(outcomes[0].status === 200 && outcomes[1].status === 403 || outcomes[0].status === 400 && outcomes[1].status === 200);
+    const raceResult = await ok(`/api/order-history/${race.id}`);
+    assert.ok(raceResult.status === "BATAL" ? raceResult.paidAmount === 0 : raceResult.paidAmount === 1000);
   } finally {
     child.kill();
     await new Promise(resolve => child.once("exit", resolve));

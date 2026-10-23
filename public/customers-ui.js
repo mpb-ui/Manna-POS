@@ -1,4 +1,4 @@
-import { paymentHistoryVisible } from "./order-rules.js";
+import { paymentHistoryVisible, canCancelOrder, cancelled } from "./order-rules.js";
 import { mountCustomerPayment } from './customer-payment.js';
 import { customerPickerPopup } from './customer-picker.js';
 import { customerPhone,customerNameKey } from './customer-identity.js';
@@ -50,11 +50,46 @@ export function createCustomersUI({state,root,api,moneyField,bindMoneyInputs,par
   const fetchRows=async(page=1)=>{if(token!==generation||state.view!=='master'||state.masterTab!=='customers')return;const request=++seq;try{const data=await api('/api/customers?'+new URLSearchParams({q:root.querySelector('#customer-search').value,deposit:root.querySelector('#customer-with-deposit').checked?'yes':'',page}));if(token!==generation||request!==seq||identity!==uid()||state.view!=='master'||state.masterTab!=='customers')return;root.querySelector('#customers-list').innerHTML=`<div class="customer-table"><table><thead><tr><th>Pelanggan</th><th>WhatsApp</th><th>Deposit</th><th></th></tr></thead><tbody>${data.rows.map(c=>`<tr><td><strong>${e(c.name)}</strong></td><td>${e(c.phone)}</td><td><span class="deposit-tag ${c.depositBalance?'has-deposit':''}">${money(c.depositBalance)}</span></td><td><button class="secondary" data-customer-detail="${c.id}">Riwayat</button></td></tr>`).join('')||'<tr><td colspan="4">Belum ada pelanggan.</td></tr>'}</tbody></table></div>`;root.querySelectorAll('[data-customer-detail]').forEach(b=>b.onclick=()=>detail(b.dataset.customerDetail).catch(error=>toast(error.message,'error')));const pages=root.querySelector('#customers-pages');pages.innerHTML=`<button data-prev ${data.page<=1?'disabled':''}>Sebelumnya</button><span>${data.total} pelanggan · ${data.page}/${data.pages}</span><button data-next ${data.page>=data.pages?'disabled':''}>Berikutnya</button>`;pages.querySelector('[data-prev]').onclick=()=>fetchRows(data.page-1);pages.querySelector('[data-next]').onclick=()=>fetchRows(data.page+1);}catch(error){if(token===generation)toast(error.message,'error');}};
   root.querySelector('#customer-search').oninput=()=>{seq++;clearTimeout(searchTimer);searchTimer=setTimeout(()=>fetchRows(),200);};root.querySelector('#customer-with-deposit').onchange=()=>fetchRows();fetchRows();
  }
- async function mountOrder(scope,order){
-  if(!can('pos.payment'))return;
-  const identity=uid(),body=scope.querySelector('.detail-body'),showHistory=paymentHistoryVisible(state.currentUser.role),data=showHistory?await api(`/api/orders/${order.id}/cash-receipts`):[];if(identity!==uid()||!body?.isConnected||!scope.contains(body))return;
-  const section=document.createElement('section');section.className='customer-order-receipts';section.innerHTML=`${showHistory?`<h3>Bukti penerimaan uang / pengembalian</h3>${data.map(r=>`<div class="payment-ledger-row"><span>${money(r.amount)} · ${e(r.method)}${r.depositAmount?` · Deposit ${money(r.depositAmount)}`:''}${r.kind==='REFUND'?' · Refund':''}</span><button class="secondary" data-cash-receipt="${r.id}">Cetak Bukti</button></div>`).join('')||'<small>Belum ada bukti penerimaan terpisah.</small>'}`:''}${order.status!=='BATAL'?'<button type="button" class="secondary" data-extra-transfer>Catat Transfer Tambahan</button>':''}${can('deposit.manage')&&['OWNER','ADMIN'].includes(state.currentUser.role)&&order.status!=='BATAL'?'<button type="button" class="secondary" data-cancel-order>Batalkan Pesanan</button>':''}`;scope.querySelector('.detail-body').append(section);section.querySelectorAll('[data-cash-receipt]').forEach(b=>b.onclick=()=>print(cashReceiptHtml(data.find(r=>r.id===b.dataset.cashReceipt))));section.querySelector('[data-extra-transfer]')?.addEventListener('click',()=>{scope.closest('dialog').close();window.dispatchEvent(new CustomEvent('customer-extra-payment',{detail:order}));});
-  section.querySelector('[data-cancel-order]')?.addEventListener('click',()=>{const d=modal('Batalkan Pesanan',`<form class="customer-form"><p>${e(order.code)} · Pembatalan akan tercatat. Stok fisik tidak otomatis dikembalikan.</p>${!order.customerId?'<button type="button" class="secondary" data-cancel-customer>Pilih akun pelanggan untuk deposit</button><input name="customerId" type="hidden">':''}<label class="field"><span>Penyelesaian pembayaran uang</span><select name="disposition"><option value="DEPOSIT">Kembalikan ke deposit pelanggan</option><option value="REFUND">Uang benar-benar dikembalikan ke pelanggan</option></select></label><label class="field"><span>Metode pengembalian uang</span><select name="method"><option value="TRANSFER">Transfer</option><option value="TUNAI">Tunai</option><option value="QRIS">QRIS</option></select></label><label class="field"><span>Alasan</span><textarea name="reason" required maxlength="1000"></textarea></label><label class="deposit-check"><input type="checkbox" required> Penyelesaian pembayaran sudah diperiksa dan disetujui</label><button class="primary">Konfirmasi Pembatalan</button></form>`),f=d.querySelector('form'),requestId=crypto.randomUUID();d.querySelector('[data-cancel-customer]')?.addEventListener('click',()=>pick(c=>{f.elements.customerId.value=c.id;d.querySelector('[data-cancel-customer]').textContent=c.name;},order.phone));f.onsubmit=async ev=>{ev.preventDefault();const b=f.querySelector('button.primary');if(b.disabled)return;b.disabled=true;try{await api(`/api/orders/${order.id}/cancel`,{method:'POST',body:JSON.stringify({...Object.fromEntries(new FormData(f)),requestId})});d.close();scope.closest('dialog').close();await openOrder(order.id);toast('Pesanan dibatalkan; periksa pengembalian fisik bila diperlukan');}catch(error){toast(error.message,'error');}finally{b.disabled=false;}};});
+ async function mountOrder(scope,order) {
+  const canCancel = canCancelOrder(order, state.currentUser.role, state.permissions);
+  if (!can('pos.payment') && !canCancel) return;
+  const identity = uid(), body = scope.querySelector('.detail-body');
+  const showHistory = can('pos.payment') && paymentHistoryVisible(state.currentUser.role);
+  const data = showHistory ? await api(`/api/orders/${order.id}/cash-receipts`) : [];
+  if (identity !== uid() || !body?.isConnected || !scope.contains(body)) return;
+  const paid = Boolean(order.paymentConfirmed || Number(order.paidAmount) || (order.payments || []).some(p => p.type === 'PO' || Number(p.amount) > 0));
+  const cancelLabel = paid ? 'Batalkan Transaksi' : 'Batalkan Pesanan';
+  const section = document.createElement('section');
+  section.className = 'customer-order-receipts';
+  section.innerHTML = `${showHistory ? `<h3>Bukti penerimaan uang / pengembalian</h3>${data.map(r => `<div class="payment-ledger-row"><span>${money(r.amount)} · ${e(r.method)}${r.depositAmount ? ` · Deposit ${money(r.depositAmount)}` : ''}${r.kind === 'REFUND' ? ' · Refund' : ''}</span><button class="secondary" data-cash-receipt="${r.id}">Cetak Bukti</button></div>`).join('') || '<small>Belum ada bukti penerimaan terpisah.</small>'}` : ''}${can('pos.payment') && !cancelled(order) ? '<button type="button" class="secondary" data-extra-transfer>Catat Transfer Tambahan</button>' : ''}${canCancel ? `<button type="button" class="secondary" data-cancel-order>${cancelLabel}</button>` : ''}`;
+  body.append(section);
+  section.querySelectorAll('[data-cash-receipt]').forEach(button => button.onclick = () => print(cashReceiptHtml(data.find(r => r.id === button.dataset.cashReceipt))));
+  section.querySelector('[data-extra-transfer]')?.addEventListener('click', () => {
+    scope.closest('dialog').close();
+    window.dispatchEvent(new CustomEvent('customer-extra-payment', { detail: order }));
+  });
+  section.querySelector('[data-cancel-order]')?.addEventListener('click', () => {
+    const settlement = paid ? `${!order.customerId ? '<button type="button" class="secondary" data-cancel-customer>Pilih akun pelanggan untuk deposit</button><input name="customerId" type="hidden">' : ''}<label class="field"><span>Penyelesaian pembayaran uang</span><select name="disposition"><option value="DEPOSIT">Kembalikan ke deposit pelanggan</option><option value="REFUND">Uang benar-benar dikembalikan ke pelanggan</option></select></label><label class="field"><span>Metode pengembalian uang</span><select name="method"><option value="TRANSFER">Transfer</option><option value="TUNAI">Tunai</option><option value="QRIS">QRIS</option></select></label>` : '<input name="disposition" type="hidden" value="REFUND">';
+    const d = modal(cancelLabel, `<form class="customer-form"><p>${e(order.code)} · Pembatalan akan tercatat.${paid ? ' Stok fisik tidak otomatis dikembalikan.' : ''}</p>${settlement}<label class="field"><span>Alasan</span><textarea name="reason" required maxlength="1000"></textarea></label><label class="deposit-check"><input type="checkbox" required> ${paid ? 'Penyelesaian pembayaran sudah diperiksa dan disetujui' : 'Pesanan ini benar-benar dibatalkan'}</label><button class="primary">Konfirmasi Pembatalan</button></form>`);
+    const form = d.querySelector('form'), requestId = crypto.randomUUID();
+    d.querySelector('[data-cancel-customer]')?.addEventListener('click', () => pick(customer => {
+      form.elements.customerId.value = customer.id;
+      d.querySelector('[data-cancel-customer]').textContent = customer.name;
+    }, order.phone));
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const button = form.querySelector('button.primary');
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        await api(`/api/orders/${order.id}/cancel`, { method: 'POST', body: JSON.stringify({ ...Object.fromEntries(new FormData(form)), requestId }) });
+        d.close(); scope.closest('dialog').close(); await openOrder(order.id);
+        toast(paid ? 'Transaksi dibatalkan; periksa pengembalian fisik bila diperlukan' : 'Pesanan dibatalkan');
+      } catch (error) { toast(error.message, 'error'); }
+      finally { button.disabled = false; }
+    };
+  });
  }
+
  return {reset,invalidate:()=>{selectedAt=0;},pick,mountMaster,mountCheckout,mountPayment,mountOrder};
 }

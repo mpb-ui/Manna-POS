@@ -1,3 +1,5 @@
+import { invoiceCode, INVOICE_NUMBER_VERSION } from "./lib/invoice-numbers.js";
+import { checkoutDeadline } from "./public/checkout-deadline.js";
 import { registerCustomerRoutes } from './lib/customer-routes.js';
 import { resolveOrderCustomer, initializeCustomers, allocateCustomerPayment, checkOperation, finishOperation, cancelCustomerOrder, CUSTOMER_SCHEMA_VERSION } from './lib/customer-deposits.js';
 import { requiredPhone } from "./public/customer-validation.js";
@@ -10,7 +12,7 @@ import { LF_ROLL_VERSION } from "./lib/lf-rolls.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
 import { workflowSnapshot, checklistForOrder } from "./lib/order-assistance.js";
-import { FILE_READINESS, completeness, cancelled, paymentHistoryVisible } from "./public/order-rules.js";
+import { FILE_READINESS, completeness, cancelled, paymentHistoryVisible, canCancelOrder } from "./public/order-rules.js";
 import { assetReport } from "./lib/assets.js";
 import { aggregateReport } from "./lib/reports.js";
 import { normalizeFinishingTiers } from "./public/finishing-pricing.js";
@@ -67,7 +69,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
@@ -114,10 +116,6 @@ function requireCatalogAdmin(req, res, next) {
 }
 
 function now() { return new Date().toISOString(); }
-function orderCode(number) {
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()).replaceAll("-", "");
-  return `MP-${date}-${String(number).padStart(4, "0")}`;
-}
 function activity(state, order, message, actor = "Kasir", metadata = {}) {
   const entry = { id: crypto.randomUUID(), orderId: order.id, orderCode: order.code, message, actor, createdAt: now(), ...metadata };
   order.timeline.unshift(entry);
@@ -647,10 +645,10 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
       if (!String(req.body.customerName || "").trim()) throw new Error("Nama pelanggan wajib diisi");
       const order = {
         id: crypto.randomUUID(),
-        code: orderCode(state.nextOrderNumber++),
+        code: invoiceCode(state.nextOrderNumber++),
         customerName: String(req.body.customerName).trim(),
         phone: requiredPhone(req.body.phone),
-        deadline: req.body.deadline || null,
+        deadline: checkoutDeadline(req.body.deadline),
         fileStatus: req.body.fileStatus || "SIAP_CETAK",
         fileReadiness: FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED",
         confirmed: req.body.confirmed === true,
@@ -697,7 +695,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       order.phone = requiredPhone(req.body.phone);
       // An unpaid draft may select a different account; no balance moves here.
       delete order.customerId; if(req.body.customerId)resolveOrderCustomer(state,order,req.body.customerId);
-      order.deadline = req.body.deadline || null;
+      order.deadline = checkoutDeadline(req.body.deadline, order.deadline);
       order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
       order.fileReadiness = FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED";
       if (req.body.confirmed === true) { order.confirmed = true; order.confirmedAt ||= now(); }
@@ -780,11 +778,26 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
 });
 
 
-app.post('/api/orders/:id/cancel',requirePermission('deposit.manage'),async(req,res,next)=>{
-  try{
-    if(!['OWNER','ADMIN'].includes(req.user.role))return res.status(403).json({error:'Pembatalan pembayaran hanya untuk Owner/Admin'});
-    const result=await store.mutate(state=>{const order=state.orders.find(o=>o.id===req.params.id);if(!order)throw new Error('Pesanan tidak ditemukan');normalizeOrder(order);const wasCancelled=Boolean(order.cancelledAt);cancelCustomerOrder(state,order,req.body,req.user);if(!wasCancelled){activity(state,order,`Pesanan dibatalkan: ${order.cancelReason}. Stok fisik tidak otomatis dikembalikan.`,req.user.name);audit(state,req.user,'ORDER_CANCEL',`Membatalkan ${order.code}`,{orderId:order.id,reason:order.cancelReason,disposition:req.body.disposition});}return order;});res.json(sanitizeOrder(result, req.user));
-  }catch(error){next(error);}
+app.post('/api/orders/:id/cancel', async (req, res, next) => {
+  try {
+    const result = await store.mutate(state => {
+      const order = state.orders.find(order => order.id === req.params.id);
+      if (!order || !orderVisibleToUser(order, req.user)) throw Object.assign(new Error("Pesanan tidak ditemukan"), { status: 404 });
+      normalizeOrder(order);
+      // Authorize inside the same lock as cancellation so a concurrent payment
+      // cannot turn an unpaid cancellation into an unauthorized reversal.
+      const previous = order.cancelledAt;
+      const retry = previous && state.customerOperations.some(operation => operation.requestId === req.body.requestId && operation.actorId === req.user.id && operation.result?.orderId === order.id && operation.fingerprint.startsWith('["cancel",'));
+      if (!retry && !canCancelOrder(order, req.user.role, effectivePermissions(req.user))) throw Object.assign(new Error("Pesanan dengan pembayaran hanya dapat dibatalkan Owner; pesanan belum dibayar hanya saat Menunggu Pembayaran"), { status: 403 });
+      cancelCustomerOrder(state, order, req.body, req.user);
+      if (!previous) {
+        activity(state, order, `Pesanan dibatalkan: ${order.cancelReason}. Stok fisik tidak otomatis dikembalikan.`, req.user.name);
+        audit(state, req.user, "ORDER_CANCEL", `Membatalkan ${order.code}`, { orderId: order.id, reason: order.cancelReason, disposition: req.body.disposition });
+      }
+      return order;
+    });
+    res.json(sanitizeOrder(result, req.user));
+  } catch (error) { next(error); }
 });
 app.get('/api/orders/:id/cash-receipts',requirePermission('pos.payment'),async(req,res,next)=>{
   if(!paymentHistoryVisible(req.user.role))return res.status(403).json({error:'Riwayat pembayaran hanya tersedia untuk Owner, Manager, dan Kasir'});
