@@ -42,6 +42,7 @@ test("detail order: nomor bebas, riwayat per role, dan Kasir hanya menyelesaikan
       await ok("/api/users", "POST", { name, username: name, role, pin: "1234", briefingProfile: "none", ...(permissions ? { permissions } : {}) });
       sessions[name] = await login(name);
     }
+    await ok("/api/inventory/BHN-BLF", "PATCH", { change:100, reason:"Stok bahan untuk pengujian produksi" });
     const item = { productId: "poster-backlite-film", sizeVariantId: "a3", quantity: 1, finishing: [] };
     let order;
     for (const phone of ["0", "1", "6789", "123456", "08165", "62818", "123456789012345678901234567890"]) {
@@ -98,7 +99,7 @@ test("detail order: nomor bebas, riwayat per role, dan Kasir hanya menyelesaikan
     assert.equal((await request(path(order.items[0]) + "/status", "PATCH", { status: "SELESAI" }, sessions["cash-limited"])).status, 403);
     const firstDone = await ok(path(order.items[0]) + "/status", "PATCH", { status: "SELESAI", expectedStatus: "FINISHING" }, sessions.cash);
     assert.equal(firstDone.status, "FINISHING");
-    assert.equal(firstDone.stockCommitted, false);
+    assert.equal(firstDone.stockCommitted, true);
     const finished = await ok(path(order.items[1]) + "/status", "PATCH", { status: "SELESAI" }, sessions["cash-custom"]);
     assert.equal(finished.status, "SELESAI");
     assert.equal(finished.stockCommitted, true);
