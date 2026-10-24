@@ -1,3 +1,4 @@
+import { registerGoodsReturnRoutes } from "./lib/goods-return-routes.js";
 import { invoiceCode, INVOICE_NUMBER_VERSION } from "./lib/invoice-numbers.js";
 import { checkoutDeadline } from "./public/checkout-deadline.js";
 import { registerCustomerRoutes } from './lib/customer-routes.js';
@@ -7,7 +8,7 @@ import { registerSheetProfileRoutes, validateProductCalculator } from "./lib/she
 import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
-import { initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
+import { PRINT_STOCK_VERSION, initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
 import { LF_ROLL_VERSION } from "./lib/lf-rolls.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
@@ -69,7 +70,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
@@ -789,6 +790,7 @@ app.post('/api/orders/:id/cancel', async (req, res, next) => {
       const previous = order.cancelledAt;
       const retry = previous && state.customerOperations.some(operation => operation.requestId === req.body.requestId && operation.actorId === req.user.id && operation.result?.orderId === order.id && operation.fingerprint.startsWith('["cancel",'));
       if (!retry && !canCancelOrder(order, req.user.role, effectivePermissions(req.user))) throw Object.assign(new Error("Pesanan dengan pembayaran hanya dapat dibatalkan Owner; pesanan belum dibayar hanya saat Menunggu Pembayaran"), { status: 403 });
+      if (!previous) commitOrderStock(state, order, now, { actor: req.user.name });
       cancelCustomerOrder(state, order, req.body, req.user);
       if (!previous) {
         activity(state, order, `Pesanan dibatalkan: ${order.cancelReason}. Stok fisik tidak otomatis dikembalikan.`, req.user.name);
@@ -852,6 +854,7 @@ app.patch("/api/orders/:id/design-pic", requirePermission("projects.assign"), as
 registerItemWorkflowRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder, activity, audit, now });
 registerOrderHistoryRoutes(app, { store, requirePermission, normalizeOrder, sanitizeOrder });
 registerCustomerRoutes(app, { store, requirePermission, audit });
+registerGoodsReturnRoutes(app, { store, requirePermission, normalizeOrder, activity, audit });
 
 app.patch("/api/orders/:id/status", async (req, res, next) => {
   if (!canRequestStatus(req.user, req.body.status)) return res.status(403).json({ error: "Anda tidak memiliki akses mengubah status ini" });
@@ -878,7 +881,7 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
       order.updatedAt = now();
       order.items.forEach(item => { item.status = target; item.statusEnteredAt = now(); item.updatedAt = now(); });
       refreshOrderWorkflow(order, now());
-      commitOrderStock(state, order, now);
+      commitOrderStock(state, order, now, { actor: req.user.name });
       activity(state, order, `Status berubah menjadi ${STATUS_LABEL[target]}`, req.user.name);
       audit(state, req.user, "ORDER_STATUS", `Mengubah ${order.code} menjadi ${STATUS_LABEL[target]}`, { orderId: order.id, status: target });
       return sanitizeOrder(order, req.user);

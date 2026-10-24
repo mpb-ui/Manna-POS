@@ -5,9 +5,9 @@ import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false}={}) {
+async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
- const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();delete data.stockSchemaVersion;
+ const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();data.printStockVersion=1;delete data.stockSchemaVersion;
  if (legacyLf) {
   data.stockSchemaVersion=1;delete data.lfRollWidthVersion;
   data.materials=data.materials.filter(m=>!m.lfRollGroup);
@@ -16,6 +16,7 @@ async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoic
  }
  if(legacyCustomer){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;delete data.customerSchemaVersion;delete data.customers;delete data.depositLedger;delete data.cashReceipts;delete data.customerOperations;delete data.customerAccessVersion;}
  if(legacyInvoice){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.invoiceNumberVersion;delete data.invoiceNumberMigration;data.orders[0].code='MP-20261023-0001';data.cashReceipts=[{orderId:'legacy',orderCode:'MP-20261023-0001',amount:123}];}
+ if(legacyPrint){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.printStockVersion;const stock=data.inventory.find(row=>row.sku==='KRT-AP260');stock.quantity=100;Object.assign(data.orders[0],{status:'CETAK',stockCommitted:false,items:[{itemId:'printed',status:'CETAK',stockTiming:'PRODUCTION',stockCommitted:false,materials:[{materialId:stock.materialId,sku:stock.sku,units:10,unit:stock.unit}]}]});}
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -100,4 +101,15 @@ test("invoice conversion stops without changing data if its PostgreSQL backup fa
  f.store.pool.connect=async()=>{const connection=await connect();return {...connection,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return connection.query(sql,params);}};};
  const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);
  assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');assert(!f.store.invoiceBackupVerified);
+});
+
+test("print timing migration backs up raw state before consuming previously printed jobs exactly once",async()=>{
+ const f=await databaseFixture({legacyPrint:true});await f.store.init();assert(f.store.printStockBackupVerified);assert.deepEqual(f.backups.get('print-stock-v1'),f.data);
+ assert.equal(f.getState().inventory.find(row=>row.sku==='KRT-AP260').quantity,90);assert.equal(f.getState().stockMovements.filter(move=>move.itemId==='printed').length,1);assert.equal(f.getState().orders[0].status,'CETAK');assert.deepEqual(f.getState().orders[0].payments,f.data.orders[0].payments);
+ const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups')),update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(backup>=0&&backup<update);assert(f.queries.slice(0,backup).some(q=>q.sql.endsWith('FOR UPDATE')));
+ await f.store.init();assert.equal(f.getState().inventory.find(row=>row.sku==='KRT-AP260').quantity,90);assert.equal(f.backups.size,1);
+});
+test("print timing migration rolls back if the pre-migration backup fails",async()=>{
+ const f=await databaseFixture({legacyPrint:true}),connect=f.store.pool.connect;f.store.pool.connect=async()=>{const c=await connect();return {...c,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return c.query(sql,params);}};};
+ const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
 });
