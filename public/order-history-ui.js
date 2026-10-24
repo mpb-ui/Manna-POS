@@ -15,21 +15,24 @@ export function createOrderHistory({ state, root, api, escapeHtml: e, rupiah, op
   function mount() {
     if (!active()) return;
     const money = state.permissions.includes("projects.money");
-    root.innerHTML = `<section class="order-history"><div class="history-heading"><h2>Status Order</h2><span id="history-count" aria-live="polite"></span></div>
+    root.innerHTML = `<section class="order-history"><div class="history-toolbar"><div class="history-heading"><h2>Status Order</h2><span id="history-count" aria-live="polite"></span></div>
       <form class="history-filters" id="history-filters">
         <label class="history-search"><span>Cari pesanan</span><input name="q" type="search" autocomplete="off" placeholder="${money ? "Invoice, pelanggan, nomor WA, nominal…" : "Invoice, pelanggan, nomor WA…"}" value="${e(filters.q)}"></label>
+        <div class="history-date-filters">
+          <label class="history-date ${filters.from ? "has-value" : ""}"><span>Dari tanggal (WITA)</span><input type="date" name="from" value="${e(filters.from)}"><span class="history-date-placeholder" aria-hidden="true">Dari tanggal</span></label>
+          <label class="history-date ${filters.to ? "has-value" : ""}"><span>Sampai tanggal (WITA)</span><input type="date" name="to" value="${e(filters.to)}"><span class="history-date-placeholder" aria-hidden="true">Sampai tanggal</span></label>
+        </div>
         <div class="history-filter-options ${money ? "" : "without-money"}">
-          <label><span>Dari</span><input type="date" name="from" aria-label="Dari tanggal (WITA)" value="${e(filters.from)}"></label>
-          <label><span>Sampai</span><input type="date" name="to" aria-label="Sampai tanggal (WITA)" value="${e(filters.to)}"></label>
           <label><span>Status pesanan / produk</span><select name="status"><option value="">Semua status</option><option value="DRAFT">Draft</option>${Object.entries(state.statusLabels).map(([value, label]) => `<option value="${e(value)}">${e(label)}</option>`).join("")}</select></label>
           ${money ? `<label><span>Pembayaran</span><select name="payment"><option value="">Semua pembayaran</option><option value="BELUM_BAYAR">Belum bayar</option><option value="BELUM_LUNAS">Belum lunas / PO</option><option value="LUNAS">Lunas</option><option value="DIBATALKAN">Dibatalkan</option></select></label>
           <label><span>Metode Pembayaran</span><select name="method"><option value="">Semua metode</option>${Object.entries(methodLabels).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>` : ""}
         </div>
-      </form><div id="history-results" aria-live="polite"></div><div id="history-pages" class="history-pages"></div></section>`;
+      </form></div><div class="history-content"><div id="history-results" aria-live="polite"></div><div id="history-pages" class="history-pages"></div></div></section>`;
     const form = root.querySelector("#history-filters");
     for (const name of ["status", "payment", "method"]) if (form.elements[name]) form.elements[name].value = filters[name];
     form.onsubmit = event => event.preventDefault();
     form.oninput = event => {
+      if (event.target.type === "date") event.target.closest("label").classList.toggle("has-value", Boolean(event.target.value));
       Object.assign(filters, Object.fromEntries(new FormData(form)), { page: 1 });
       generation++; clearTimeout(timer);
       root.querySelector("#history-results").setAttribute("aria-busy", "true");
@@ -46,14 +49,16 @@ export function createOrderHistory({ state, root, api, escapeHtml: e, rupiah, op
       if (!valid()) return;
       filters.page = data.page;
       root.querySelector("#history-count").textContent = `${data.summary.orders} pesanan`;
-      const columns = ["INVOICE", "PELANGGAN", "DEADLINE", "STATUS PESANAN", ...(data.money ? ["PEMBAYARAN", "TOTAL", "METODE BAYAR"] : [])];
-      const colNames = ["invoice", "customer", "deadline", "status", ...(data.money ? ["payment", "total", "method"] : [])];
+      const columns = ["INVOICE", "TANGGAL", "PELANGGAN", "NOMOR WA", "DEADLINE", "STATUS PESANAN", ...(data.money ? ["PEMBAYARAN", "TOTAL", "METODE"] : [])];
+      const colNames = ["invoice", "date", "customer", "phone", "deadline", "status", ...(data.money ? ["payment", "total", "method"] : [])];
       const cells = order => {
         const pay = historyPaymentStatus(order), status = historyStatusSummary(order, state.statusLabels);
         const deadline = projectDeadlineInfo(order);
         const label = /^(Hari ini|Besok|Terlambat)/.test(deadline.label) ? deadline.label.replace(/(\d{2})\.(\d{2})$/, "$1:$2") : order.deadline ? timestamp(order.deadline) : "—";
-        return `<td data-label="Invoice"><strong>${e(order.code)}</strong><small>${e(timestamp(order.createdAt))}</small>${historyDraft(order) ? '<small class="history-draft">Draft</small>' : ""}</td>
-          <td data-label="Pelanggan"><strong>${e(order.customerName)}</strong><small>${e(order.phone || "—")}</small></td>
+        return `<td data-label="Invoice"><strong>${e(order.code)}</strong>${historyDraft(order) ? '<small class="history-draft">Draft</small>' : ""}</td>
+          <td data-label="Tanggal">${e(timestamp(order.createdAt))}</td>
+          <td data-label="Pelanggan"><strong>${e(order.customerName)}</strong></td>
+          <td data-label="Nomor WA">${e(order.phone || "—")}</td>
           <td data-label="Deadline" class="history-deadline ${deadline.state}" title="${e(timestamp(order.deadline))} WITA"><strong>${e(label)}${deadline.state === "late" ? ' <span aria-label="Terlambat">⚠️</span>' : ""}</strong></td>
           <td data-label="Status pesanan"><span class="history-status status-${e(status.tone)}" title="${e(status.title)}" aria-label="${e(status.title)}">${e(status.label)}</span>${order.hold ? `<small class="history-held">Tertahan · ${e(holdLabel(order.hold.reason || "Menunggu ACC"))}</small>` : ""}</td>
           ${data.money ? `<td data-label="Pembayaran">${{ LUNAS: "Lunas", BELUM_LUNAS: "Belum lunas", BELUM_BAYAR: "Belum bayar", DIBATALKAN: "Dibatalkan" }[pay]}</td>
