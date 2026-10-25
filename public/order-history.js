@@ -12,6 +12,20 @@ export function historyPaymentMethods(order) {
     .map(payment => String(payment.method || "").trim().toUpperCase()).filter(Boolean))];
 }
 
+// Display the latest settled positive payment; PO promises and reversals are
+// not receipts. Full historical methods remain available to existing filters.
+export function historyLastPaymentMethod(order) {
+  if (['DRAFT','MENUNGGU_PEMBAYARAN','BATAL','CANCELLED','CANCELED'].includes(order.status)) return '';
+  const payments=order.payments || [], reversed=new Set(payments.filter(p=>p.reversalOf).map(p=>p.reversalOf));
+  let latest=null;
+  payments.forEach((payment,index)=>{
+    if (payment.type==='PO' || payment.type==='REVERSAL' || !(Number(payment.amount)>0) || payment.id && reversed.has(payment.id)) return;
+    const time=Date.parse(payment.createdAt) || 0;
+    if (!latest || time>latest.time || time===latest.time && index>latest.index) latest={payment,time,index};
+  });
+  return String(latest?.payment.method || '').trim().toUpperCase();
+}
+
 export function historyStatusSummary(order, labels) {
   const title = historyStatus(order, labels);
   const statuses = new Set((order.items || []).map(item => item.status || order.status));
@@ -46,7 +60,7 @@ export function filterOrderHistory(orders, filters = {}, { money = true } = {}) 
     const day = historyDay(order.createdAt);
     if (filters.from && day < filters.from || filters.to && day > filters.to) return false;
     if (filters.status === "DRAFT" ? !historyDraft(order) : filters.status && !(order.items || []).some(item => (item.status || order.status) === filters.status) && order.status !== filters.status) return false;
-    if (filters.payment && historyPaymentStatus(order) !== filters.payment) return false;
+    if (filters.payment && (filters.payment === "BELUM_LUNAS" ? !["BELUM_BAYAR","BELUM_LUNAS"].includes(historyPaymentStatus(order)) : historyPaymentStatus(order) !== filters.payment)) return false;
     if (filters.method && !historyPaymentMethods(order).includes(filters.method)) return false;
     return historySearchMatch(order, query, money);
   }).sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0) || String(b.id).localeCompare(String(a.id)));

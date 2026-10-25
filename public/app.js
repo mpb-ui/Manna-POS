@@ -89,7 +89,13 @@ const customersUI=createCustomersUI({state,root,api,moneyField,bindMoneyInputs,p
   print:html=>{printDocument.className='print-document payment-receipt';printDocument.innerHTML=html;showPrintDocument();}
 });
 window.addEventListener('customer-extra-payment',event=>openPaymentDialog(event.detail));
-const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, dateFormat, openOrder, toast });
+const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, openOrder, toast,
+  onAction:(action,order)=>{
+    if(action==='edit')startEditOrder(order);
+    else if(action==='payment')openPaymentDialog(order);
+    else printOrder(order,action==='invoice'?'invoice':action==='spk'?'spk':'receipt');
+  }
+});
 const assistance = createOrderAssistance({
   state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, deadlineLabel: formatProjectDeadline, canAuto: () => !hasUnsavedPayroll(),
   openOrder: async id => { await load(); if (state.orders.some(o=>o.id===id)) openOrder(id); else toast("Pesanan tidak lagi tersedia untuk akun ini", "error"); },
@@ -1103,7 +1109,7 @@ function bindPos() {
 function paymentStatus(order) {
   if(cancelled(order))return "DIBATALKAN";
   if (Number(order.paidAmount || 0) >= Number(order.total || 0) && order.total > 0) return "LUNAS";
-  return order.paymentConfirmed ? "BELUM_LUNAS" : "BELUM_BAYAR";
+  return "BELUM_LUNAS";
 }
 
 function renderProjects() {
@@ -1316,7 +1322,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   const paymentForm = can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : "";
   detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${order.code}</span><h2 style="margin:5px 0 0">${escapeHtml(order.customerName)}</h2></div><button class="detail-close">×</button></div><div class="detail-body">
     ${isWaiting ? paymentForm : ""}
-    <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong>${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
+    <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong class="${paymentStatus(order)==="BELUM_LUNAS"?"payment-unpaid":""}">${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
     <div class="order-items-detail">${order.items.map((item,index) => `<div class="detail-item status-${item.status.toLowerCase()}" data-detail-item="${item.itemId}" tabindex="-1"><span class="item-number">${index+1}</span><div class="detail-item-content">${itemDetail(item)}${itemWorkflowHtml(order,item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
     ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
     <div id="order-assistance" class="order-assistance"></div>
@@ -1327,7 +1333,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
       ${can("orders.return") && can("orders.view") && order.items.some(item => returnableRetailItem(order,item)) ? '<button id="return-goods" type="button" class="secondary detail-return">Retur Barang</button>' : ""}
       ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}
       ${!isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="secondary">Konfirmasi Pembayaran</button>' : ""}
-      ${!isWaiting ? '<button id="print-spk" class="secondary">Cetak SPK</button>' : ""}
+      ${!isWaiting ? '<button id="print-spk" class="secondary">Print SPK</button>' : ""}
       ${showMoney && can("orders.view") ? '<button id="print-invoice" class="secondary">Nota Ulang</button>' : ""}
       ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
       ${isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
