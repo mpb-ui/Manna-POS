@@ -38,7 +38,7 @@ test("Status Order: invoices, receipts, access and cashier pickup are independen
     assert.equal(mixed.orders.length, 1); assert.equal(mixed.orders[0].items.length, 2);
     assert.equal(mixed.orders[0].items[0].priceBasis, first.priceBasis);
     assert.equal(mixed.summary.outstanding, order.total - 1000);
-    assert.deepEqual(mixed.orders[0].paymentMethods, ["TUNAI"]);
+    assert.deepEqual(mixed.orders[0].paymentMethods, ["TUNAI"]); assert.equal(mixed.orders[0].lastPaymentMethod,"TUNAI");
     assert.equal((await ok("/api/order-history?method=TUNAI")).orders.length, 1);
     assert.equal((await ok("/api/order-history?method=QRIS")).orders.length, 0);
     assert.equal((await ok("/api/order-history?q=7890")).orders.length, 2);
@@ -48,7 +48,7 @@ test("Status Order: invoices, receipts, access and cashier pickup are independen
     assert.equal((await request(`/api/order-history/${order.id}`, "GET", undefined, operator)).status, 403);
     const restricted = await ok("/api/order-history", "GET", undefined, limited);
     assert.equal(restricted.summary.outstanding, undefined); assert.ok(restricted.orders.every(o => o.total === undefined && o.paymentStatus === undefined && o.paidAmount === undefined));
-    assert.ok(restricted.orders.every(o => o.paymentMethods === undefined));
+    assert.ok(restricted.orders.every(o => o.paymentMethods === undefined && o.lastPaymentMethod === undefined));
     assert.equal((await ok(`/api/order-history?q=${encodeURIComponent(`Rp ${order.total}`)}`, "GET", undefined, limited)).orders.length, 0);
     assert.equal((await request("/api/order-history?method=TUNAI", "GET", undefined, limited)).status, 403);
     const detail = await ok(`/api/order-history/${order.id}`, "GET", undefined, limited);
@@ -60,7 +60,7 @@ test("Status Order: invoices, receipts, access and cashier pickup are independen
     const all = await ok("/api/order-history", "GET", undefined, cash);
     assert.equal(all.summary.orders, 2); assert.equal(all.summary.outstanding, order.total - 1000);
     const paginated = await ok("/api/order-history?pageSize=1&page=2"); assert.equal(paginated.orders.length, 1); assert.equal(paginated.pages, 2);
-    assert.equal((await ok(`/api/order-history?q=${draft.code}`)).orders[0].id, draft.id);
+    const draftRow=(await ok(`/api/order-history?q=${draft.code}`)).orders[0]; assert.equal(draftRow.id,draft.id);assert.equal(draftRow.lastPaymentMethod,"");assert.equal((await ok("/api/order-history?payment=BELUM_LUNAS")).orders.length,2);
     for (const status of ["CETAK", "FINISHING", "SELESAI"]) await ok(`/api/orders/${order.id}/items/${first.itemId}/status`, "PATCH", { status });
     const before = await ok("/api/bootstrap");
     const blocked = await request(`/api/orders/${order.id}/status`, "PATCH", { status: "DIAMBIL" }, cash);
@@ -72,7 +72,7 @@ test("Status Order: invoices, receipts, access and cashier pickup are independen
     assert.equal(order.status, "DIAMBIL"); assert.equal(order.paymentStatus, "LUNAS");
     const methodFiltered = await ok(`/api/order-history?method=QRIS&q=${encodeURIComponent(order.code)}`);
     assert.equal(methodFiltered.orders.length, 1); assert.deepEqual(methodFiltered.orders[0].paymentMethods, ["TUNAI", "QRIS"]);
-    assert.equal(methodFiltered.orders[0].payments, undefined);
+    assert.equal(methodFiltered.orders[0].payments, undefined); assert.equal(methodFiltered.orders[0].lastPaymentMethod,"QRIS");
     assert.equal(order.timeline.filter(item => item.message === "Status berubah menjadi Pesanan Diambil").length, 1);
     assert.deepEqual((await ok("/api/bootstrap")).inventory, before.inventory);
     const receipt = await ok(`/api/order-history/${order.id}/payments/${dp.id}`, "GET", undefined, cash);
