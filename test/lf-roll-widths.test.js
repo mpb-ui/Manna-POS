@@ -22,12 +22,12 @@ test('LF capacities select smallest fitting nominal roll at all boundaries witho
  assert.equal(supportsAutoRollWidth(product('poster-backlite-film')),false);
 });
 
-test('LF pricing keeps nominal billing; Albatros rotates automatically while other LF manual widths remain allowed',()=>{
+test('LF pricing keeps nominal billing and automatically selects roll and orientation',()=>{
  const p=product('poster-albatros'),line=calculateLine(p,input(1.2,91));
  assert.equal(line.width,1.2);assert.equal(line.allowanceCm,0);assert.equal(line.actualLength,.91);assert.equal(line.billedLength,1);assert.equal(line.baseTotal,Math.round(1.2*p.price));
  assert.equal(calculateLine(p,{...input(undefined,91)}).width,1.2);
  assert.equal(calculateLine(p,input(1.5,88)).width,.9);
- assert.equal(calculateLine(product('poster-luster'),input(1.5,88)).width,1.5);
+ assert.equal(calculateLine(product('poster-luster'),input(1.5,88)).width,.9);
  assert.equal(calculateLine(p,input(1.5,180)).finalImageWidthCm,180);
  const fixed=calculateLine(p,{sizeVariantId:'a1',quantity:1,finishing:[]});assert.equal(fixed.baseTotal,100000);
 });

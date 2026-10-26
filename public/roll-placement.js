@@ -5,13 +5,19 @@ export function supportsOutdoorPlacement(product) {
   return supportsOutdoorAllowance(product) && ['sqm', 'linear_m'].includes(product.priceBasis);
 }
 
-export const supportsRollPlacement = product => supportsAlbatrosPlacement(product) || supportsOutdoorPlacement(product);
+export function supportsLfPlacement(product) {
+  return !product?.templateProduct && product?.priceBasis === 'sqm'
+    && (['poster-luster', 'poster-canvas'].includes(product.id) || product.category === 'LF Sticker');
+}
+
+export const supportsRollPlacement = product => supportsAlbatrosPlacement(product) || supportsOutdoorPlacement(product) || supportsLfPlacement(product);
 export const rollPlacementNote = item => albatrosPlacementNote(item);
 
 // Physical footprint includes both allowances, even when <=5 cm is free for billing.
 // The nominal width and the product's own price basis still determine the charge.
 export function rollPlacements(product, input) {
-  if (supportsAlbatrosPlacement(product)) return albatrosPlacements(product, input);
+  // LF uses the same no-allowance geometry, nominal billing and rounding as Albatros.
+  if (supportsAlbatrosPlacement(product) || supportsLfPlacement(product)) return albatrosPlacements(product, input);
   if (!supportsOutdoorPlacement(product)) return [];
   const g = imageGeometry(product, input), allowance = g.allowanceCm;
   const step = Number(product.billingIncrement) > 0 ? Number(product.billingIncrement) : .5;
