@@ -40,7 +40,7 @@ test('invalid dimensions and no-fit are blocked; legacy length-only input and un
  assert.throws(()=>calculateLine(product,{width:.9,length:1,quantity:1,rollCalculationVersion:1,finishing:[]}),/Ukuran/);
  assert.throws(()=>calculateLine(product,input(90,1e100)),/terlalu besar/);
  const old=calculateLine(product,{width:1.5,length:1.1,quantity:1,finishing:[]});assert.equal(old.width,1.5);assert.equal(old.baseTotal,247500);assert.equal(old.rollPlacement,undefined);
- const luster=state.products.find(p=>p.id==='poster-luster');assert.equal(supportsAlbatrosPlacement(luster),false);assert.equal(calculateLine(luster,input(88,101,{width:1.5})).width,1.5);
+ const fixedPoster=state.products.find(p=>p.id==='poster-backlite-film');assert.equal(supportsAlbatrosPlacement(fixedPoster),false);assert.equal(calculateLine(fixedPoster,{sizeVariantId:'a1',quantity:1}).baseTotal,175000);
 });
 
 test('A1 price, discounts, finishing, design, HPP and original roll stock workflow stay independent',()=>{
