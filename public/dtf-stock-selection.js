@@ -35,7 +35,7 @@ export function validateShirtSelection(variants, stock) {
   return { valid: !message, message, rows };
 }
 
-export function bindShirtStockSelection({ scope, productId, getStock, setStock, getCart, readLine, api, onAdd, toast }) {
+export function bindShirtStockSelection({ scope, productId, getStock, setStock, getCart, readLine, api, onAdd, toast, minimum = 1 }) {
   const rowsElement = scope.querySelector('#dtf-shirt-rows');
   const button = scope.querySelector('#add-item');
   const feedback = scope.querySelector('[data-dtf-stock-feedback]');
@@ -49,6 +49,7 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
     if (!active()) return;
     const stock = remaining(), variants = readLine().shirtVariants;
     const result = validateShirtSelection(variants, stock);
+    if(!result.message && variants.reduce((sum,v)=>sum+v.quantity,0)<minimum){result.valid=false;result.message=`Minimum pembelian ${minimum} pcs`;}
     const availableByVariant = new Map(stock.map(row => [key(row.color, row.size), row.available]));
     rowsElement.querySelectorAll('[data-shirt-row]').forEach((row, index) => {
       const color = row.querySelector('[data-shirt-color]');
