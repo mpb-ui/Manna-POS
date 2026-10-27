@@ -1,5 +1,7 @@
 # Stok pada pemilihan Sablon Kaos
 
+Pembaruan 27 Oktober 2026: Sablon Kaos sekarang berada di Merchandise; dropdown ukuran hanya S/M/L/XL/XXL. Ketersediaan tetap pada bodytext bawah Jumlah, dengan validasi stok dan keranjang yang sama. Lihat [material-selection-merchandise.md](material-selection-merchandise.md). Bagian di bawah merekam implementasi awal.
+
 Scope: Sablon Kaos saja. Basis production sebelum batch ini: ececea1d69fcfb1329720739d78e4f1ff039166c. Tidak ada migrasi, perubahan saldo, harga paket/XXL, permission baru, atau perluasan validasi ke produk lain.
 
 ## Temuan dan perilaku baru

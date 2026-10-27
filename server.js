@@ -1,3 +1,4 @@
+import { DTF_MERCHANDISE_VERSION } from './lib/dtf-catalog.js';
 import { normalizeMinimum, normalizeWholesaleBasis, normalizeProductTiers, minimumError } from './public/product-pricing.js';
 import { registerGoodsReturnRoutes } from "./lib/goods-return-routes.js";
 import { invoiceCode, INVOICE_NUMBER_VERSION } from "./lib/invoice-numbers.js";
@@ -71,7 +72,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
