@@ -1,3 +1,4 @@
+import { normalizeMinimum, normalizeWholesaleBasis, normalizeProductTiers, minimumError } from './public/product-pricing.js';
 import { registerGoodsReturnRoutes } from "./lib/goods-return-routes.js";
 import { invoiceCode, INVOICE_NUMBER_VERSION } from "./lib/invoice-numbers.js";
 import { checkoutDeadline } from "./public/checkout-deadline.js";
@@ -165,19 +166,7 @@ function unique(state, collection, field, value, currentId) {
 }
 function normalizeTiers(body, retailPrice) {
   if (!body.wholesaleEnabled) return [];
-  const tiers = (body.priceTiers || []).slice(0, 10).map((tier) => ({
-    min: Math.max(1, Number(tier.min || 1)), max: tier.max === "" || tier.max == null ? null : Number(tier.max),
-    price: Math.max(0, Number(tier.price || 0))
-  })).sort((a, b) => a.min - b.min);
-  if (!tiers.length) throw new Error("Tambahkan minimal satu tingkat harga grosir");
-  for (let index = 0; index < tiers.length; index += 1) {
-    const tier = tiers[index];
-    if (!tier.price) throw new Error("Harga setiap tingkat wajib diisi");
-    if (tier.max != null && tier.max < tier.min) throw new Error("Maksimum quantity tidak boleh lebih kecil dari minimum");
-    if (index && (tiers[index - 1].max == null || tier.min <= tiers[index - 1].max)) throw new Error("Rentang harga grosir tidak boleh tumpang tindih");
-  }
-  if (tiers[0].min !== 1) tiers.unshift({ min: 1, max: tiers[0].min - 1, price: retailPrice });
-  return tiers.slice(0, 10);
+  return normalizeProductTiers(body.priceTiers || [], body.wholesaleBasis || 'quantity');
 }
 
 function normalizeDiscount(body) {
@@ -479,6 +468,8 @@ function saveProduct(state, body, current = null) {
   const priceBasis = simpleSale ? "unit" : ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : basisOption?.mode || "unit";
   const priceBasisLabel = simpleSale ? "Per unit" : basisOption?.label || text(body.priceBasisLabel) || ({ unit: "Per unit", sqm: "Luas m²", linear_m: "Meter lari" }[priceBasis]);
   const saleUnit = text(body.saleUnit) || "pcs";
+  const wholesaleBasis = normalizeWholesaleBasis(body.wholesaleBasis, priceBasis, current?.wholesaleBasis || 'quantity');
+  const minimum = normalizeMinimum(body,current || {});
   const hasMaterialVariants = body.hasMaterialVariants === undefined ? Boolean(current?.hasMaterialVariants) : body.hasMaterialVariants === true;
   const sourceIds = new Set();
   const materialSources = (simpleSale && !hasMaterialVariants ? [] : body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
@@ -526,7 +517,7 @@ function saveProduct(state, body, current = null) {
   const optionalTiers = (tiers, retailPrice) => {
     if (tiers === undefined || (Array.isArray(tiers) && !tiers.length)) return [];
     if (!Array.isArray(tiers) || tiers.length > 10) throw new Error("Maksimal 10 tingkat harga grosir per pilihan");
-    return normalizeTiers({ wholesaleEnabled: true, priceTiers: tiers }, retailPrice);
+    return normalizeTiers({ wholesaleEnabled: true, priceTiers: tiers, wholesaleBasis }, retailPrice);
   };
   const materialVariants = submittedMaterialVariants.map((variant) => {
     const id = text(variant.id); const label = text(variant.label);
@@ -588,7 +579,7 @@ function saveProduct(state, body, current = null) {
     return true;
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers(body, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   validateProductCalculator(product, state, body, current);
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
@@ -623,6 +614,7 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
         if (new Set(selectedMaterials).size !== selectedMaterials.length || selectedMaterials.some((id) => !DTF_SHIRT_MATERIALS.some((material) => material.id === id && state.materials.some((item) => item.id === id && item.active !== false)))) throw new Error("Pilih satu bahan kaos aktif yang berbeda untuk setiap varian");
         product.dtfStockVariants = variants.map(({ color, size, materialId }) => ({ color, size, materialId }));
       }
+      Object.assign(product, normalizeMinimum(req.body,product));
       product.dtfPackages = product.dtfPackages.map((item) => ({ ...item, price: byId.get(item.id) }));
       product.price = Math.min(...product.dtfPackages.map((item) => item.price));
       product.active = req.body.active !== false;
@@ -738,6 +730,10 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       const operation=req.body.requestId?checkOperation(state,req.body.requestId,fingerprintPayload,req.user):null;
       if(operation?.old)return order;
       if(req.body.requestId){const previous=order.payments.find(p=>p.requestId===req.body.requestId);if(previous){if(previous.amount!==amount||previous.type!==type||previous.method!==method)throw new Error('Permintaan pembayaran sudah dipakai untuk data berbeda');return order;}}
+      if(!order.confirmed && !order.paymentConfirmed)for(const item of order.items){
+        const product=state.products.find(p=>p.id===item.productId);
+        const issue=product && minimumError(product,item.quantity);if(issue)throw new Error(issue);
+      }
       if (!Number.isFinite(amount) || amount < 0) throw new Error("Nominal pembayaran tidak valid");
       const outstanding = Math.max(0, order.total - order.paidAmount);
       const poNumber = String(req.body.poNumber || "").trim();
