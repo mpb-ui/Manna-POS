@@ -12,7 +12,8 @@ test('API profil, produk baru, varian, snapshot, permission, pembayaran dan stok
     const login=async(username,pin)=>{const r=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username,pin})});assert.equal(r.status,200);return r.headers.get('set-cookie').split(';')[0];};
     const owner=await login('admin','1234');
     const request=async(path,method='GET',body,cookie=owner)=>{const r=await fetch(base+path,{method,headers:{'content-type':'application/json',cookie},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
-    const ok=async(...args)=>{const r=await request(...args);assert(r.status>=200&&r.status<300,JSON.stringify(r.body));return r.body;};
+    const ok=async(...args)=>{let r=await request(...args); // These fixtures intentionally use separate customers sharing a phone/name.
+      if(r.body?.code==='CUSTOMER_MATCH_REQUIRED'&&args[1]==='POST')r=await request(args[0],args[1],{...args[2],newCustomerConfirmedIds:r.body.matches.map(c=>c.id)},args[3]);assert(r.status>=200&&r.status<300,JSON.stringify(r.body));return r.body;};
     let state=await ok('/api/bootstrap');
     const paper=state.products.find(p=>p.a3Family==='Art Paper (AP)'&&p.a3Variant==='AP 150'&&p.a3Side==='1S');
     const calc={shape:'rectangle',widthCm:8,lengthCm:10,requestedQuantity:100,allowRotation:true};

@@ -1,3 +1,4 @@
+import { registerOrderCustomer, CUSTOMER_DIRECTORY_VERSION } from './lib/customer-directory.js';
 import { DTF_MERCHANDISE_VERSION } from './lib/dtf-catalog.js';
 import { normalizeMinimum, normalizeWholesaleBasis, normalizeProductTiers, minimumError } from './public/product-pricing.js';
 import { registerGoodsReturnRoutes } from "./lib/goods-return-routes.js";
@@ -72,7 +73,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
@@ -664,7 +665,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         updatedAt: now(),
         timeline: []
       };
-      if(req.body.customerId)resolveOrderCustomer(state,order,req.body.customerId);
+      registerOrderCustomer(state,order,req.body,req.user);
       initializeOrderItems(order);
       activity(state, order, "Pesanan dibuat di POS", req.user.name);
       audit(state, req.user, "ORDER_CREATE", `Membuat pesanan ${order.code}`, { orderId: order.id, total: order.total });
@@ -688,7 +689,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       order.customerName = String(req.body.customerName).trim();
       order.phone = requiredPhone(req.body.phone);
       // An unpaid draft may select a different account; no balance moves here.
-      delete order.customerId; if(req.body.customerId)resolveOrderCustomer(state,order,req.body.customerId);
+      delete order.customerId; registerOrderCustomer(state,order,req.body,req.user);
       order.deadline = checkoutDeadline(req.body.deadline, order.deadline);
       order.fileStatus = req.body.fileStatus || "SIAP_CETAK";
       order.fileReadiness = FILE_READINESS.includes(req.body.fileReadiness) ? req.body.fileReadiness : "UNCONFIRMED";
@@ -1043,7 +1044,7 @@ app.use(express.static("public"));
 app.get("/{*path}", (_req, res) => res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
 app.use((error, _req, res, _next) => {
   console.error(error);
-  res.status([403,404,409].includes(error.status)?error.status:400).json({ error: error.message || "Terjadi kesalahan" });
+  res.status([403,404,409].includes(error.status)?error.status:400).json({ error: error.message || "Terjadi kesalahan", ...(error.code==='CUSTOMER_MATCH_REQUIRED'?{code:error.code,matches:error.matches}:{}) });
 });
 
 await store.init();

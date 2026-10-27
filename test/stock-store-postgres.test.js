@@ -5,7 +5,7 @@ import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false,legacyDtf=false}={}) {
+async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false,legacyDtf=false,legacyDirectory=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
  const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();data.printStockVersion=1;delete data.stockSchemaVersion;
  if (legacyLf) {
@@ -18,6 +18,7 @@ async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoic
  if(legacyInvoice){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.invoiceNumberVersion;delete data.invoiceNumberMigration;data.orders[0].code='MP-20261023-0001';data.cashReceipts=[{orderId:'legacy',orderCode:'MP-20261023-0001',amount:123}];}
  if(legacyPrint){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.printStockVersion;const stock=data.inventory.find(row=>row.sku==='KRT-AP260');stock.quantity=100;Object.assign(data.orders[0],{status:'CETAK',stockCommitted:false,items:[{itemId:'printed',status:'CETAK',stockTiming:'PRODUCTION',stockCommitted:false,materials:[{materialId:stock.materialId,sku:stock.sku,units:10,unit:stock.unit}]}]});}
  if(legacyDtf){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.dtfMerchandiseVersion;const p=data.products.find(p=>p.dtfShirt);p.category='Sablon DTF';p.price=123456;data.catalogOptions.categories.push('Sablon DTF');data.catalogOptions.categoryKeys['Sablon DTF']='sablon-dtf';}
+ if(legacyDirectory){delete data.customerDirectoryVersion;Object.assign(data.orders[0],{customerName:'Baccala',phone:'081234567890'});}
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -130,4 +131,14 @@ test('DTF category migration rolls back if its durable backup cannot be saved',a
  const f=await databaseFixture({legacyDtf:true}),connect=f.store.pool.connect,before=structuredClone(f.getState());
  f.store.pool.connect=async()=>{const c=await connect();return {...c,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return c.query(sql,params);}};};
  await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
+});
+
+test('customer directory migration creates and links exact profiles only after a locked raw backup, preserves finances and stock, and repeats safely',async()=>{
+ const f=await databaseFixture({legacyDirectory:true});
+ await f.store.init();assert.equal(f.store.customerDirectoryBackupVerified,true);const backup=f.backups.get('customer-directory-v1');assert.equal(backup.orders[0].customerId,undefined);const state=f.getState();assert.equal(state.customerDirectoryVersion,1);assert.equal(state.customers.length,1);assert.equal(state.orders[0].customerId,state.customers[0].id);assert.deepEqual(state.orders[0].payments,backup.orders[0].payments);assert.deepEqual(state.inventory,backup.inventory);assert.deepEqual(state.depositLedger,backup.depositLedger);
+ const b=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups')&&q.params[0]==='customer-directory-v1'),u=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(b>=0&&b<u);assert(f.queries.slice(0,b).some(q=>q.sql.endsWith('FOR UPDATE')));
+ const first=structuredClone(f.getState());await f.store.init();assert.deepEqual(f.getState(),first);
+});
+test('customer directory refuses to migrate when its durable backup fails',async()=>{
+ const f=await databaseFixture({legacyDirectory:true}),connect=f.store.pool.connect;f.store.pool.connect=async()=>{const c=await connect(),query=c.query;c.query=async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups')&&params[0]==='customer-directory-v1')throw Error('backup unavailable');return query(sql,params);};return c;};const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
 });
