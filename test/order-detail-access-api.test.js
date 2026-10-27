@@ -31,7 +31,8 @@ test("detail order: nomor bebas, riwayat per role, dan Kasir hanya menyelesaikan
       const r = await fetch(base + path, { method, headers: { "content-type": "application/json", cookie }, body: body === undefined ? undefined : JSON.stringify(body) });
       return { status: r.status, body: await r.json() };
     };
-    const ok = async (...args) => { const r = await request(...args); assert.ok(r.status < 300, JSON.stringify(r)); return r.body; };
+    const ok = async (...args) => { let r=await request(...args); // These fixtures intentionally use separate customers sharing a phone/name.
+      if(r.body?.code==='CUSTOMER_MATCH_REQUIRED'&&args[1]==='POST')r=await request(args[0],args[1],{...args[2],newCustomerConfirmedIds:r.body.matches.map(c=>c.id)},args[3]); assert.ok(r.status < 300, JSON.stringify(r)); return r.body; };
     const fullDetail = ["orders.view", "projects.orders", "projects.waiting", "projects.money", "projects.status", "pos.payment"];
     const sessions = {};
     for (const [name, role, permissions] of [

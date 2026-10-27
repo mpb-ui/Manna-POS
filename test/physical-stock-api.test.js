@@ -10,7 +10,8 @@ test("API stok: roll/opname, ATK, DP/PO, produksi, retry, retur dan izin",async(
   for(let i=0;i<80;i++){try{if((await fetch(base+'/api/health')).ok)break}catch{}await new Promise(r=>setTimeout(r,100));}
   const login=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'admin',pin:'1234'})});const cookie=login.headers.get('set-cookie').split(';')[0];
   const req=async(path,method='GET',data,auth=cookie)=>{const r=await fetch(base+path,{method,headers:{cookie:auth,'content-type':'application/json'},body:data===undefined?undefined:JSON.stringify(data)});return{status:r.status,body:await r.json()}};
-  const ok=async(...args)=>{const r=await req(...args);assert(r.status>=200&&r.status<300,JSON.stringify(r));return r.body};
+  const ok=async(...args)=>{let r=await req(...args); // These fixtures intentionally use separate customers sharing a phone/name.
+      if(r.body?.code==='CUSTOMER_MATCH_REQUIRED'&&args[1]==='POST')r=await req(args[0],args[1],{...args[2],newCustomerConfirmedIds:r.body.matches.map(c=>c.id)},args[3]);assert(r.status>=200&&r.status<300,JSON.stringify(r));return r.body};
   let state=await ok('/api/bootstrap'),roll=state.materials.find(m=>m.id==='mat-flexi-280');const oldStock=state.inventory.find(r=>r.materialId===roll.id),oldBalance=oldStock.quantity;
   assert.equal(roll.stockMethod,'ROLL');assert.equal(oldStock.stockNeedsCount,true);assert.equal(oldStock.unit,'m²');assert.equal((await req('/api/inventory/'+roll.sku,'PATCH',{change:-1,reason:'bad'})).status,400);
   roll=await ok('/api/materials/'+roll.id,'PUT',{...roll,stockMethod:'ROLL',rollWidthCm:110,confirmStockCount:true,stockOpeningBalance:10,stockCountReason:'Hitung 10 roll gudang',minStock:1});assert.equal(roll.unit,'m²');assert.equal(roll.stockUnit,'roll');

@@ -19,7 +19,8 @@ test("Status Order: invoices, receipts, access and cashier pickup are independen
     const login = async (username, pin) => { const r = await fetch(`${url}/api/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, pin }) }); assert.equal(r.status, 200); return r.headers.get("set-cookie").split(";")[0]; };
     const owner = await login("admin", "1234");
     const request = async (path, method = "GET", body, cookie = owner) => { const r = await fetch(`${url}${path}`, { method, headers: { "content-type": "application/json", cookie }, body: body === undefined ? undefined : JSON.stringify(body) }); return { status: r.status, body: await r.json() }; };
-    const ok = async (...args) => { const r = await request(...args); assert.ok(r.status < 300, JSON.stringify(r)); return r.body; };
+    const ok = async (...args) => { let r=await request(...args); // These fixtures intentionally use separate customers sharing a phone/name.
+      if(r.body?.code==='CUSTOMER_MATCH_REQUIRED'&&args[1]==='POST')r=await request(args[0],args[1],{...args[2],newCustomerConfirmedIds:r.body.matches.map(c=>c.id)},args[3]); assert.ok(r.status < 300, JSON.stringify(r)); return r.body; };
     for (const [name, role, permissions] of [["cash", "CASHIER"], ["operator", "DESIGN"], ["limited", "CASHIER", ["orders.view"]]]) await ok("/api/users", "POST", { name, username: name, pin: "5678", role, ...(permissions ? { permissions } : {}) });
     const cash = await login("cash", "5678"), operator = await login("operator", "5678"), limited = await login("limited", "5678");
     const body = { customerName: "Invoice multi produk", phone: "081234567890", items: [{ productId: "poster-albatros", width: .9, length: 1, quantity: 2 }, { productId: "poster-albatros", width: .9, length: 2, quantity: 1 }] };

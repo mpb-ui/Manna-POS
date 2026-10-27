@@ -131,7 +131,7 @@ async function api(path, options = {}) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
   const body = await response.json().catch(() => ({}));
   if (response.status === 401 && path !== "/api/login") showLogin();
-  if (!response.ok) throw Object.assign(new Error(body.error || "Permintaan gagal"), { code: body.code });
+  if (!response.ok) throw Object.assign(new Error(body.error || "Permintaan gagal"), { code: body.code, matches: body.matches });
   return body;
 }
 
@@ -1098,9 +1098,10 @@ function bindPos() {
     try {
       state.draft.phone = requiredPhone(state.draft.phone);
       const payload = { ...state.draft, requestId: createRequestId, confirmed: openPayment, items: state.cart };
-      const order = state.editingOrderId
-        ? await api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
-        : await api("/api/orders", { method: "POST", body: JSON.stringify(payload) });
+      const order = await customersUI.saveCheckout(payload => state.editingOrderId
+        ? api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
+        : api("/api/orders", { method: "POST", body: JSON.stringify(payload) }),payload);
+      if(!order)return;
       state.cart = []; configurationDrafts.clear(); state.editingOrderId = null;
       state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
       await load(); toast(`${order.code} berhasil disimpan`);
