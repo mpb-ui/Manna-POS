@@ -5,7 +5,7 @@ import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false}={}) {
+async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false,legacyDtf=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
  const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();data.printStockVersion=1;delete data.stockSchemaVersion;
  if (legacyLf) {
@@ -17,6 +17,7 @@ async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoic
  if(legacyCustomer){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;delete data.customerSchemaVersion;delete data.customers;delete data.depositLedger;delete data.cashReceipts;delete data.customerOperations;delete data.customerAccessVersion;}
  if(legacyInvoice){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.invoiceNumberVersion;delete data.invoiceNumberMigration;data.orders[0].code='MP-20261023-0001';data.cashReceipts=[{orderId:'legacy',orderCode:'MP-20261023-0001',amount:123}];}
  if(legacyPrint){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.printStockVersion;const stock=data.inventory.find(row=>row.sku==='KRT-AP260');stock.quantity=100;Object.assign(data.orders[0],{status:'CETAK',stockCommitted:false,items:[{itemId:'printed',status:'CETAK',stockTiming:'PRODUCTION',stockCommitted:false,materials:[{materialId:stock.materialId,sku:stock.sku,units:10,unit:stock.unit}]}]});}
+ if(legacyDtf){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.dtfMerchandiseVersion;const p=data.products.find(p=>p.dtfShirt);p.category='Sablon DTF';p.price=123456;data.catalogOptions.categories.push('Sablon DTF');data.catalogOptions.categoryKeys['Sablon DTF']='sablon-dtf';}
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -112,4 +113,21 @@ test("print timing migration backs up raw state before consuming previously prin
 test("print timing migration rolls back if the pre-migration backup fails",async()=>{
  const f=await databaseFixture({legacyPrint:true}),connect=f.store.pool.connect;f.store.pool.connect=async()=>{const c=await connect();return {...c,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return c.query(sql,params);}};};
  const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
+});
+
+
+test('DTF category migration backs up raw state and preserves pricing, stock and invoices exactly once',async()=>{
+ const f=await databaseFixture({legacyDtf:true}),before=structuredClone(f.getState());await f.store.init();
+ assert(f.store.dtfMerchandiseBackupVerified);assert.deepEqual(f.backups.get('dtf-merchandise-v1'),before);
+ assert.equal(f.getState().products.find(p=>p.dtfShirt).category,'Merchandise');assert.equal(f.getState().products.find(p=>p.dtfShirt).price,123456);
+ assert.deepEqual(f.getState().products.find(p=>p.dtfShirt).dtfPackages,before.products.find(p=>p.dtfShirt).dtfPackages);
+ assert.deepEqual(f.getState().orders,before.orders);assert.deepEqual(f.getState().inventory,before.inventory);assert.deepEqual(f.getState().materials,before.materials);
+ assert(!f.getState().catalogOptions.categories.includes('Sablon DTF'));assert.equal(f.getState().dtfMerchandiseVersion,1);
+ const migrated=structuredClone(f.getState());await f.store.init();assert.deepEqual(f.getState(),migrated);assert.equal(f.backups.size,1);
+ const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups'));const update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(backup<update);
+});
+test('DTF category migration rolls back if its durable backup cannot be saved',async()=>{
+ const f=await databaseFixture({legacyDtf:true}),connect=f.store.pool.connect,before=structuredClone(f.getState());
+ f.store.pool.connect=async()=>{const c=await connect();return {...c,query:async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return c.query(sql,params);}};};
+ await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
 });

@@ -50,7 +50,6 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
     const stock = remaining(), variants = readLine().shirtVariants;
     const result = validateShirtSelection(variants, stock);
     if(!result.message && variants.reduce((sum,v)=>sum+v.quantity,0)<minimum){result.valid=false;result.message=`Minimum pembelian ${minimum} pcs`;}
-    const availableByVariant = new Map(stock.map(row => [key(row.color, row.size), row.available]));
     rowsElement.querySelectorAll('[data-shirt-row]').forEach((row, index) => {
       const color = row.querySelector('[data-shirt-color]');
       const size = row.querySelector('[data-shirt-size]');
@@ -58,8 +57,7 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
       const note = row.querySelector('[data-shirt-stock]');
       if (!note.id) note.id = `dtf-stock-note-${crypto.randomUUID()}`;
       for (const option of size.options) {
-        const available = availableByVariant.get(key(color.value, option.value)) || 0;
-        option.textContent = available ? `${option.value} — ${available} pcs` : `${option.value} — 0 pcs (Habis)`;
+        option.textContent = option.value;
       }
       const validation = result.rows[index];
       note.textContent = validation.error || `Tersedia ${validation.available} pcs`;
