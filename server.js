@@ -1,3 +1,5 @@
+import { applyInvoiceDiscount } from './lib/order-discount.js';
+import { invoiceDiscount, settledOrder } from './public/order-discount.js';
 import { registerHomeCampaign, campaignForPos } from './lib/home-campaign.js';
 import { registerOrderCustomer, CUSTOMER_DIRECTORY_VERSION } from './lib/customer-directory.js';
 import { DTF_MERCHANDISE_VERSION } from './lib/dtf-catalog.js';
@@ -147,7 +149,7 @@ function sanitizeOrder(order, user) {
   const canSeeMoney = hasPermission(user, "projects.money");
   if (!paymentHistoryVisible(user.role)) { delete copy.payments; delete copy.cashReceipts; }
   if (!canSeeMoney) {
-    delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
+    delete copy.grossTotal; delete copy.invoiceDiscount; delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
     copy.items.forEach((item) => {
       ["unitPrice", "originalUnitPrice", "baseTotal", "finishingTotal", "fileServiceTotal", "templateDesignTotal", "subtotal"].forEach((key) => delete item[key]);
       (item.finishing || []).forEach((finish) => { delete finish.unitPrice; delete finish.subtotal; });
@@ -191,7 +193,7 @@ function normalizeOrder(order) {
   order.payments ||= [];
   order.paymentConfirmed = Boolean(order.paymentConfirmed);
   order.confirmed = Boolean(order.confirmed || order.confirmedAt || order.paymentConfirmed);
-  order.paymentStatus = order.paidAmount >= Number(order.total || 0) && order.total > 0
+  order.paymentStatus = settledOrder(order)
     ? "LUNAS"
     : order.paymentConfirmed ? "BELUM_LUNAS" : "BELUM_BAYAR";
   order.items ||= [];
@@ -732,9 +734,12 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       initializeCustomers(state);
       if(String(req.body.note || "").length>1000||String(req.body.reference || "").length>150)throw new Error("Catatan atau referensi pembayaran terlalu panjang");
       const fingerprintPayload=['payment',order.id,type,method,amount,req.body.depositAmount ?? 0,req.body.customerId || '',req.body.excessAction || '',req.body.confirmDeposit===true,String(req.body.reference || ''),String(req.body.note || ''),String(req.body.poNumber || '')];
+      if (Object.hasOwn(req.body,'invoiceDiscountAmount')) fingerprintPayload.push(['invoiceDiscountAmount',req.body.invoiceDiscountAmount]);
       const operation=req.body.requestId?checkOperation(state,req.body.requestId,fingerprintPayload,req.user):null;
       if(operation?.old)return order;
       if(req.body.requestId){const previous=order.payments.find(p=>p.requestId===req.body.requestId);if(previous){if(previous.amount!==amount||previous.type!==type||previous.method!==method)throw new Error('Permintaan pembayaran sudah dipakai untuk data berbeda');return order;}}
+      const discountChanged = applyInvoiceDiscount(order, req.body.invoiceDiscountAmount, req.user);
+      if (discountChanged) audit(state, req.user, 'ORDER_DISCOUNT', `Diskon pesanan ${order.code}`, {orderId:order.id, grossTotal:order.grossTotal, discountAmount:invoiceDiscount(order), total:order.total});
       if(!order.confirmed && !order.paymentConfirmed)for(const item of order.items){
         const product=state.products.find(p=>p.id===item.productId);
         const issue=product && minimumError(product,item.quantity);if(issue)throw new Error(issue);
@@ -744,7 +749,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       const poNumber = String(req.body.poNumber || "").trim();
       const poAttachment = req.body.poAttachment || null;
       if (type === "PAYMENT" && amount>0 && !method) throw new Error("Metode pembayaran wajib dipilih");
-      if (type === "PAYMENT" && amount <= 0 && !Number(req.body.depositAmount)) throw new Error("Nominal pembayaran wajib diisi");
+      if (type === "PAYMENT" && amount <= 0 && !Number(req.body.depositAmount) && !(order.total === 0 && invoiceDiscount(order) > 0 && !order.paymentConfirmed)) throw new Error("Nominal pembayaran wajib diisi");
       if (amount > outstanding && !req.body.excessAction) throw new Error("Nominal diterima melebihi sisa tagihan");
       if(type === "PO" && Number(req.body.depositAmount))throw new Error("Pencatatan PO tidak dapat memakai deposit; catat pembayaran secara terpisah");
       if (type === "PO" && !poNumber) throw new Error("Nomor PO wajib diisi");
@@ -756,7 +761,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       }
       let allocation;
       if(type==='PO')order.payments.push({id:crypto.randomUUID(),requestId:req.body.requestId || null,method,type,amount:0,poNumber,poAttachment:poAttachment?{name:text(poAttachment.name),type:text(poAttachment.type),dataUrl:poAttachment.dataUrl}:null,createdAt:now(),actor:req.user.name,actorId:req.user.id,note:text(req.body.note)});
-      else allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
+      else if (!(order.total === 0 && invoiceDiscount(order) > 0 && amount === 0 && !Number(req.body.depositAmount))) allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
       order.paymentConfirmed = true;
       order.confirmed = true; order.confirmedAt ||= now();
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
@@ -768,7 +773,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       confirmRetailStock(state, order, req.user.name, now());
       for (const item of retailItems) activity(state, order, `Penjualan ${item.productName}: stok satuan dicatat; ${item.status === "DIAMBIL" ? "pesanan diambil" : "barang siap diserahkan"}`, req.user.name, { itemId: item.itemId, productName: item.productName });
       order.updatedAt = now();
-      activity(state, order, `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
+      activity(state, order, order.total === 0 && invoiceDiscount(order) > 0 ? "Tagihan lunas melalui diskon penuh; tidak ada uang masuk" : `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
       audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount, depositUsed:allocation?.used || 0,depositCredit:allocation?.credit || 0 });
       if(allocation?.credit)activity(state,order,"Kelebihan pembayaran disimpan sebagai deposit pelanggan",req.user.name);
       if(allocation?.used)activity(state,order,"Pembayaran melalui deposit dicatat",req.user.name);

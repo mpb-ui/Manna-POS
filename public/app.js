@@ -1,3 +1,5 @@
+import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from './order-discount.js';
+import { paymentDiscountHtml, bindPaymentDiscount } from './payment-discount-ui.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
 import { enhanceMaterialSelects } from './material-picker.js';
 import { minimumQuantity, minimumError, purchaseUnit, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
@@ -1126,7 +1128,7 @@ function bindPos() {
 
 function paymentStatus(order) {
   if(cancelled(order))return "DIBATALKAN";
-  if (Number(order.paidAmount || 0) >= Number(order.total || 0) && order.total > 0) return "LUNAS";
+  if (settledOrder(order)) return "LUNAS";
   return "BELUM_LUNAS";
 }
 
@@ -1342,9 +1344,9 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     ${isWaiting ? paymentForm : ""}
     <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong class="${paymentStatus(order)==="BELUM_LUNAS"?"payment-unpaid":""}">${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
     <div class="order-items-detail">${order.items.map((item,index) => `<div class="detail-item status-${item.status.toLowerCase()}" data-detail-item="${item.itemId}" tabindex="-1"><span class="item-number">${index+1}</span><div class="detail-item-content">${itemDetail(item)}${itemWorkflowHtml(order,item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
-    ${showMoney && !isDesign ? `<div class="detail-total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div>` : ""}
+    ${showMoney && !isDesign ? `<div class="order-discount-totals">${invoiceDiscount(order) ? `<div class="detail-total discount-line"><span>Total Pesanan</span><strong>${rupiah.format(invoiceGross(order))}</strong></div><div class="detail-total discount-line"><span>Diskon Pesanan</span><strong>− ${rupiah.format(invoiceDiscount(order))}</strong></div>` : ""}<div class="detail-total"><span>${invoiceDiscount(order) ? "Total Tagihan" : "Total Pesanan"}</span><strong>${rupiah.format(order.total)}</strong></div></div>` : ""}
     <div id="order-assistance" class="order-assistance"></div>
-    ${showMoney && can("orders.view") && paymentHistoryVisible(state.currentUser.role) ? `<section class="payment-ledger"><h3>Riwayat pembayaran</h3>${paymentReceipts(order).map(payment => `<div class="payment-ledger-row"><div><strong>${rupiah.format(payment.amount)} · ${escapeHtml(payment.method)}</strong><small>${dateFormat.format(new Date(payment.createdAt))} WITA · ${escapeHtml(payment.actor || "Riwayat lama")}</small></div><button class="secondary" data-print-payment="${escapeHtml(payment.id)}">Cetak Bukti #${payment.sequence}</button></div>`).join("") || '<p>Belum ada pembayaran diterima.</p>'}${(order.payments || []).filter(payment => payment.type === "PO").map(payment => `<p>PO / Tempo · ${escapeHtml(payment.poNumber)} · ${dateFormat.format(new Date(payment.createdAt))} WITA</p>`).join("")}</section>` : ""}
+    ${showMoney && can("orders.view") && paymentHistoryVisible(state.currentUser.role) ? `<section class="payment-ledger"><h3>Riwayat pembayaran</h3>${paymentReceipts(order).map(payment => `<div class="payment-ledger-row"><div><strong>${rupiah.format(payment.amount)} · ${escapeHtml(payment.method)}</strong><small>${dateFormat.format(new Date(payment.createdAt))} WITA · ${escapeHtml(payment.actor || "Riwayat lama")}</small></div><button class="secondary" data-print-payment="${escapeHtml(payment.id)}">Cetak Bukti #${payment.sequence}</button></div>`).join("") || (order.total === 0 && invoiceDiscount(order) ? '<p>Tagihan lunas melalui diskon penuh; tidak ada uang masuk.</p>' : '<p>Belum ada pembayaran diterima.</p>')}${(order.payments || []).filter(payment => payment.type === "PO").map(payment => `<p>PO / Tempo · ${escapeHtml(payment.poNumber)} · ${dateFormat.format(new Date(payment.createdAt))} WITA</p>`).join("")}</section>` : ""}
     ${!isWaiting ? paymentForm : ""}
     <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
   </div><div class="detail-actions">
@@ -1440,14 +1442,14 @@ function openPaymentDialog(order, initial={}) {
   const outstanding = Math.max(0, Number(order.total) - Number(order.paidAmount || 0));
   const detail = document.querySelector("#order-detail");
   dialog.classList.add("payment-dialog");
-  detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${escapeHtml(order.code)}</span><h2>Pembayaran</h2><p>${escapeHtml(order.customerName)}</p></div><button class="detail-close" aria-label="Tutup pembayaran">×</button></div><div class="detail-body"><div class="payment-order-summary">${order.items.map(item => `<div><strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize)}</small>${imageSizeNote(item) ? `<small>${escapeHtml(imageSizeNote(item))}</small>` : ""}</div>`).join("")}<div class="summary-row total"><span>Total Pesanan</span><strong>${rupiah.format(order.total)}</strong></div></div>${paymentFormHtml(order,outstanding)}</div><div class="detail-actions"><button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button></div>`;
+  detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${escapeHtml(order.code)}</span><h2>Pembayaran</h2><p>${escapeHtml(order.customerName)}</p></div><button class="detail-close" aria-label="Tutup pembayaran">×</button></div><div class="detail-body"><div class="payment-order-summary">${order.items.map(item => `<div><strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize)}</small>${imageSizeNote(item) ? `<small>${escapeHtml(imageSizeNote(item))}</small>` : ""}</div>`).join("")}<div class="summary-row total"><span>Total Pesanan</span><strong>${rupiah.format(invoiceGross(order))}</strong></div></div>${paymentFormHtml(order,outstanding)}</div><div class="detail-actions"><button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button></div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   dialog.onclose = () => { if(dialog.open)return;dialog.classList.remove("payment-dialog"); dialog.onclose = null; detail.replaceChildren(); };
   bindPaymentForm(order,outstanding,initial); dialog.showModal();
 }
 
 function paymentFormHtml(order, outstanding) {
-  return `<form id="payment-form"><h3>Form Pembayaran</h3><div class="form-grid">
+  return `${paymentDiscountHtml(order, {moneyField, money:n=>rupiah.format(n)})}<form id="payment-form"><h3>Form Pembayaran</h3><div class="form-grid">
     <div class="field full"><span>Jenis pembayaran</span><div class="payment-tabs"><label><input type="radio" name="type" value="PAYMENT" checked><span>Pembayaran</span></label><label><input type="radio" name="type" value="PO"><span>Pembayaran PO</span></label></div></div>
     <div id="payment-fields" class="payment-tab-panel full"><div class="field"><span>Metode</span><div class="chips payment-method-chips">${[["TUNAI","Tunai"],["QRIS","QRIS"],["TRANSFER","Transfer"]].map(([value,label]) => `<div class="chip"><input type="radio" name="method" id="pay-method-${value}" value="${value}" required><label for="pay-method-${value}">${label}</label></div>`).join("")}</div></div>
     <label class="field"><span>Nominal diterima</span><div class="payment-amount-field">${moneyField("amount", outstanding, "required")}</div></label>
@@ -1463,6 +1465,9 @@ function bindPaymentForm(order, outstanding, initial={}) {
   const halfButton = form.querySelector("#payment-half");
   const methods = [...form.querySelectorAll('input[name="method"]')];
   bindMoneyInputs(form);
+  bindMoneyInputs(form.previousElementSibling);
+  const discountController = bindPaymentDiscount(form,order,{parseMoney,money:n=>rupiah.format(n)});
+  const paymentOrder = discountController.order;
   form.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener("change", () => {
     if (!input.checked) return;
     const po = input.value === "PO";
@@ -1474,13 +1479,11 @@ function bindPaymentForm(order, outstanding, initial={}) {
   form.querySelector("#payment-dp").onchange = event => {
     halfButton.classList.toggle("hidden",!event.target.checked);
     event.target.setAttribute("aria-expanded",String(event.target.checked));
-    if (!event.target.checked) form.elements.amount.value = formatMoneyValue(outstanding);
   };
-  halfButton.onclick = () => { form.elements.amount.value = formatMoneyValue(Math.min(outstanding,Math.round(Number(order.total || 0)*0.5))); };
   const confirmButton = document.querySelector('#confirm-payment');
   if (confirmButton) confirmButton.disabled = true;
   let depositError;
-  const depositReady=customersUI.mountPayment(form,order,initial).catch(error=>{depositError=error;toast(error.message,"error");return null;}).finally(()=>{if(form.isConnected&&confirmButton)confirmButton.disabled=false;});
+  const depositReady=customersUI.mountPayment(form,paymentOrder,initial).catch(error=>{depositError=error;toast(error.message,"error");return null;}).finally(()=>{if(form.isConnected&&confirmButton)confirmButton.disabled=false;});
   let previewUrl;
   dialog.addEventListener("close", () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, { once: true });
   form.elements.poFile.addEventListener("change", () => {
@@ -1494,6 +1497,8 @@ function bindPaymentForm(order, outstanding, initial={}) {
     event.preventDefault(); if (submitting) return;
     if (!form.reportValidity()) return;
     submitting = true;
+    const discountSection = document.querySelector(".payment-discount-summary");
+    form.inert = true; if (discountSection) discountSection.inert = true;
     const button = document.querySelector('#confirm-payment'); if (button) button.disabled = true;
     try {
       const depositController=await depositReady;
@@ -1501,14 +1506,14 @@ function bindPaymentForm(order, outstanding, initial={}) {
       if(depositError)throw depositError;
       const depositValues=await depositController.confirm();
       if(!depositValues||!form.isConnected||!form.reportValidity())return;
-      const values = {...Object.fromEntries(new FormData(form)),...depositValues}; values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
+      const values = {...Object.fromEntries(new FormData(form)),...depositValues,invoiceDiscountAmount:discountController.amount()}; values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); delete values.poFile;
       const file = form.elements.poFile.files[0];
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);
       const paidOrder = await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify({ ...values, requestId: paymentRequestId }) });
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       dialog.close(); await load(); if (can("orders.view")) { if (!state.orders.some(item => item.id === paidOrder.id)) state.orders.push(paidOrder); openOrder(order.id); } toast("Pembayaran berhasil dicatat");
     } catch (error) { toast(error.message, "error"); }
-    finally { submitting = false; if (button) button.disabled = false; }
+    finally { submitting = false; form.inert = false; if (discountSection) discountSection.inert = false; if (button) button.disabled = false; }
   });
 }
 
@@ -1567,7 +1572,7 @@ function printOrder(order, type) {
     <div class="print-meta"><b>${escapeHtml(order.code)}</b><span>${dateFormat.format(new Date(order.createdAt))} WITA</span></div>
     <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
     ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item) ? `<br>${escapeHtml(imageSizeNote(item))}` : ""}<br>${escapeHtml(itemQuantityLabel(item))}<br>Status: ${escapeHtml(state.statusLabels[item.status] || item.status)} · PIC: ${escapeHtml(item.designPic || "—")}<br>Deadline: ${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "—"}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
-    ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr><div class="print-total"><span>Total</span><b>${rupiah.format(order.total)}</b></div>${depositInvoiceLines(order)}<div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(cancelled(order)?0:Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
+    ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr>${discountPrintLines(order,n=>rupiah.format(n))}<div class="print-total"><span>Total Tagihan</span><b>${rupiah.format(order.total)}</b></div>${depositInvoiceLines(order)}<div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(cancelled(order)?0:Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
     ${!isSpk ? `<p><b>Status pembayaran: ${escapeHtml(paymentStatus(order).replaceAll("_", " "))}</b><br>WhatsApp: ${escapeHtml(order.phone || "—")}</p>` : ""}<hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
   showPrintDocument();
 }
