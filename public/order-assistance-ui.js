@@ -85,31 +85,11 @@ export function createOrderAssistance(c) {
   function mountCheckout(cachedCheck = null) {
     const form = document.querySelector("#checkout"); if(!form)return;
     const uid=identity(), version=epoch;
-    let lookupTimer, lookupVersion=0, stockVersion=0;
-    const customerField=form.querySelector('[name="customerName"]');
-    const names=[...new Set(c.state.orders.filter(o=>o.confirmed||o.paymentConfirmed).map(o=>o.customerName))];
-    const list=document.createElement("datalist");list.id="assist-customers";list.innerHTML=names.map(name=>`<option value="${h(name)}"></option>`).join("");form.append(list);customerField.setAttribute("list",list.id);
-    const repeat=document.createElement("div");repeat.className="assist-repeat hidden";customerField.closest(".field").after(repeat);
+    let stockVersion=0;
     const assistance=document.createElement("div");assistance.className="assist-checkout";
     assistance.innerHTML='<div data-stock-warning></div>';
     (form.querySelector(".checkout-footer") || form.querySelector(".checkout-actions")).before(assistance);
     function valid(){return form.isConnected&&uid===identity()&&version===epoch;}
-    const lookup=async()=>{
-      const request=++lookupVersion;
-      const name=form.elements.customerName.value.trim(),phone=form.elements.phone.value;
-      if(!name){repeat.classList.add('hidden');return;}
-      try{
-        const result=await c.api(`/api/repeat-order?${new URLSearchParams({customerName:name,phone})}`);
-        if(!valid()||request!==lookupVersion)return;
-        repeat.classList.toggle('hidden',!result.order&&!result.ambiguous);
-        if(result.ambiguous){repeat.innerHTML='<small>Isi nomor WhatsApp untuk membedakan pelanggan dengan nama yang sama.</small>';return;}
-        if(!result.order)return;
-        repeat.innerHTML=`<div><strong>Pesanan terakhir</strong><p>${h(result.order.summary)}</p><small>${h(stamp(result.order.createdAt))} · ${h(result.order.code)}</small></div><button class="secondary" type="button">↶ Pesan Lagi</button>`;
-        repeat.querySelector('button').onclick=()=>openRepeat(result.order.id);
-      }catch{if(valid()&&request===lookupVersion)repeat.classList.add('hidden');}
-    };
-    form.addEventListener('input',event=>{if(['customerName','phone'].includes(event.target.name)){clearTimeout(lookupTimer);lookupTimer=setTimeout(lookup,250);}});
-    if(form.elements.customerName.value.trim())lookup();
     if(c.state.cart.length&&can('pos.create')){
       const request=++stockVersion;
       (cachedCheck ? Promise.resolve(cachedCheck) : c.api('/api/orders/check',{method:'POST',body:JSON.stringify({items:c.state.cart,editingOrderId:c.state.editingOrderId})})).then(data=>{
