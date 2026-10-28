@@ -1,3 +1,4 @@
+import { registerHomeCampaign, campaignForPos } from './lib/home-campaign.js';
 import { registerOrderCustomer, CUSTOMER_DIRECTORY_VERSION } from './lib/customer-directory.js';
 import { DTF_MERCHANDISE_VERSION } from './lib/dtf-catalog.js';
 import { normalizeMinimum, normalizeWholesaleBasis, normalizeProductTiers, minimumError } from './public/product-pricing.js';
@@ -218,6 +219,7 @@ app.get("/api/bootstrap", async (req, res, next) => {
     if (!permissions.includes("stock.value") && !permissions.includes("master.materials")) materials.forEach((item) => { delete item.cost; delete item.supplier; });
     res.json({
       currentUser: publicUser(req.user), permissions,
+      homeCampaign: permissions.includes("pos.view") ? campaignForPos(state) : null,
       assetLinks: includeMaster && ["OWNER", "ADMIN"].includes(req.user.role) ? assetReport(state).rows.filter(row => row.machineId && !row.cancelled).map(row => ({ id: row.id, machineId: row.machineId, name: row.name, archivedAt: row.archivedAt, disposedAt: row.disposal?.date || null, acquisitionCost: row.acquisitionCost, ...row.calculation })) : [],
       permissionCatalog: includeMaster && permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: includeMaster && permissions.includes("users.manage") ? ROLE_PRESETS : {},
       products: canCatalog ? state.products.filter((item) => item.active !== false && !item.deletedAt).map((item) => sanitizeProduct(item, req.user)) : [],
@@ -247,6 +249,7 @@ app.get('/api/pos/shirt-stock', requirePermission('pos.view'), async (_req, res,
   } catch (error) { next(error); }
 });
 
+registerHomeCampaign(app,{store,audit});
 registerPayrollRoutes(app, store, requireCatalogAdmin, audit);
 registerAssetRoutes(app, store, requireCatalogAdmin, audit);
 registerAssistanceRoutes(app, store, { activity, audit, normalizeOrder });
