@@ -1,3 +1,4 @@
+import { createHomeCampaignUI } from './home-campaign-ui.js';
 import { enhanceMaterialSelects } from './material-picker.js';
 import { minimumQuantity, minimumError, purchaseUnit, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
@@ -144,7 +145,7 @@ function toast(message, type = "") {
 
 function showLogin() {
   closeNavigation();
-  orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
+  homeCampaignUI.reset(); orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
   clearEmployeeSession();
   state.currentUser = null;
   assistance.resetSession();
@@ -186,6 +187,7 @@ async function load() {
 let productSearchCleanup;
 function render() {
   if (state.view !== "pos") {
+    homeCampaignUI.stopHome();
     productSearchCleanup?.();
     productSearchCleanup = null;
   }
@@ -439,11 +441,8 @@ function catalogCardHtml(product, promo = false) {
   return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}"><div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong></div><div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><small>${escapeHtml(product.unitLabel)}</small><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong><small>${escapeHtml(product.unitLabel)}</small>`}</div></button>`;
 }
 
-function allCatalogHtml() {
-  const bestsellers = state.products.filter((product) => product.featured);
-  const promos = state.products.filter((product) => discountActive(product));
-  return `<div class="pos-home"><section class="catalog-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Terlaris</h3></div><div class="catalog-grid">${bestsellers.map((product) => catalogCardHtml(product)).join("") || '<div class="catalog-empty">Belum ada produk terlaris.</div>'}</div></section><section class="catalog-section promo-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Sedang Promo</h3></div><div class="catalog-grid">${promos.map((product) => catalogCardHtml(product, true)).join("") || '<div class="catalog-empty">Belum ada promo yang sedang aktif.</div>'}</div></section></div>`;
-}
+const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:()=>root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();}),load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
+function allCatalogHtml(){return `<div class="pos-home">${homeCampaignUI.homeHtml()}<section class="catalog-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Terlaris</h3></div><div class="catalog-grid">${state.products.filter(p=>p.featured).map(p=>catalogCardHtml(p)).join('')}</div></section></div>`;}
 
 function productConfigurationHtml(product) {
   if (product.dtfShirt) return dtfShirtConfigurationHtml(product);
@@ -506,6 +505,7 @@ function renderPos() {
   assistance.mountCheckout(state.cartCheck?.cart === state.cart && Date.now()-state.cartCheck.at < 5000 ? state.cartCheck.data : null);
   syncCartBusy();
   customersUI.mountCheckout();
+  homeCampaignUI.mountHome();
 
 }
 
@@ -1685,8 +1685,8 @@ function printReport() {
 }
 
 function masterHeader(title, includeSummary = true) {
-  const labels = { customers:"Pelanggan",products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
-  const allowed = { customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
+  const labels = { campaigns:"Campaign",customers:"Pelanggan",products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
+  const allowed = { campaigns:state.currentUser?.role==="OWNER"&&can("master.products"),customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
   return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
     ${includeSummary ? `<div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => !item.stockNeedsCount && Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>` : ""}
     <div class="master-tabs">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
@@ -1706,7 +1706,9 @@ function assetContext() {
 function renderMaster() {
   const allowedTabs = [["customers","customers.view"],["products", "master.products"], ["materials", "master.materials"], ["finishings", "master.finishings"], ["machines", "master.machines"], ["users", "users.manage"]].filter(([, permission]) => can(permission)).map(([id]) => id);
   if (canManageSettings()) allowedTabs.push("categories", "pics", "assets");
+  if(state.currentUser?.role==="OWNER"&&can("master.products"))allowedTabs.push("campaigns");
   if (!allowedTabs.includes(state.masterTab)) state.masterTab = allowedTabs[0] || "users";
+  if(state.masterTab==="campaigns")return homeCampaignUI.mountSettings();
   if (state.masterTab === "customers")return customersUI.mountMaster();
   if (state.masterTab === "assets") return mountAssets(assetContext());
   if (["categories", "pics"].includes(state.masterTab)) return renderSettingsMaster();
