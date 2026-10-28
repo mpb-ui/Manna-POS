@@ -8,11 +8,15 @@ export function paymentDepositAmounts({ total, paid = 0, balance = 0, use = true
   return { outstanding, available, used, due, remaining: Math.max(0, due - (po ? 0 : received)), excess: po ? 0 : Math.max(0, received - due) };
 }
 
+export function halfPaymentAmount(total, paid, used, due) {
+  return Math.max(0, Math.min(due, Math.round(total * .5) - Number(paid || 0) - used));
+}
+
 export async function mountCustomerPayment({ form, order, initial, api, can, uid, modal, e, money, parseMoney }) {
   const identity = uid(), amount = form.elements.amount, ownerDialog = form.closest('dialog');
   const methods = [...form.querySelectorAll('[name=method]')];
   const customerRequestId = crypto.randomUUID();
-  let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false;
+  let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false, halfAmount = false;
   const valid = () => uid() === identity && form.isConnected && (!ownerDialog || ownerDialog.open);
   const isPo = () => form.querySelector('[name=type]:checked')?.value === 'PO';
   const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: can('deposit.use') ? customer?.depositBalance || 0 : 0, use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), po: isPo() });
@@ -32,15 +36,16 @@ export async function mountCustomerPayment({ form, order, initial, api, can, uid
   }
   function draw() {
     const n = figures();
-    slot.innerHTML = n.available ? `<div class="payment-deposit-option"><label class="deposit-check"><input type="checkbox" data-payment-use ${use ? 'checked' : ''}> Gunakan deposit</label><strong>${money(n.available)}</strong></div><div class="payment-total-due"><span>Total Tagihan</span><strong data-total-due>${money(n.due)}</strong></div>` : '';
-    slot.querySelector('[data-payment-use]')?.addEventListener('change', event => { use = event.target.checked; dirtyAmount = false; setAmount(figures().due); sync(); });
+    slot.innerHTML = n.available ? `<div class="payment-deposit-option"><label class="deposit-check"><input type="checkbox" data-payment-use ${use ? 'checked' : ''}> Gunakan deposit</label><strong>${money(n.available)}</strong></div><div class="payment-total-due"><span>Tagihan setelah deposit</span><strong data-total-due>${money(n.due)}</strong></div>` : '';
+    slot.querySelector('[data-payment-use]')?.addEventListener('change', event => { use = event.target.checked; if (halfAmount) setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); else { dirtyAmount = false; setAmount(figures().due); } sync(); });
     if (!dirtyAmount) setAmount(n.due);
     sync();
   }
-  amount.addEventListener('input', () => { dirtyAmount = true; sync(); });
+  amount.addEventListener('input', () => { dirtyAmount = true; halfAmount = false; sync(); });
+  form.addEventListener('payment:totalchange', () => { if (halfAmount) setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); draw(); });
   form.addEventListener('change', sync);
-  form.querySelector('#payment-half')?.addEventListener('click', () => { dirtyAmount = true; setAmount(Math.min(figures().due, Math.round(order.total * .5))); sync(); });
-  form.querySelector('#payment-dp')?.addEventListener('change', event => { if (!event.target.checked) { dirtyAmount = false; setAmount(figures().due); sync(); } });
+  form.querySelector('#payment-half')?.addEventListener('click', () => { dirtyAmount = true; halfAmount = true; setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); sync(); });
+  form.querySelector('#payment-dp')?.addEventListener('change', event => { if (!event.target.checked) { halfAmount = false; dirtyAmount = false; setAmount(figures().due); sync(); } });
   draw();
 
   if (order.customerId && can('customers.view')) {

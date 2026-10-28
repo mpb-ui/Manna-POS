@@ -1,4 +1,5 @@
-export const historyPaymentStatus = order => ["BATAL","CANCELLED","CANCELED"].includes(order.status)?"DIBATALKAN":Number(order.total) > 0 && Number(order.paidAmount || 0) >= Number(order.total) ? "LUNAS" : order.paymentConfirmed || Number(order.paidAmount || 0) > 0 ? "BELUM_LUNAS" : "BELUM_BAYAR";
+import { settledOrder } from './order-discount.js';
+export const historyPaymentStatus = order => ["BATAL","CANCELLED","CANCELED"].includes(order.status)?"DIBATALKAN":settledOrder(order) ? "LUNAS" : order.paymentConfirmed || Number(order.paidAmount || 0) > 0 ? "BELUM_LUNAS" : "BELUM_BAYAR";
 export const historyDraft = order => order.status === "DRAFT" || !order.confirmed && !order.confirmedAt && !order.paymentConfirmed && Number(order.paidAmount || 0) === 0 && order.status === "MENUNGGU_PEMBAYARAN";
 export const historyDay = value => value && Number.isFinite(Date.parse(value)) ? new Date(Date.parse(value) + 8 * 3600000).toISOString().slice(0, 10) : "";
 export function historyStatus(order, labels) {

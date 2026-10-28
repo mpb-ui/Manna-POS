@@ -1,3 +1,4 @@
+import { invoiceDiscount, invoiceGross } from './order-discount.js';
 import { rollPlacementNote } from './roll-placement.js';
 const money = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
 const dates = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" });
@@ -84,7 +85,8 @@ export async function buildPurchaseOrderPdf(lib, row, imageData) {
     line(money.format(item.subtotal), { font: bold }); rule();
   }
   const remaining = Math.max(0, Number(order.total) - Number(order.paidAmount));
-  line(`Total: ${money.format(order.total)}`, { font: bold, size: 13, color: blue });
+  if (invoiceDiscount(order)) { line(`Total Pesanan: ${money.format(invoiceGross(order))}`); line(`Diskon Pesanan: - ${money.format(invoiceDiscount(order))}`); }
+  line(`Total Tagihan: ${money.format(order.total)}`, { font: bold, size: 13, color: blue });
   line(`Dibayar: ${money.format(order.paidAmount)}`); line(`Sisa: ${money.format(remaining)}`, { font: bold });
   line(`Status Pembayaran: ${remaining > 0 ? "Belum Lunas" : "Lunas"}`, { font: bold });
   line("Manna Print - Labuan Bajo | Terima kasih", { color: muted, size: 10 });
