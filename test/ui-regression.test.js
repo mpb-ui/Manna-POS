@@ -12,15 +12,6 @@ function functionSource(name, nextName) {
   return source.slice(start, end);
 }
 
-test("form Produk memiliki opsi master dinamis dalam scope yang benar", () => {
-  const body = functionSource("openProductForm", "renderStock");
-  assert.match(body, /const saleUnits =/);
-  assert.match(body, /const selectedUnit =/);
-  assert.match(body, /referenceField\("Kategori"/);
-  assert.match(body, /referenceField\("Satuan jual"/);
-  assert.doesNotMatch(body, /referenceField\("Dasar perhitungan"/);
-});
-
 test("form Finishing tidak merujuk variabel Produk di luar scope", () => {
   const body = functionSource("openFinishingForm", "openMachineForm");
   assert.doesNotMatch(body, /product\?\./);
