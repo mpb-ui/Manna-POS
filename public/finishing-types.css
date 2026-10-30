@@ -1,0 +1,13 @@
+.finishing-type-groups{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;min-width:0;container:finishing-options / inline-size}
+.finishing-type-group{min-width:0;margin:0;padding:0;border:0}
+.finishing-type-group legend{margin:0 0 10px;padding:0;color:#17263c;font-size:14px;font-weight:600;line-height:20px}
+.finishing-type-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.finishing-type-grid .finishing-master-option{display:block;min-width:0}
+.finishing-type-grid .finishing-master-option>span{height:100%;min-height:50px;padding:9px 11px;border:1px solid #d7dfe9;border-radius:8px;gap:3px;background:#fff;color:#17263c;transition:background .15s,border-color .15s}
+.finishing-type-grid .finishing-master-option strong{font-size:12px;font-weight:700;line-height:16px;overflow-wrap:anywhere}
+.finishing-type-grid .finishing-master-option small{font-size:11px;font-weight:400;line-height:15px;color:#52627a;overflow-wrap:anywhere}
+.finishing-type-grid .finishing-master-option:hover>span{border-color:#92b9f5;background:#f5f9ff}
+.finishing-type-grid .finishing-master-option input:checked+span{border-color:#0a68f4;background:#edf5ff;color:#0a68f4}
+.finishing-type-grid .finishing-master-option input:focus-visible+span{outline:2px solid #0a68f4;outline-offset:2px}
+@container finishing-options (max-width:420px){.finishing-type-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container finishing-options (max-width:280px){.finishing-type-grid{grid-template-columns:minmax(0,1fr)}}
