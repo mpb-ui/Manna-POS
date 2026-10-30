@@ -5,7 +5,7 @@ import { Store, seedState } from "../lib/store.js";
 import { adjustPhysicalStock } from "../lib/physical-stock.js";
 
 // Contract test for the SQL transaction path; no production connection is used.
-async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false,legacyDtf=false,legacyDirectory=false}={}) {
+async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoice=false,legacyPrint=false,legacyDtf=false,legacyDirectory=false,legacySaleUnit=false}={}) {
  let data=seedState();data.inventory[0].quantity=777;data.orders=[{id:'legacy',status:'DIAMBIL',stockCommitted:true,total:123,paidAmount:123,payments:[{id:'pay',amount:123}],timeline:[{message:'Historic'}],items:[]}];
  const normalizer=new Store();normalizer.memory=data;data=await normalizer.read();data.printStockVersion=1;delete data.stockSchemaVersion;
  if (legacyLf) {
@@ -19,6 +19,7 @@ async function databaseFixture({legacyLf=false,legacyCustomer=false,legacyInvoic
  if(legacyPrint){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.printStockVersion;const stock=data.inventory.find(row=>row.sku==='KRT-AP260');stock.quantity=100;Object.assign(data.orders[0],{status:'CETAK',stockCommitted:false,items:[{itemId:'printed',status:'CETAK',stockTiming:'PRODUCTION',stockCommitted:false,materials:[{materialId:stock.materialId,sku:stock.sku,units:10,unit:stock.unit}]}]});}
  if(legacyDtf){data.stockSchemaVersion=1;data.lfRollWidthVersion=1;data.customerSchemaVersion=1;delete data.dtfMerchandiseVersion;const p=data.products.find(p=>p.dtfShirt);p.category='Sablon DTF';p.price=123456;data.catalogOptions.categories.push('Sablon DTF');data.catalogOptions.categoryKeys['Sablon DTF']='sablon-dtf';}
  if(legacyDirectory){delete data.customerDirectoryVersion;Object.assign(data.orders[0],{customerName:'Baccala',phone:'081234567890'});}
+ if(legacySaleUnit){data.stockSchemaVersion=1;delete data.saleUnitPricingVersion;data.products[0].saleUnit='pcs';data.products[0].priceBasis='sqm';}
  let state=structuredClone(data),working,backups=new Map(),savedBackups,queries=[];
  const query=async(sql,params=[])=>{
   queries.push({sql,params});
@@ -141,4 +142,13 @@ test('customer directory migration creates and links exact profiles only after a
 });
 test('customer directory refuses to migrate when its durable backup fails',async()=>{
  const f=await databaseFixture({legacyDirectory:true}),connect=f.store.pool.connect;f.store.pool.connect=async()=>{const c=await connect(),query=c.query;c.query=async(sql,params)=>{if(sql.startsWith('INSERT INTO app_state_backups')&&params[0]==='customer-directory-v1')throw Error('backup unavailable');return query(sql,params);};return c;};const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
+});
+
+test("sale-unit migration backs up raw state, preserves pricing/orders/stock and runs once",async()=>{
+ const f=await databaseFixture({legacySaleUnit:true});await f.store.init();
+ assert.equal(f.store.saleUnitPricingBackupVerified,true);assert.deepEqual(f.backups.get('sale-unit-pricing-v1'),f.data);assert.equal(f.getState().products[0].saleUnit,'m²');assert.equal(f.getState().products[0].priceBasis,'sqm');assert.equal(f.getState().products[0].price,f.data.products[0].price);assert.deepEqual(f.getState().orders,f.data.orders);assert.deepEqual(f.getState().inventory,f.data.inventory);
+ const backup=f.queries.findIndex(q=>q.sql.startsWith('INSERT INTO app_state_backups'));const update=f.queries.findIndex(q=>q.sql.startsWith('UPDATE app_state SET data = $1'));assert(backup<update);assert(f.queries.slice(0,backup).some(q=>q.sql.endsWith('FOR UPDATE')));const state=structuredClone(f.getState());await f.store.init();assert.deepEqual(f.getState(),state);assert.equal(f.backups.size,1);
+});
+test("sale-unit migration stops without changing catalog if the durable backup fails",async()=>{
+ const f=await databaseFixture({legacySaleUnit:true}),connect=f.store.pool.connect;f.store.pool.connect=async()=>{const client=await connect();return {...client,query:async(sql,args)=>{if(sql.startsWith('INSERT INTO app_state_backups'))throw new Error('backup unavailable');return client.query(sql,args);}};};const before=structuredClone(f.getState());await assert.rejects(f.store.init(),/backup unavailable/);assert.deepEqual(f.getState(),before);assert.equal(f.queries.at(-1).sql,'ROLLBACK');
 });

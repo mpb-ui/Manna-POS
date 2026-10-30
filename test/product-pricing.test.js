@@ -63,7 +63,7 @@ test('continuous measured thresholds, displayed ranges and invalid master inputs
 });
 
 test('minimum toggle validates whole quantities while allowing every integer above the minimum',()=>{
-  const p={...poster(),priceBasis:'unit',fixedSizeVariants:[],minimumEnabled:true,minimumQuantity:3,unitName:'pcs'};
+  const p={...poster(),saleUnit:'pcs',priceBasis:'unit',fixedSizeVariants:[],minimumEnabled:true,minimumQuantity:3,unitName:'pcs'};
   for(const q of [0,1,2,2.9,NaN,Infinity])assert.throws(()=>calculateLine(p,{quantity:q}),/Minimum pembelian 3/);
   for(const q of [3,4,5])assert.equal(calculateLine(p,{quantity:q}).quantity,q);
   assert.equal(minimumError({...p,minimumEnabled:false},1),'');assert.equal(normalizeMinimum({minimumEnabled:false,minimumQuantity:3}).minimumQuantity,1);
