@@ -1,3 +1,4 @@
+import { SALE_UNIT_PRICING_VERSION, normalizeSaleUnit, saleUnitBasis, PRICE_BASIS_LABELS, defaultWholesaleBasis } from './public/sale-units.js';
 import { applyInvoiceDiscount } from './lib/order-discount.js';
 import { invoiceDiscount, settledOrder } from './public/order-discount.js';
 import { registerHomeCampaign, campaignForPos } from './lib/home-campaign.js';
@@ -76,7 +77,7 @@ function readToken(req) {
   return { userId, version: Number(version) };
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, saleUnitPricingVersion:SALE_UNIT_PRICING_VERSION, saleUnitPricingBackupVerified:Boolean(store.saleUnitPricingBackupVerified), database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
 app.get("/api/session", async (req, res, next) => {
   try {
     const token = readToken(req); const users = token ? await store.readUsers() : [];
@@ -269,11 +270,13 @@ app.post("/api/catalog-options/:kind", requirePermission("master.products"), asy
         return { kind, option, options: state.catalogOptions };
       }
       if (kind === "saleUnits") {
+        const canonical = normalizeSaleUnit(label);
+        if (!canonical || canonical.length > 40) throw new Error("Satuan Jual maksimal 40 karakter");
         const items = state.catalogOptions[kind];
-        if (items.some((item) => item.toLowerCase() === label.toLowerCase())) throw new Error("Pilihan sudah tersedia");
-        items.push(label);
+        if (items.some((item) => normalizeSaleUnit(item).toLowerCase() === canonical.toLowerCase())) throw new Error("Pilihan sudah tersedia");
+        items.push(canonical);
         audit(state, req.user, "CATALOG_OPTION_CREATE", `Menambahkan ${kind === "categories" ? "kategori" : "satuan jual"} ${label}`);
-        return { kind, option: label, options: state.catalogOptions };
+        return { kind, option: canonical, options: state.catalogOptions };
       }
       if (kind === "priceBases") {
         const mode = ["unit", "sqm", "linear_m"].includes(req.body.mode) ? req.body.mode : "unit";
@@ -462,8 +465,12 @@ function saveProduct(state, body, current = null) {
   const category = text(body.category);
   if (!state.catalogOptions.categories.includes(category)) throw new Error("Pilih kategori produk yang tersedia");
   const categoryId = categoryKey(state.catalogOptions, category);
+  const saleUnit = normalizeSaleUnit(body.saleUnit ?? current?.saleUnit ?? 'pcs');
+  if (!saleUnit || saleUnit.length > 40 || !state.catalogOptions.saleUnits.some(unit=>normalizeSaleUnit(unit).toLowerCase()===saleUnit.toLowerCase())) throw new Error('Pilih Satuan Jual yang tersedia');
+  const priceBasis = saleUnitBasis(saleUnit), priceBasisLabel = PRICE_BASIS_LABELS[priceBasis];
   const retailAtK = categoryId === "atk" && (body.retailAtK === true || body.retailAtK === "true");
-  const quickSale = ["akrilik", "stempel"].includes(categoryId);
+  if (retailAtK && priceBasis !== "unit") throw new Error("Barang dagangan ATK harus memakai satuan per unit");
+  const quickSale = ["akrilik", "stempel"].includes(categoryId) && priceBasis === "unit";
   const simpleSale = retailAtK || quickSale;
   const atkGroup = categoryId === "atk" ? (ATK_GROUPS.includes(text(body.atkGroup)) ? text(body.atkGroup) : "Peralatan lainnya") : "";
   const barcode = categoryId === "atk" ? text(body.barcode === undefined ? current?.barcode : body.barcode) : "";
@@ -471,11 +478,8 @@ function saveProduct(state, body, current = null) {
   if (barcode && state.products.some((item) => item.id !== current?.id && categoryKey(state.catalogOptions, item.category) === "atk" && item.barcode === barcode)) {
     throw new Error("Barcode ATK sudah digunakan produk lain");
   }
-  const basisOption = state.catalogOptions.priceBases.find((item) => item.id === body.priceBasisId || item.label === body.priceBasisLabel);
-  const priceBasis = simpleSale ? "unit" : ["unit", "sqm", "linear_m"].includes(body.priceBasis) ? body.priceBasis : basisOption?.mode || "unit";
-  const priceBasisLabel = simpleSale ? "Per unit" : basisOption?.label || text(body.priceBasisLabel) || ({ unit: "Per unit", sqm: "Luas m²", linear_m: "Meter lari" }[priceBasis]);
-  const saleUnit = text(body.saleUnit) || "pcs";
-  const wholesaleBasis = normalizeWholesaleBasis(body.wholesaleBasis, priceBasis, current?.wholesaleBasis || 'quantity');
+  const fallbackWholesale = current?.priceBasis === priceBasis ? current.wholesaleBasis || 'quantity' : defaultWholesaleBasis(priceBasis);
+  const wholesaleBasis = normalizeWholesaleBasis(body.wholesaleBasis, priceBasis, fallbackWholesale);
   const minimum = normalizeMinimum(body,current || {});
   const hasMaterialVariants = body.hasMaterialVariants === undefined ? Boolean(current?.hasMaterialVariants) : body.hasMaterialVariants === true;
   const sourceIds = new Set();
@@ -586,7 +590,7 @@ function saveProduct(state, body, current = null) {
     return true;
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => value > 0), billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, widths: priceBasis === "unit" ? [] : (body.widths || []).map(Number).filter((value) => Number.isFinite(value) && value > 0), billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3ReadyType: a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: a3Kind ? current?.a3Family : null, a3Variant: a3Kind ? current?.a3Variant : null, a3Size: a3Kind ? current?.a3Size : null, a3Side: a3Kind ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   validateProductCalculator(product, state, body, current);
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
   if (current) Object.assign(current, product); else state.products.push(product);
