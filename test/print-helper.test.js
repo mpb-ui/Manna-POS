@@ -56,3 +56,10 @@ test('document projection handles DTF combinations, zero discounts, draft and pa
  assert.throws(()=>printDocumentData(o,'payment','missing'),/tidak ditemukan/);
  d=printDocumentData({...o,total:0,paidAmount:0,payments:[],invoiceDiscount:{amount:120000}},'invoice');assert.equal(d.status,'Lunas');assert.equal(d.sequence,null);assert.match(d.messages.join(''),/diskon penuh/);
 });
+test('concurrent creation is bounded and role changes revoke a previously authorized print',async t=>{
+ const {create,req,state}=await setup(t);
+ const job=await create('invoice','cash');state.users.find(u=>u.id==='cash').role='PRINT';
+ assert.equal((await req('/print-helper/claim',{},'',job.token)).status,403);
+ const results=await Promise.all(Array.from({length:15},()=>req('/api/print-jobs',{kind:'invoice',orderId:'o'})));
+ assert.equal(results.filter(r=>r.status===201).length,12);assert.equal(results.filter(r=>r.status===429).length,3);
+});

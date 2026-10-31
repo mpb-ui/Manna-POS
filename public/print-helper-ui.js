@@ -1,4 +1,3 @@
-const e=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 export function createPrintHelperUI({api,identity,toast,launch=url=>{window.location.href=url;}}){
   let busy=false,active=null,generation=0;
   const reset=()=>{generation++;active?.close();active=null;busy=false;};
@@ -34,7 +33,7 @@ export function createPrintHelperUI({api,identity,toast,launch=url=>{window.loca
           if(status.status==='received'){message('Dokumen diterima. JasperViewer sedang disiapkan…');d.querySelector('[data-print-open]').disabled=true;}
           if(status.status==='opened'){toast('Dokumen dibuka di JasperViewer.');d.close();return;}
           if(status.status==='failed'){message('Helper gagal menyusun dokumen. Lihat pesan di komputer kasir, lalu tutup dan coba cetak kembali.');d.querySelector('[data-print-open]').disabled=true;return;}
-          if(++attempts===12)message('Helper belum membuka dokumen. Pastikan sudah terpasang dan izinkan browser membuka aplikasi.');
+          if(++attempts===12&&status.status==='waiting')message('Helper belum membuka dokumen. Pastikan sudah terpasang dan izinkan browser membuka aplikasi.');
           if(attempts<90)timer=setTimeout(poll,1000);
           else{message('Permintaan cetak kedaluwarsa. Tutup jendela ini, lalu klik cetak kembali.');d.querySelector('[data-print-open]').disabled=true;}
         }catch(error){if(valid()&&d.open){message(error.message);d.querySelector('[data-print-open]').disabled=true;}}

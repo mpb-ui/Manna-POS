@@ -9,19 +9,27 @@ pengembalian uang, PO PDF, laporan, dan slip gaji tetap dokumen terpisah.
 
 Target perangkat: iWare J82BT, Windows 11, USB, driver sudah terpasang.
 
-1. Buka Nota Ulang / Cetak Bukti / Print SPK dari aplikasi.
-2. Pada dialog cetak browser pilih printer iWare yang terpasang, kertas roll
-   **80 mm**, skala **100%**, satu salinan, dan matikan header/footer browser.
-3. Gunakan margin 4 mm (konten 72 mm). Aktifkan pencetakan latar belakang agar
-   batang Grand Total tercetak hitam dengan teks putih. Template juga meminta
-   warna cetak yang tepat melalui CSS.
+1. Unduh paket Windows Manna Print Helper, ekstrak seluruh ZIP, lalu jalankan
+   `Install.cmd` satu kali pada akun Windows kasir. Panduan lengkap ada pada
+   [print-helper.md](print-helper.md).
+2. Buka Nota Ulang / Cetak Bukti / Print SPK dari aplikasi. Izinkan browser
+   membuka Manna Print Helper. JasperViewer terbuka dengan dokumen yang sudah
+   memiliki ukuran panjang sesuai seluruh isi.
+3. Klik Print di JasperViewer, pilih printer iWare, kertas **80 mm**, skala
+   **100%**, lalu cetak. Dokumen menggunakan area isi sekitar 72 mm.
 4. Lakukan satu tes fisik nota dan Work Order. Periksa lebar, keterbacaan huruf,
-   jarak potong, panjang feed, dan nominal sebelum pemakaian rutin. Ukuran roll /
-   panjang feed mengikuti kemampuan driver; aplikasi tidak memaksa tinggi A4.
+   jarak potong, panjang feed dan nominal sebelum pemakaian rutin. Dukungan
+   panjang kertas / cutter tetap mengikuti driver dan printer yang digunakan.
 
-Cetak membuka dialog browser. Tidak memerlukan font terpasang di Windows,
-QZ Tray, atau koneksi USB langsung dari server Render. Cetak otomatis tanpa
-konfirmasi dan perintah cutter ESC/POS belum menjadi bagian alur ini.
+Helper menyertakan Java, JasperReports, JasperViewer, font dan logo. Tidak perlu
+memasang Java atau font secara terpisah. Helper aktif saat ada permintaan cetak,
+tanpa layanan permanen atau port HTTP lokal, lalu menampilkan JasperViewer.
+
+Jika memakai pilihan **Cetak melalui browser** pada dialog peluncuran, pilih
+roll 80 mm, skala 100%, matikan header/footer browser dan aktifkan grafis latar.
+Fallback HTML tetap mengikuti ukuran kertas driver; jalur utama memakai ukuran
+halaman JasperPrint yang dihitung berdasarkan isi. QZ Tray / ESC-POS dan cetak
+fisik tanpa dialog belum menjadi bagian alur ini.
 
 ## Isi dan sumber data
 
