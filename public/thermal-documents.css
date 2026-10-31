@@ -1,0 +1,56 @@
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:400;font-display:block;src:url('/fonts/ibm-plex-sans/IBMPlexSans-Regular.woff2') format('woff2')}
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:600;font-display:block;src:url('/fonts/ibm-plex-sans/IBMPlexSans-SemiBold.woff2') format('woff2')}
+@font-face{font-family:"IBM Plex Sans";font-style:normal;font-weight:700;font-display:block;src:url('/fonts/ibm-plex-sans/IBMPlexSans-Bold.woff2') format('woff2')}
+@font-face{font-family:"IBM Plex Sans";font-style:italic;font-weight:400;font-display:block;src:url('/fonts/ibm-plex-sans/IBMPlexSans-Italic.woff2') format('woff2')}
+/* The driver selects the 80 mm roll and feed length. Do not force an A4 height.
+   Named pages keep reports, payroll and asset sheets on their existing paper. */
+@page thermal-roll{size:auto;margin:4mm}
+.thermal-slip{width:72mm;max-width:72mm;margin:0;padding:0;color:#000;background:#fff;font-family:"IBM Plex Sans",sans-serif;font-size:12px;line-height:1.35;font-weight:400;font-synthesis:none;overflow-wrap:anywhere}
+.thermal-slip *{box-sizing:border-box;letter-spacing:normal}
+.thermal-slip strong{font-weight:600}
+.thermal-slip header,.thermal-slip footer,.thermal-slip section{position:static;display:block;padding:0;margin:0;background:transparent;border:0;border-radius:0;box-shadow:none;color:#000;width:auto;min-height:0}
+.thermal-shop{text-align:center}
+.thermal-logo{display:block;width:56mm;max-width:100%;height:auto;margin:2mm auto}
+.thermal-shop>strong{display:block;font-size:12px}
+.thermal-shop>div{font-size:9px;margin-top:1mm}
+.thermal-rule{border-top:1px solid #000;margin:3mm 0}
+.thermal-rule.dashed{border-top-style:dashed}
+.thermal-meta-row{display:grid;grid-template-columns:20mm minmax(0,1fr);gap:2mm;margin:1mm 0}
+.thermal-meta-row>:last-child{text-align:right;min-width:0}
+.thermal-item-heading{display:grid;grid-template-columns:minmax(0,1fr) minmax(9mm,auto) auto;gap:2mm;align-items:start}
+.thermal-item-heading>strong{min-width:0}
+.thermal-quantity{white-space:normal}
+.thermal-item-heading>.thermal-quantity{max-width:17mm;text-align:center}
+.thermal-money{display:inline-flex;justify-content:flex-end;gap:1mm;white-space:nowrap;max-width:100%;font-variant-numeric:tabular-nums;font-size:inherit}
+.thermal-invoice-item+.thermal-invoice-item{margin-top:3mm}
+.thermal-item-detail{margin-top:1mm;padding-left:3mm}
+.thermal-item-detail:empty{display:none}
+.thermal-item-detail>div+div{margin-top:.5mm}
+.thermal-note{font-style:italic;white-space:pre-wrap}
+.thermal-total-row{display:flex;align-items:baseline;justify-content:space-between;gap:3mm;margin:1mm 0}
+.thermal-total-row>:first-child{min-width:0}
+.thermal-total-row>.thermal-money{flex-shrink:0}
+.thermal-grand-total{border-radius:1mm;background:#000;color:#fff;padding:1.2mm 2mm;margin:2mm 0;font-size:15px;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.thermal-receipt-bottom{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3mm;align-items:start}
+.thermal-receipt-bottom>span{text-align:right}
+.thermal-status{display:grid;gap:.5mm;border:1px solid #000;border-radius:1mm;padding:1.5mm 2mm}
+.thermal-status>strong{font-size:15px;font-weight:700}
+.thermal-footer{text-align:center;margin-top:4mm!important;font-size:10px}
+.thermal-slip p{margin:2mm 0}
+.thermal-footer>strong{display:block;margin-top:3mm;font-size:12px;font-weight:700}
+.thermal-reference{font-size:9px;margin-top:2mm}
+.thermal-warning{border:1px solid #000;text-align:center;padding:1.5mm;margin:2mm 0;font-weight:700}
+.thermal-work-title{display:flex;justify-content:space-between;align-items:baseline;gap:3mm;font-size:14px}
+.thermal-work-title>span:last-child{font-size:12px;flex-shrink:0}
+.thermal-work-order h1{font-size:22px;font-weight:700;line-height:1.15;margin:2mm 0 4mm;color:#000}
+.thermal-work-order .thermal-meta-row strong{font-weight:700}
+.thermal-work-order .thermal-work-item{display:grid;grid-template-columns:14mm minmax(0,1fr);gap:2mm;padding:3mm 0}
+.thermal-work-order .thermal-work-item+.thermal-work-item{border-top:1px dashed #000}
+.thermal-work-item>div{min-width:0}
+.thermal-work-item .thermal-item-detail{padding-left:0}
+@media print{
+  .printing .print-document.thermal-print{page:thermal-roll;position:static;width:72mm;margin:0;padding:0;font-family:"IBM Plex Sans",sans-serif;font-size:12px;line-height:1.35}
+  body.printing:has(.thermal-print){margin:0;padding:0;min-width:0}
+  .thermal-print .thermal-logo{filter:grayscale(1) brightness(0)}
+  .thermal-print .thermal-invoice-item,.thermal-print .thermal-work-item,.thermal-print .thermal-summary,.thermal-print .thermal-receipt-bottom,.thermal-print .thermal-shop{break-inside:avoid;page-break-inside:avoid}
+}

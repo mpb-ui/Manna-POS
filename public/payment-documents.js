@@ -1,7 +1,6 @@
-const e = value => String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
-const money = value => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(Number(value || 0));
+import { invoiceReceiptHtml } from './thermal-documents.js';
+
+// Nota Ulang and payment proofs share the full invoice receipt layout.
 export function paymentReceiptHtml(order, payment) {
-  const date = new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Makassar" }).format(new Date(payment.createdAt));
-  const line = (label, value) => `<div class="print-total"><span>${label}</span><b>${money(value)}</b></div>`;
-  return `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">BUKTI PEMBAYARAN${payment.balanceAfter === 0 ? " / PELUNASAN" : ""}</div><hr><p><b>${e(order.code)} · Pembayaran #${payment.sequence}</b><br>Referensi: ${e(payment.id)}<br>${e(date)} WITA<br>Pelanggan: ${e(order.customerName)}<br>WhatsApp: ${e(order.phone || "—")}<br>Metode: ${e(payment.method)}<br>Diterima oleh: ${e(payment.actor || "Tidak tercatat (riwayat lama)")}</p><hr>${line("Pembayaran ini", payment.amount)}${payment.invoiceDiscountAmount ? line("Total pesanan", payment.orderGrossTotal) + line("Diskon pesanan", -payment.invoiceDiscountAmount) : ""}${line("Total tagihan", payment.orderTotal)}${line("Dibayar sebelumnya", payment.paidBefore)}${line("Total dibayar saat transaksi", payment.paidAfter)}${line("Sisa saat transaksi", payment.balanceAfter)}<p><b>${payment.balanceAfter === 0 ? "LUNAS" : "BELUM LUNAS"}</b>${payment.note ? `<br>Catatan: ${e(payment.note)}` : ""}</p>${payment.reconstructed ? '<p>Saldo direkonstruksi dari riwayat pembayaran yang tersedia.</p>' : ""}<hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
+  return invoiceReceiptHtml(order, payment);
 }
