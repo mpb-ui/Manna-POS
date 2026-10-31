@@ -18,7 +18,7 @@ const totalRow = (label, value, extra = '') => `<div class="thermal-total-row ${
 const unique = values => [...new Set(values.filter(Boolean))];
 
 // Only stored specifications: rounded billable lengths are never cut sizes.
-export function thermalItem(item, {work = false, deadline} = {}) {
+export function thermalItemData(item, {work = false, deadline} = {}) {
   const row = historyProductRows({items:[item]})[0], detail = [];
   if (item.shirtVariants?.length) {
     if (item.dtfPackageLabel) detail.push(item.dtfPackageLabel);
@@ -39,12 +39,17 @@ export function thermalItem(item, {work = false, deadline} = {}) {
   if (item.templateDesign) detail.push(`Design Template ${item.templateDesign}`);
   else if (item.fileService?.id && item.fileService.id !== 'READY') detail.push(`${work ? String(item.fileService.name).replace(/^Biaya\s+/i,'') : item.fileService.name}${Number(item.fileService.quantity) > 1 ? ` × ${n(item.fileService.quantity)}` : ''}${item.fileService.note ? ` (${item.fileService.note})` : ''}`);
   if (work && item.deadline && item.deadline !== deadline) detail.push(`Deadline: ${thermalDate(item.deadline, true)} WITA`);
-  const lines = unique(detail).map(value => `<div>${e(value)}</div>`).join('');
-  const note = item.productionNote ? `<div class="thermal-note">Catatan: ${e(item.productionNote)}</div>` : '';
-  const title = `<strong>${e(row.product)}</strong>`, quantity = e(itemQuantityLabel(item).replace(/ Lembar$/,' lbr').replace(/ (Pcs|Kaos)$/,' pcs').replace(/ Unit$/,' unit'));
+  return {name:row.product,quantity:itemQuantityLabel(item).replace(/ Lembar$/,' lbr').replace(/ (Pcs|Kaos)$/,' pcs').replace(/ Unit$/,' unit'),details:unique(detail),note:item.productionNote || '',...(!work ? {subtotal:Number(item.subtotal || 0)} : {})};
+}
+
+export function thermalItem(item, options = {}) {
+  const data=thermalItemData(item,options),work=options.work;
+  const lines=data.details.map(value=>`<div>${e(value)}</div>`).join('');
+  const note=data.note?`<div class="thermal-note">Catatan: ${e(data.note)}</div>`:'';
+  const title=`<strong>${e(data.name)}</strong>`,quantity=e(data.quantity);
   return work
     ? `<section class="thermal-work-item"><strong class="thermal-quantity">${quantity}</strong><div>${title}<div class="thermal-item-detail">${lines}${note}</div></div></section>`
-    : `<section class="thermal-invoice-item"><div class="thermal-item-heading">${title}<span class="thermal-quantity">${quantity}</span>${money(item.subtotal)}</div><div class="thermal-item-detail">${lines}${note}</div></section>`;
+    : `<section class="thermal-invoice-item"><div class="thermal-item-heading">${title}<span class="thermal-quantity">${quantity}</span>${money(data.subtotal)}</div><div class="thermal-item-detail">${lines}${note}</div></section>`;
 }
 
 export function receiptView(order, payment = null, latestPayment = null) {

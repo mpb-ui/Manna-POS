@@ -1,3 +1,4 @@
+import { registerPrintHelper } from './lib/print-helper-routes.js';
 import { DEFAULT_VARIANT_TYPES, DEFAULT_OPTION_TYPES, promoDateBoundary } from './public/product-variants.js';
 import { finishingType, validateFinishingType } from './public/finishing-types.js';
 import { SALE_UNIT_PRICING_VERSION, normalizeSaleUnit, saleUnitBasis, PRICE_BASIS_LABELS, defaultWholesaleBasis } from './public/sale-units.js';
@@ -107,6 +108,8 @@ app.post("/api/logout", (_req, res) => {
   res.json({ ok: true });
 });
 
+const registerPrintHelperAuthenticated=registerPrintHelper(app,{store,normalizeOrder});
+
 app.use("/api", async (req, res, next) => {
   try {
     const token = readToken(req); if (!token) return res.status(401).json({ error: "Sesi berakhir" });
@@ -116,6 +119,8 @@ app.use("/api", async (req, res, next) => {
     req.user = user; next();
   } catch (error) { next(error); }
 });
+
+registerPrintHelperAuthenticated();
 
 function requirePermission(permission) {
   return (req, res, next) => hasPermission(req.user, permission) ? next() : res.status(403).json({ error: "Anda tidak memiliki akses untuk tindakan ini" });

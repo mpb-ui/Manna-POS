@@ -1,3 +1,4 @@
+import { createPrintHelperUI } from './print-helper-ui.js';
 import { createReportsUI } from './reports-ui.js';
 import { alignPageHeader } from './page-header.js';
 import { openProductEditor } from './product-editor.js';
@@ -94,6 +95,7 @@ const state = {
 const root = document.querySelector("#view-root");
 const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
+const printHelper=createPrintHelperUI({api,identity:()=>state.currentUser?.id,toast});
 const customersUI=createCustomersUI({state,root,api,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
   bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},
   openOrder:async id=>{try{const order=await api('/api/order-history/'+id);const index=state.orders.findIndex(o=>o.id===id);if(index>=0)state.orders[index]=order;else state.orders.push(order);if(dialog.open)dialog.close();openOrder(id);}catch(error){toast(error.message,'error');}},
@@ -152,6 +154,7 @@ function toast(message, type = "") {
 }
 
 function showLogin() {
+  printHelper.reset();
   closeNavigation();
   homeCampaignUI.reset(); orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
   clearEmployeeSession(); reportsUI.reset();
@@ -1435,7 +1438,7 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     try {
       const [freshOrder,result] = await Promise.all([api(`/api/order-history/${encodeURIComponent(order.id)}`),api(`/api/order-history/${encodeURIComponent(order.id)}/payments/${encodeURIComponent(button.dataset.printPayment)}`)]);
       if (state.currentUser?.id !== userId) return;
-      await showPrintDocument(paymentReceiptHtml(freshOrder,result.payment),'thermal-print payment-receipt');
+      await printHelper.open({orderId:order.id,kind:'payment',paymentId:button.dataset.printPayment,browserPrint:()=>showPrintDocument(paymentReceiptHtml(freshOrder,result.payment),'thermal-print payment-receipt')});
     } catch (error) { toast(error.message,'error'); }
     finally { button.disabled = false; }
   });
@@ -1587,13 +1590,13 @@ async function printOrder(order, type) {
       : (await api('/api/bootstrap?view=projects')).orders.find(full=>full.id===order.id);
     if (!order) throw new Error('Pesanan tidak ditemukan');
     if (state.currentUser?.id !== userId) return;
-    if (isSpk) { await showPrintDocument(workOrderHtml(order),'thermal-print spk'); return; }
+    if (isSpk) { await printHelper.open({orderId:order.id,kind:'work-order',browserPrint:()=>showPrintDocument(workOrderHtml(order),'thermal-print spk')}); return; }
     if (type === 'invoice') {
       const latest = paymentReceipts(order).at(-1);
       const receipt = latest && paymentHistoryVisible(state.currentUser.role)
         ? (await api(`/api/order-history/${encodeURIComponent(order.id)}/payments/${encodeURIComponent(latest.id)}`)).payment : null;
       if (state.currentUser?.id !== userId) return;
-      await showPrintDocument(invoiceReceiptHtml(order,null,receipt),'thermal-print invoice'); return;
+      await printHelper.open({orderId:order.id,kind:'invoice',browserPrint:()=>showPrintDocument(invoiceReceiptHtml(order,null,receipt),'thermal-print invoice')}); return;
     }
     const html = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">TANDA TERIMA PESANAN</div><hr>
       <div class="print-meta"><b>${escapeHtml(order.code)}</b><span>${dateFormat.format(new Date(order.createdAt))} WITA</span></div>
