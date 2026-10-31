@@ -1,0 +1,26 @@
+/* Shared white title/filter bar, matching Status Order and Project Management. */
+#app-shell>.main-content:has(.unified-page),#app-shell>.main-content:has(.master-page),#app-shell>.main-content:has(.report-foundation){padding:0;margin-left:0}
+.master-page,.unified-page{min-width:0}
+#app-shell .master-page{padding:0 0 28px}
+#app-shell .page-toolbar{display:flex;align-items:center;gap:24px;min-height:68px;padding:15px 24px;margin:0;background:#fff;border-bottom:1px solid #dce1e7;border-radius:0;box-shadow:none;box-sizing:border-box;flex-wrap:wrap}
+.page-toolbar h1,#app-shell .page-toolbar h1{margin:0;color:#020203;font-size:22px;line-height:27px;font-weight:700;white-space:nowrap}
+.page-toolbar>div:first-child>p{display:none}
+#app-shell .page-toolbar-filters{display:flex;align-items:center;justify-content:flex-end;flex:1;gap:8px;min-width:0;margin:0;flex-wrap:wrap}
+#app-shell .page-toolbar input:not([type=checkbox]),#app-shell .page-toolbar select,#app-shell .page-toolbar button{box-sizing:border-box;min-width:0;height:36px;margin:0;border-radius:9px;font-size:12px;line-height:16px}
+#app-shell .page-toolbar input:not([type=checkbox]),#app-shell .page-toolbar select{border:1px solid #dfe5ed;background-color:#fff;padding:8px 12px;color:#182136}
+#app-shell .page-toolbar .search{width:260px;flex:0 1 260px}
+#app-shell .page-toolbar select{max-width:220px}
+#app-shell .page-toolbar .field{display:flex;flex-direction:row;align-items:center;gap:8px;width:auto;margin:0;font-size:12px}
+#app-shell .page-toolbar .field>span{margin:0;white-space:nowrap}
+#app-shell .page-toolbar .deposit-check{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
+.master-page>:not(.page-toolbar){margin-left:24px;margin-right:24px}
+.master-page>.master-summary,.master-page>.master-tabs{margin-top:16px}
+.master-page>#employees-content>:first-child{margin-top:16px}
+.stock-page>.stock-grid{padding:16px 24px 28px}
+.page-toolbar input:focus-visible,.page-toolbar button:focus-visible,.page-toolbar select:focus-visible{outline:2px solid #0a68f4;outline-offset:2px}
+@media(max-width:1100px){#app-shell .page-toolbar{gap:12px}#app-shell .page-toolbar-filters{flex-basis:65%}#app-shell .page-toolbar .search{flex-basis:200px}}
+@media(max-width:700px){#app-shell .page-toolbar{padding:14px 12px;gap:12px}#app-shell .page-toolbar-filters{flex:1 1 100%;justify-content:flex-start}#app-shell .page-toolbar .search{flex:1 1 100%;width:100%}#app-shell .page-toolbar select{flex:1;max-width:100%;width:auto}#app-shell .page-toolbar input:not([type=checkbox]),#app-shell .page-toolbar select{font-size:16px;min-height:40px}.master-page>:not(.page-toolbar){margin-left:12px;margin-right:12px}.stock-page>.stock-grid{padding:14px 12px 24px}.page-toolbar>button{margin-left:auto!important}}
+@media(pointer:coarse){#app-shell .page-toolbar button,#app-shell .page-toolbar select,#app-shell .page-toolbar input:not([type=checkbox]){min-height:44px;height:auto}}
+
+.stock-page .table-wrap{overflow-x:auto}.stock-page .table-wrap table{min-width:900px}
+@media(max-width:700px){#app-shell .stock-page .page-toolbar .stock-filters select{flex:1 1 100%;width:100%;max-width:none}}

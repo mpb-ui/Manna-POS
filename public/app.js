@@ -1,3 +1,5 @@
+import { createReportsUI } from './reports-ui.js';
+import { alignPageHeader } from './page-header.js';
 import { openProductEditor } from './product-editor.js';
 import { availableVariants } from './product-variants.js';
 import { FINISHING_TYPES, finishingType, finishingTypeLabel, groupFinishingTypes } from './finishing-types.js';
@@ -34,7 +36,7 @@ import { ensureCartIds, addCartLine, editCartLine, plainRetailLine } from "./car
 import { restoreCartEditor, cartSheetDraft } from "./cart-editor.js";
 import { requiredPhone } from "./customer-validation.js";
 import { openPurchaseOrder } from "./po-documents.js";
-import { mountAssets, openAssetForm, openAssetDetail, mountAssetReport } from "./assets-ui.js";
+import { mountAssets, openAssetForm, openAssetDetail } from "./assets-ui.js";
 import { createOrderAssistance, briefingProfileOptions } from "./order-assistance-ui.js";
 import { needsFile, cancelled, paymentHistoryVisible } from "./order-rules.js";
 import { finishingPriceForUnits, normalizeFinishingTiers, manualAreaFinishing, manualLfCutting } from "./finishing-pricing.js";
@@ -80,11 +82,9 @@ const fileServices = [
 const atkGroups = ["Amplop", "Alat tulis", "Map & arsip", "Perekat", "Kertas & label", "ID & lanyard", "Peralatan lainnya"];
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], pics: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], materialCategories: [], saleUnits: [], priceBases: [] }, categoryScroll: 0,
-  currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [], report: null,
+  currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [],
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", atkGroup: "Semua", atkSearch: "", directSearch: { Akrilik: "", Stempel: "" }, editingOrderId: null,
-  masterTab: "products", categorySettingsKind: "products", reportTab: "overview", reportSort: { key: "date", direction: "desc" }, reportPeriod: "month",
-  reportChartVisible: false,
-  reportFilters: { from: "", to: "", category: "", machineId: "", paymentStatus: "", paymentMethod: "" }, projectView: "list", projectSearch: "", projectStatus: "all", projectDeadlineSort: "nearest",
+  masterTab: "products", categorySettingsKind: "products", projectView: "list", projectSearch: "", projectStatus: "all", projectDeadlineSort: "nearest",
   stockSearch: "", stockCategory: "",
   projectCollapsed: new Set(["DIAMBIL"]),
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" }
@@ -93,7 +93,7 @@ const root = document.querySelector("#view-root");
 const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
 const customersUI=createCustomersUI({state,root,api,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
-  bindHeader:()=>root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();}),
+  bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},
   openOrder:async id=>{try{const order=await api('/api/order-history/'+id);const index=state.orders.findIndex(o=>o.id===id);if(index>=0)state.orders[index]=order;else state.orders.push(order);if(dialog.open)dialog.close();openOrder(id);}catch(error){toast(error.message,'error');}},
   print:html=>{printDocument.className='print-document payment-receipt';printDocument.innerHTML=html;showPrintDocument();}
 });
@@ -152,7 +152,7 @@ function toast(message, type = "") {
 function showLogin() {
   closeNavigation();
   homeCampaignUI.reset(); orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
-  clearEmployeeSession();
+  clearEmployeeSession(); reportsUI.reset();
   state.currentUser = null;
   assistance.resetSession();
   state.permissions = [];
@@ -447,7 +447,7 @@ function catalogCardHtml(product, promo = false) {
   return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}"><div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong></div><div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><small>${escapeHtml(product.unitLabel)}</small><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong><small>${escapeHtml(product.unitLabel)}</small>`}</div></button>`;
 }
 
-const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:()=>root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();}),load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
+const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
 function allCatalogHtml(){return `<div class="pos-home">${homeCampaignUI.homeHtml()}<section class="catalog-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Terlaris</h3></div><div class="catalog-grid">${state.products.filter(p=>p.featured).map(p=>catalogCardHtml(p)).join('')}</div></section></div>`;}
 
 function productConfigurationHtml(product) {
@@ -1588,116 +1588,19 @@ function showPrintDocument() {
   window.print();
 }
 
-function reportMoney(value) { return value == null ? "—" : rupiah.format(Number(value || 0)); }
-function reportPercent(value) { return value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(1)}%`; }
-function reportMetric(label, value, meta = "", tone = "") { return `<article class="report-metric ${tone}"><span>${label}</span><strong>${value}</strong>${meta ? `<small>${meta}</small>` : ""}</article>`; }
-function reportBars(rows, money) {
-  const maximum = Math.max(1, ...rows.map((row) => Number(money ? row.sales : row.quantity || row.orders || 0)));
-  return rows.map((row) => { const value = Number(money ? row.sales : row.quantity || row.orders || 0); return `<div class="report-bar-item" title="${escapeHtml(row.label)} · ${money ? reportMoney(value) : value}"><span style="height:${Math.max(4, value / maximum * 100)}%"></span><small>${escapeHtml(row.label.slice(5))}</small></div>`; }).join("");
-}
-function reportRankingRows(rows, capabilities) {
-  return rows.slice(0, 12).map((row, index) => `<tr><td><b>${index + 1}</b></td><td><strong>${escapeHtml(row.label)}</strong>${row.category ? `<small>${escapeHtml(row.category)}</small>` : ""}</td><td>${Number(row.orders || row.jobs || 0).toLocaleString("id-ID")}</td><td>${Number(row.quantity || 0).toLocaleString("id-ID")}</td>${capabilities.money ? `<td>${reportMoney(row.sales)}</td>` : ""}${capabilities.cost ? `<td>${reportMoney(row.profit)}</td><td>${reportPercent(row.margin)}</td>` : ""}</tr>`).join("");
-}
-
-async function renderReports() {
-  root.innerHTML = `<div class="report-page"><div class="report-top"><div><h1>Laporan</h1><p>Analisa penjualan, produk, mesin, dan perkembangan bisnis.</p></div></div><section class="panel"><div class="report-loading">Memuat laporan…</div></section></div>`;
-  try {
-    if (!state.reportFilters.from) { const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date()); state.reportFilters.from = `${today.slice(0,7)}-01`; state.reportFilters.to = today; }
-    const params = new URLSearchParams(Object.entries(state.reportFilters).filter(([, value]) => value));
-    const report = await api(`/api/reports?${params}`); state.report = report;
-    if (report.range.locked) state.reportPeriod = "today";
-    if (!state.reportFilters.from) state.reportFilters.from = report.range.from;
-    if (!state.reportFilters.to) state.reportFilters.to = report.range.to;
-    if (state.view === "reports") drawReports();
-  } catch (error) { root.innerHTML = `<div class="category-empty"><strong>Laporan tidak dapat dimuat</strong><p>${escapeHtml(error.message)}</p></div>`; }
-}
-
-function drawReports() {
-  const report = state.report; if (!report) return;
-  const capabilities = report.capabilities; const summary = report.summary;
-  const changeMeta = summary.change == null ? "Belum ada periode pembanding" : `${summary.change >= 0 ? "Naik" : "Turun"} ${Math.abs(summary.change).toFixed(1)}% dari periode sebelumnya`;
-  const tabs = [["overview", "Ringkasan"], ["sales", "Penjualan"], ["products", "Produk & Kategori"], ["customers", "Pelanggan"], ["payments", "Pembayaran"], ...(capabilities.money ? [["receivables", "Piutang"]] : []), ["operations", "Operasional"], ["machines", "Mesin"], ["inventory", "Persediaan"], ["returns", "Retur Barang"], ...(canManageSettings() && capabilities.cost ? [["assets", "Aset & Penyusutan"]] : [])];
-  const kpis = [capabilities.money ? reportMetric("Omzet", reportMoney(summary.sales), `Tanggal pesanan · ${changeMeta}`) : "", capabilities.money ? reportMetric("Uang Masuk", reportMoney(summary.paid), `Tanggal pembayaran${report.paymentMethod ? " · " + report.paymentMethod : ""}`) : "", capabilities.money ? reportMetric("Piutang Outstanding", reportMoney(summary.outstanding), `Sampai ${report.range.to}`) : "", reportMetric("Jumlah Pesanan", Number(summary.orders).toLocaleString("id-ID"), `${summary.items} item`), capabilities.cost ? reportMetric("Laba Estimasi", reportMoney(summary.profit), `Margin ${reportPercent(summary.margin)} · Biaya retur ${reportMoney(summary.returnCost || 0)}`) : ""].join("");
-
-  root.innerHTML = `<div class="report-page"><div class="report-top"><div><h1>Laporan</h1><p>Analisa penjualan, produk, mesin, dan perkembangan bisnis.</p></div><div class="report-actions"><div class="report-attention"><button id="report-attention" class="secondary" aria-label="Perlu Perhatian" aria-expanded="false" aria-controls="report-attention-content"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg> <span>${report.attention.reduce((sum,item) => sum + item.count, 0)}</span></button><div id="report-attention-content" class="report-attention-popover"><strong>Perlu Perhatian</strong>${report.attention.map(item => `<button data-attention-tab="${item.tab}">${escapeHtml(item.label)} →</button>`).join("") || "<p>Tidak ada pemberitahuan.</p>"}</div></div>${capabilities.export ? '<button id="report-export" class="secondary">↓ Download CSV</button>' : ""}${capabilities.print ? '<button id="report-print" class="primary">Print / PDF</button>' : ""}</div></div>
-    <section class="panel report-filter-card"><div class="report-periods">${[["today","Hari Ini"],["yesterday","Kemarin"],["week","Minggu Ini"],["month","Bulan Ini"],["custom","Custom"]].map(([id,label]) => `<button data-report-period="${id}" class="${state.reportPeriod === id ? "active" : ""}" ${report.range.locked && id !== "today" ? "disabled" : ""}>${label}</button>`).join("")}</div><div class="report-filters"><label><span>Dari tanggal</span><input id="report-from" type="date" value="${report.range.from}" ${report.range.locked ? "disabled" : ""}></label><label><span>Sampai tanggal</span><input id="report-to" type="date" value="${report.range.to}" ${report.range.locked ? "disabled" : ""}></label><label><span>Kategori</span><select id="report-category"><option value="">Semua kategori</option>${productCategories().filter(([id]) => id !== "all").map(([, label]) => `<option ${state.reportFilters.category === label ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label><label><span>Mesin</span><select id="report-machine"><option value="">Semua mesin</option>${state.machines.map((machine) => `<option value="${machine.id}" ${state.reportFilters.machineId === machine.id ? "selected" : ""}>${escapeHtml(machine.name)}</option>`).join("")}</select></label><label><span>Pembayaran</span><select id="report-payment"><option value="">Semua pembayaran</option>${["BELUM_BAYAR", "BELUM_LUNAS", "LUNAS"].map((value) => `<option value="${value}" ${state.reportFilters.paymentStatus === value ? "selected" : ""}>${value.replaceAll("_", " ")}</option>`).join("")}</select></label>${capabilities.money ? `<label><span>Sumber Pembayaran</span><select id="report-method"><option value="">Semua Sumber</option>${["TUNAI","QRIS","TRANSFER"].map(method => `<option value="${method}" ${state.reportFilters.paymentMethod === method ? "selected" : ""}>${method === "TUNAI" ? "Tunai" : method === "TRANSFER" ? "Transfer" : "QRIS"}</option>`).join("")}</select></label>` : ""}<button id="apply-report" class="primary">Terapkan</button></div>${report.range.locked ? '<p class="report-scope-note">Akses role ini dibatasi pada data hari ini.</p>' : report.range.scope === "own" ? '<p class="report-scope-note">Laporan hanya menampilkan pekerjaan yang dibuat atau ditugaskan kepada Anda.</p>' : ""}</section>
-    <div class="report-tabs">${tabs.map(([id, label]) => `<button data-report-tab="${id}" class="${state.reportTab === id ? "active" : ""}">${label}</button>`).join("")}</div>${state.reportTab === "assets" ? "" : `<div class="report-kpis">${kpis}</div>`}<div id="report-content"></div></div>`;
-  const content = document.querySelector("#report-content");
-  if (state.reportTab === "overview") content.innerHTML = `<div class="report-chart-toggle"><button id="report-chart-toggle" class="secondary" aria-expanded="${state.reportChartVisible}">${state.reportChartVisible ? "Sembunyikan Grafik" : "Tampilkan Grafik"}</button></div>${state.reportChartVisible ? `<section class="panel report-chart-card"><div class="panel-head"><h2>Tren ${capabilities.money ? "Penjualan" : "Jumlah Produk"}</h2><span>${report.range.from} — ${report.range.to}</span></div><div class="report-bars">${reportBars(report.days, capabilities.money)}</div></section>` : ""}<section class="panel report-ranking"><div class="panel-head"><h2>Kategori Teratas</h2></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Kategori</th><th>Order</th><th>Qty</th>${capabilities.money ? "<th>Penjualan</th>" : ""}${capabilities.cost ? "<th>Laba</th><th>Margin</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.categories, capabilities)}</tbody></table></div></section>`;
-  if (state.reportTab === "overview") content.insertAdjacentHTML("beforeend", `<details class="panel report-optional-insights"><summary>Insight & Rekomendasi</summary>${report.insights.map(item => `<p>${escapeHtml(item)}</p>`).join("")}</details>`);
-  if (state.reportTab === "sales") content.innerHTML = reportSalesTable(report);
-  if (state.reportTab === "products") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Produk</h2><span>${report.products.length} produk</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Produk</th><th>Order</th><th>Qty</th>${capabilities.money ? "<th>Penjualan</th>" : ""}${capabilities.cost ? "<th>Laba</th><th>Margin</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.products, capabilities)}</tbody></table></div></section>`;
-  if (state.reportTab === "machines") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Mesin</h2><span>Berdasarkan mesin yang terhubung ke produk</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Mesin</th><th>Pekerjaan</th><th>Qty</th>${capabilities.money ? "<th>Penjualan terkait</th>" : ""}</tr></thead><tbody>${reportRankingRows(report.machines, capabilities)}</tbody></table></div></section>`;
-  if (state.reportTab === "customers") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Performa Pelanggan</h2><span>${report.customers.length} pelanggan</span></div><div class="table-wrap"><table><thead><tr><th>#</th><th>Pelanggan</th><th>Order</th><th>Item</th><th>Pesanan Terakhir</th>${capabilities.money ? "<th>Penjualan</th><th>Dibayar</th>" : ""}</tr></thead><tbody>${report.customers.map((row, index) => `<tr><td><b>${index + 1}</b></td><td><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.phone || "Walk-in")}</small></td><td>${row.orders}</td><td>${row.items}</td><td>${projectDateFormat.format(new Date(row.lastOrderAt))}</td>${capabilities.money ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td>` : ""}</tr>`).join("") || '<tr><td colspan="7">Belum ada data pelanggan.</td></tr>'}</tbody></table></div></section>`;
-  if (state.reportTab === "payments") content.innerHTML = `<div class="report-kpis report-sub-kpis">${reportMetric("Belum Bayar", report.paymentSummary.unpaid, "pesanan")}${reportMetric("Pembayaran Sebagian", report.paymentSummary.partial, "pesanan")}${reportMetric("Lunas", report.paymentSummary.paidOrders, "pesanan")}${capabilities.money ? reportMetric("Sisa Pembayaran", reportMoney(report.paymentSummary.outstanding), "sampai tanggal akhir laporan") : ""}</div>${capabilities.money ? reportPaymentTable(report.receipts, "Uang Masuk", false) : ""}${capabilities.money ? purchaseOrderReport(report.purchaseOrders || []) : ""}${reportSalesTable(report)}`;
-  if(state.reportTab==='payments'&&capabilities.money&&report.deposits){const d=report.deposits;content.insertAdjacentHTML('beforeend',`<section class="panel deposit-report"><h3>Deposit Pelanggan</h3><p class="product-note">Seluruh pelanggan pada periode tanggal ini. Saldo per tanggal akhir; tidak dibatasi filter produk/metode pembayaran.</p><div class="deposit-report-grid">${[['Deposit masuk',d.incoming],['Deposit digunakan',d.used],['Deposit dikembalikan ke pelanggan',d.refunds],['Pembayaran deposit dipulihkan',d.restored],['Saldo awal / koreksi',d.adjustments],['Saldo deposit tersisa',d.balance]].map(([label,n])=>`<div><small>${label}</small><strong>${rupiah.format(n)}</strong></div>`).join('')}</div><div class="customer-table"><table><thead><tr><th>Tanggal</th><th>Pelanggan</th><th>Transaksi</th><th>Mutasi</th><th>Saldo setelah</th></tr></thead><tbody>${d.rows.map(m=>`<tr><td>${dateFormat.format(new Date(m.createdAt))} WITA</td><td>${escapeHtml(m.customer)}</td><td>${escapeHtml(m.kind)}<small>${escapeHtml(m.orderCode || '')}</small></td><td>${rupiah.format(m.amount)}</td><td>${rupiah.format(m.balanceAfter)}</td></tr>`).join('')||'<tr><td colspan="5">Belum ada mutasi.</td></tr>'}</tbody></table></div><small>Menampilkan maksimal 100 mutasi terbaru. Riwayat lengkap tersedia di Pelanggan.</small></section>`);}
-  if (state.reportTab === "operations") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Beban Pekerjaan per Tahap</h2><span>Mempermudah identifikasi antrean produksi</span></div><div class="table-wrap"><table><thead><tr><th>Tahap</th><th>Pesanan</th><th>Item</th></tr></thead><tbody>${report.statuses.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${row.orders}</td><td>${row.items}</td></tr>`).join("") || '<tr><td colspan="3">Belum ada pekerjaan.</td></tr>'}</tbody></table></div></section>`;
-  if (state.reportTab === "inventory") content.innerHTML = `<section class="panel report-ranking"><div class="panel-head"><h2>Persediaan & Stok Minimum</h2><span>${report.inventory.filter((row) => row.low).length} bahan perlu diperiksa</span></div><div class="table-wrap"><table><thead><tr><th>Bahan</th><th>SKU</th><th>Stok</th><th>Minimum</th><th>Kondisi</th>${capabilities.cost ? "<th>Nilai Stok</th>" : ""}</tr></thead><tbody>${report.inventory.map((row) => `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td>${escapeHtml(row.sku)}</td><td>${row.quantity.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td>${row.minStock.toLocaleString("id-ID")} ${escapeHtml(row.unit)}</td><td><span class="badge ${row.stockNeedsCount || row.low ? "warn" : "ok"}">${row.stockNeedsCount ? "PERLU STOK OPNAME" : row.low ? "PERLU DIPERIKSA" : "AMAN"}</span></td>${capabilities.cost ? `<td>${row.value == null ? "—" : reportMoney(row.value)}</td>` : ""}</tr>`).join("")}</tbody></table></div></section>`;
-  if (state.reportTab === "receivables" && capabilities.money) content.innerHTML = reportPaymentTable(report.receivables, "Piutang Outstanding", true);
-  if (state.reportTab === "returns") content.innerHTML = goodsReturnReportHtml(report, escapeHtml, reportMoney);
-  if (state.reportTab === "assets" && canManageSettings() && capabilities.cost) mountAssetReport(assetContext(), content, report.range.to.slice(0, 7));
-  document.querySelector("#report-chart-toggle")?.addEventListener("click", () => { state.reportChartVisible = !state.reportChartVisible; drawReports(); });
-  document.querySelector("#report-attention").onclick = event => { const button = event.currentTarget; const expanded = button.getAttribute("aria-expanded") !== "true"; button.setAttribute("aria-expanded", String(expanded)); button.parentElement.classList.toggle("open", expanded); };
-  document.querySelectorAll("[data-attention-tab]").forEach(button => button.onclick = () => { state.reportTab = button.dataset.attentionTab; drawReports(); });
-  document.querySelectorAll("[data-report-period]").forEach(button => button.onclick = () => {
-    state.reportPeriod = button.dataset.reportPeriod;
-    if (state.reportPeriod === "custom") { document.querySelectorAll("[data-report-period]").forEach(item => item.classList.toggle("active", item === button)); document.querySelector("#report-from").focus(); return; }
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
-    const date = new Date(`${today}T00:00:00Z`); let from = today; let to = today;
-    if (state.reportPeriod === "yesterday") { date.setUTCDate(date.getUTCDate()-1); from = to = date.toISOString().slice(0,10); }
-    if (state.reportPeriod === "week") { date.setUTCDate(date.getUTCDate() - (date.getUTCDay()+6)%7); from = date.toISOString().slice(0,10); }
-    if (state.reportPeriod === "month") from = `${today.slice(0,7)}-01`;
-    state.reportFilters = { ...state.reportFilters, from, to }; renderReports();
-  });
-  document.querySelectorAll("[data-report-tab]").forEach((button) => button.onclick = () => { state.reportTab = button.dataset.reportTab; drawReports(); });
-  document.querySelector("#apply-report").onclick = () => { state.reportFilters = { from: document.querySelector("#report-from").value, to: document.querySelector("#report-to").value, category: document.querySelector("#report-category").value, machineId: document.querySelector("#report-machine").value, paymentStatus: document.querySelector("#report-payment").value, paymentMethod: document.querySelector("#report-method")?.value || "" }; state.reportPeriod = "custom"; renderReports(); };
-  document.querySelector("#report-export")?.addEventListener("click", () => state.reportTab === "assets" ? document.querySelector("[data-asset-report-export]")?.click() : exportReportCsv());
-  document.querySelector("#report-print")?.addEventListener("click", () => state.reportTab === "assets" ? document.querySelector("[data-asset-report-print]")?.click() : printReport());
-  root.querySelectorAll("[data-po-open]").forEach(button => button.onclick = () => openPurchaseOrder({
-    row: report.purchaseOrders[Number(button.dataset.poOpen)], dialog, escapeHtml,
-    canDownload: capabilities.export, toast
-  }));
-  bindReportSorting();
-}
-
-function reportPaymentTable(rows, title, receivables) {
-  return `<section class="panel report-ranking"><div class="panel-head"><h2>${title}</h2><span>${rows.length} ${receivables ? "pesanan" : "pembayaran"}</span></div><div class="table-wrap"><table><thead><tr><th>Tanggal ${receivables ? "Pesanan" : "Pembayaran"}</th><th>Invoice</th><th>Pelanggan</th>${receivables ? "<th>Nilai Pesanan</th><th>Dibayar</th><th>Sisa</th>" : "<th>Sumber</th><th>Uang Masuk</th>"}</tr></thead><tbody>${rows.map(row => `<tr><td>${projectDateFormat.format(new Date(row.date))}</td><td><strong>${escapeHtml(row.code)}</strong></td><td>${escapeHtml(row.customer)}</td>${receivables ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td><td>${reportMoney(row.outstanding)}</td>` : `<td>${escapeHtml(row.method)}</td><td>${reportMoney(row.paid)}</td>`}</tr>`).join("") || `<tr><td colspan="6">Belum ada data.</td></tr>`}</tbody></table></div></section>`;
-}
-
-function reportSalesTable(report) {
-  const rows = [...report.rows].sort((a, b) => { const key = state.reportSort.key; const direction = state.reportSort.direction === "asc" ? 1 : -1; return (typeof a[key] === "number" ? a[key] - b[key] : String(a[key] || "").localeCompare(String(b[key] || ""))) * direction; });
-  const head = (key, label) => `<button data-report-sort="${key}">${label}${state.reportSort.key === key ? state.reportSort.direction === "asc" ? " ↑" : " ↓" : ""}</button>`;
-  return `<section class="panel report-ranking"><div class="panel-head"><h2>Detail Penjualan</h2><span>${rows.length} transaksi</span></div><div class="table-wrap"><table class="report-detail-table"><thead><tr><th>${head("date", "Tanggal")}</th><th>${head("code", "Invoice")}</th><th>${head("customer", "Order")}</th><th>Produk</th><th>${head("itemCount", "Item")}</th><th>Status</th>${report.capabilities.money ? `<th>${head("sales", "Penjualan")}</th><th>${head("paid", "Dibayar")}</th>` : ""}${report.capabilities.cost ? `<th>${head("profit", "Laba")}</th><th>${head("margin", "Margin")}</th>` : ""}</tr></thead><tbody>${rows.map((row) => `<tr><td>${new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Makassar" }).format(new Date(row.date))}</td><td><strong>${escapeHtml(row.code)}</strong></td><td>${escapeHtml(row.customer)}</td><td>${escapeHtml(row.products)}</td><td>${row.itemCount}</td><td>${escapeHtml(row.status)}</td>${report.capabilities.money ? `<td>${reportMoney(row.sales)}</td><td>${reportMoney(row.paid)}</td>` : ""}${report.capabilities.cost ? `<td>${reportMoney(row.profit)}</td><td>${reportPercent(row.margin)}</td>` : ""}</tr>`).join("") || '<tr><td colspan="10">Belum ada transaksi pada periode ini.</td></tr>'}</tbody></table></div></section>`;
-}
-
-function purchaseOrderReport(rows) {
-  return `<section class="panel report-ranking po-report"><div class="panel-head"><div><h2>Dokumen Pembayaran PO</h2><span>${rows.length} surat PO pada periode</span></div></div><div class="po-report-grid">${rows.length ? rows.map((row, index) => `<article><button type="button" class="po-report-image" data-po-open="${index}" aria-label="Buka dokumen PO ${escapeHtml(row.poNumber)}">${row.attachment?.dataUrl ? `<img src="${escapeHtml(row.attachment.dataUrl)}" alt="PO ${escapeHtml(row.poNumber)}">` : '<span>Dokumen<br>belum diunggah</span>'}</button><div><strong>${escapeHtml(row.poNumber)}</strong><p>${escapeHtml(row.customer)} · ${escapeHtml(row.code)}</p><small>${dateFormat.format(new Date(row.createdAt))}${row.attachment?.name ? ` · ${escapeHtml(row.attachment.name)}` : ""}</small></div></article>`).join("") : '<div class="cart-empty">Belum ada pembayaran PO pada periode ini.</div>'}</div></section>`;
-}
-
-function bindReportSorting() { document.querySelectorAll("[data-report-sort]").forEach((button) => button.onclick = () => { const key = button.dataset.reportSort; state.reportSort = { key, direction: state.reportSort.key === key && state.reportSort.direction === "desc" ? "asc" : "desc" }; drawReports(); }); }
-function csvCell(value) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
-function exportReportCsv() {
-  const report = state.report; let headers = ["Tanggal", "Invoice", "Customer", "Produk", "Jumlah Item", "Status", "Status Pembayaran"];
-  if (report.capabilities.money) headers.push("Nomor PO");
-  if (report.capabilities.money) headers.push("Penjualan", "Dibayar", "Sisa"); if (report.capabilities.cost) headers.push("HPP Estimasi", "Laba", "Margin %");
-  let data = report.rows.map((row) => { const values = [row.date, row.code, row.customer, row.products, row.itemCount, row.status, row.paymentStatus]; if (report.capabilities.money) values.push((row.poNumbers || []).join("; "), row.sales, row.paid, row.outstanding); if (report.capabilities.cost) values.push(row.cost, row.profit, Number(row.margin || 0).toFixed(2)); return values; });
-  if (report.capabilities.money && state.reportTab === "payments") { headers = ["Tanggal Pembayaran", "Invoice", "Customer", "Sumber", "Uang Masuk"]; data = report.receipts.map(row => [row.date,row.code,row.customer,row.method,row.paid]); if(report.deposits){data.push([], ["Ringkasan Deposit (seluruh pelanggan)","","","", ""],...[["Deposit masuk",report.deposits.incoming],["Deposit digunakan",report.deposits.used],["Refund deposit",report.deposits.refunds],["Pemulihan pembayaran",report.deposits.restored],["Saldo awal / koreksi",report.deposits.adjustments],["Saldo deposit akhir",report.deposits.balance]].map(([label,n])=>[label,"","","",n]));} }
-  if (report.capabilities.money && state.reportTab === "receivables") { headers = ["Tanggal Pesanan", "Invoice", "Customer", "Nilai Pesanan", "Dibayar", "Sisa"]; data = report.receivables.map(row => [row.date,row.code,row.customer,row.sales,row.paid,row.outstanding]); }
-  if (state.reportTab === "returns") {
-    headers=["Tanggal Retur","Nomor Retur","Invoice","Pelanggan","Produk","SKU","Sumber","Jumlah","Mutasi Stok Layak Jual","Catatan","Petugas"];
-    if(report.capabilities.cost)headers.push("Biaya Barang Pengganti");
-    data=(report.goodsReturns?.rows||[]).map(row=>[row.date,row.code,row.invoice,row.customer,row.product,row.sku,row.sourceCode,row.quantity,row.stockChange,row.note,row.actor,...(report.capabilities.cost?[row.cost]:[])]);
-  }
-  const blob = new Blob(["\uFEFF" + [headers, ...data].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `laporan-manna-${report.range.from}-${report.range.to}.csv`; link.click(); URL.revokeObjectURL(link.href);
-}
-function printReport() {
-  const report = state.report; printDocument.className = "print-document report-print"; printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">LAPORAN BISNIS</div><p>Periode ${report.range.from} — ${report.range.to} · Sumber ${escapeHtml(report.paymentMethod || "Semua Sumber")}</p><hr><div class="print-report-summary"><div>Pesanan <b>${report.summary.orders}</b></div><div>Item <b>${report.summary.items}</b></div>${report.capabilities.money ? `<div>Penjualan <b>${reportMoney(report.summary.sales)}</b></div><div>Uang Masuk <b>${reportMoney(report.summary.paid)}</b></div><div>Piutang Outstanding <b>${reportMoney(report.summary.outstanding)}</b></div>` : ""}${report.capabilities.cost ? `<div>Laba Estimasi <b>${reportMoney(report.summary.profit)}</b></div><div>Margin <b>${reportPercent(report.summary.margin)}</b></div>` : ""}</div>${report.capabilities.money && report.deposits ? `<h3>Deposit Pelanggan · Seluruh Pelanggan</h3><p>Masuk ${reportMoney(report.deposits.incoming)} · Digunakan ${reportMoney(report.deposits.used)} · Refund ${reportMoney(report.deposits.refunds)} · Saldo akhir ${reportMoney(report.deposits.balance)}</p>`:""}<h3>Insight</h3>${report.insights.map((item) => `<p>• ${escapeHtml(item)}</p>`).join("")}<h3>Produk Teratas</h3><table><thead><tr><th>Produk</th><th>Qty</th>${report.capabilities.money ? "<th>Penjualan</th>" : ""}</tr></thead><tbody>${report.products.slice(0, 10).map((row) => `<tr><td>${escapeHtml(row.label)}</td><td>${row.quantity}</td>${report.capabilities.money ? `<td>${reportMoney(row.sales)}</td>` : ""}</tr>`).join("")}</tbody></table>`; printDocument.insertAdjacentHTML("beforeend", goodsReturnReportHtml(report, escapeHtml, reportMoney)); document.body.classList.add("printing"); window.onafterprint = () => { document.body.classList.remove("printing"); printDocument.innerHTML = ""; }; window.print();
-}
+const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n),toast,
+  identity:()=>state.currentUser?.id,isActive:()=>state.view==='reports',
+  canOpenOrder:()=>can('orders.view'),canAssets:()=>canManageSettings() && can('reports.cost'),
+  openAssets:()=>{state.view='master';state.masterTab='assets';render();},
+  openOrder:async id=>{try{const order=await api('/api/order-history/'+encodeURIComponent(id));const index=state.orders.findIndex(o=>o.id===id);if(index<0)state.orders.push(order);else state.orders[index]=order;openOrder(id);}catch(error){toast(error.message,'error');}},
+  print:html=>{printDocument.className='print-document report-print';printDocument.innerHTML=html;showPrintDocument();}
+});
+function renderReports(){return reportsUI.mount();}
 
 function masterHeader(title, includeSummary = true) {
   const labels = { campaigns:"Campaign",customers:"Pelanggan",products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
   const allowed = { campaigns:state.currentUser?.role==="OWNER"&&can("master.products"),customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
-  return `<div class="master-top"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
+  return `<div class="master-top page-toolbar"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary">+ Tambah ${title}</button></div>
     ${includeSummary ? `<div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => !item.stockNeedsCount && Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>` : ""}
     <div class="master-tabs">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
 }
@@ -1706,8 +1609,8 @@ function assetContext() {
   return { root, dialog, printDocument, api, toast, escapeHtml, moneyField, parseMoney, bindMoneyInputs, rupiah, machines: state.machines,
     header: masterHeader("Aset", false), showDialog: showMasterDialog,
     isActive: () => state.view === "master" && state.masterTab === "assets" && canManageSettings(),
-    isReportActive: () => state.view === "reports" && state.reportTab === "assets" && canManageSettings(),
-    bindHeader: () => { root.querySelectorAll("[data-master-tab]").forEach(button => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); }); root.querySelector("#add-master")?.addEventListener("click", () => openAssetForm(assetContext())); },
+    isReportActive: () => false,
+    bindHeader: () => { alignPageHeader(root); root.querySelectorAll("[data-master-tab]").forEach(button => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); }); root.querySelector("#add-master")?.addEventListener("click", () => openAssetForm(assetContext())); },
     afterSave: async () => { state.view = "master"; state.masterTab = "assets"; await load(); },
     manageAssets: () => { state.view = "master"; state.masterTab = "assets"; render(); }
   };
@@ -1754,6 +1657,7 @@ function renderMaster() {
   document.querySelectorAll("[data-edit-user]").forEach((button) => button.onclick = () => openUserForm(state.users.find((item) => item.id === button.dataset.editUser)));
   let promoOnly = false;
   const applyFilters = () => { const query = document.querySelector("#master-search").value.toLowerCase(); const category = document.querySelector("#filter-category")?.value || ""; const machine = document.querySelector("#filter-machine")?.value || ""; const type = document.querySelector("#filter-finishing-type")?.value || ""; document.querySelectorAll(".master-table tbody tr").forEach((row) => { const matches = row.textContent.toLowerCase().includes(query) && (!category || row.dataset.category === category || JSON.parse(row.dataset.categories || "[]").includes(category)) && (!machine || (row.dataset.machines || "").split(",").includes(machine)) && (!promoOnly || row.dataset.promo === "true") && (!type || row.dataset.finishingType === type); row.classList.toggle("hidden", !matches); }); };
+  alignPageHeader(root);
   document.querySelector("#master-search").oninput = applyFilters;
   document.querySelector("#filter-finishing-type")?.addEventListener("change", applyFilters);
   document.querySelector("#filter-category")?.addEventListener("change", applyFilters); document.querySelector("#filter-machine")?.addEventListener("change", applyFilters);
@@ -1777,6 +1681,7 @@ function renderSettingsMaster() {
   document.querySelectorAll("[data-edit-category-name]").forEach((button) => button.onclick = () => openCategoryForm(kind, button.dataset.editCategoryName));
   document.querySelectorAll("[data-sheet-profiles]").forEach(button => button.onclick = () => openSheetProfiles({ getProfiles: () => state.catalogOptions.sheetCalculatorProfiles || [], showDialog: showMasterDialog, api, refresh: load, toast, escapeHtml }));
   document.querySelectorAll("[data-edit-pic]").forEach((button) => button.onclick = () => openPicForm(activePics().find((pic) => pic.id === button.dataset.editPic)));
+  alignPageHeader(root);
   document.querySelector("#settings-search").oninput = (event) => document.querySelectorAll(".master-table tbody tr").forEach((row) => row.classList.toggle("hidden", !row.textContent.toLowerCase().includes(event.target.value.toLowerCase())));
 }
 
