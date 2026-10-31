@@ -1,0 +1,35 @@
+MANNA PRINT HELPER 1.0.0 - Windows 11 x64
+
+PEMASANGAN
+1. Unduh ZIP dan pilih Extract All / Ekstrak Semua.
+2. Buka folder hasil ekstraksi. Klik dua kali Install.cmd.
+3. Setelah berhasil, buka Manna POS di Chrome atau Edge.
+4. Klik Nota Ulang, Cetak Bukti, atau Print SPK.
+5. Izinkan browser membuka Manna Print Helper.
+6. Pada JasperViewer klik Print, pilih iWare J82BT, lalu cetak.
+
+Tidak memerlukan instalasi Java terpisah atau hak administrator.
+Helper aktif saat ada permintaan cetak dan tidak membuka port jaringan lokal.
+Hanya browser -> helper -> JasperViewer -> dialog printer Windows.
+
+PENGATURAN PRINTER
+Gunakan driver iWare yang telah terpasang, kertas 80 mm, skala 100%.
+Lebar dokumen 80 mm, isi sekitar 72 mm, dan panjang mengikuti seluruh isi.
+Lakukan satu tes nota dan Work Order lengkap pada printer sebelum dipakai rutin.
+Jika printer berbunyi / menunjukkan error, periksa driver, kertas dan perangkat;
+pembukaan JasperViewer tidak menjamin penyelesaian gangguan fisik printer.
+
+DOKUMEN
+Nota Ulang menampilkan kondisi invoice terkini.
+Cetak Bukti mempertahankan saldo dan pembayaran pada transaksi yang dipilih.
+Print SPK berisi seluruh item invoice tanpa informasi pembayaran.
+File .jrprint sementara disimpan pada:
+%LOCALAPPDATA%\MannaPrintHelper\documents
+File sementara berusia di atas 24 jam dibersihkan saat helper dipanggil berikutnya.
+Untuk menyimpan arsip tetap gunakan tombol Save di JasperViewer ke folder lain.
+
+PENGHAPUSAN
+Klik kanan %LOCALAPPDATA%\MannaPrintHelper\Uninstall.ps1 > Run with PowerShell.
+Dokumen sementara tidak ikut dihapus oleh uninstaller.
+
+Dukungan aplikasi: https://manna-pos.onrender.com/

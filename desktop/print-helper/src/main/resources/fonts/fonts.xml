@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fontFamilies>
+  <fontFamily name="IBM Plex Sans"><normal>fonts/IBMPlexSans-Regular.ttf</normal><bold>fonts/IBMPlexSans-Bold.ttf</bold><italic>fonts/IBMPlexSans-Italic.ttf</italic><pdfEncoding>Identity-H</pdfEncoding><pdfEmbedded>true</pdfEmbedded></fontFamily>
+  <fontFamily name="IBM Plex Sans SemiBold"><normal>fonts/IBMPlexSans-SemiBold.ttf</normal><pdfEncoding>Identity-H</pdfEncoding><pdfEmbedded>true</pdfEmbedded></fontFamily>
+</fontFamilies>
