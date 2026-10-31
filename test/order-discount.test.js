@@ -19,7 +19,7 @@ test('one-rupiah allocation reconciles exactly; zero lines, free invoice, and la
  const free=sample();applyInvoiceDiscount(free,10000,user);assert(!settledOrder(free));free.paymentConfirmed=true;assert(settledOrder(free));
 });
 test('net category/product sales, cash allocation, receivables and profit reconcile without discounting HPP',()=>{
- const o=sample();applyInvoiceDiscount(o,2000,user);o.paymentConfirmed=true;o.paidAmount=4000;o.payments=[{amount:4000,method:'TUNAI',createdAt:o.createdAt}];
+ const o=sample();applyInvoiceDiscount(o,2000,user,o.createdAt);o.paymentConfirmed=true;o.paidAmount=4000;o.payments=[{amount:4000,method:'TUNAI',createdAt:o.createdAt}];
  const state={orders:[o],products:[{id:'a',category:'Print',baseCost:1000},{id:'b',category:'ATK',baseCost:500}],materials:[],machines:[],inventory:[]},range={from:'2026-10-28',to:'2026-10-28'};
  const all=aggregateReport(state,user,range),a=aggregateReport(state,user,{...range,category:'Print'}),b=aggregateReport(state,user,{...range,category:'ATK'});
  assert.equal(all.summary.sales,8000);assert.equal(all.summary.paid,4000);assert.equal(all.summary.outstanding,4000);assert.equal(all.summary.cost,1500);assert.equal(all.summary.profit,6500);assert.equal(a.summary.sales,4800);assert.equal(a.summary.paid,2400);assert.equal(a.summary.outstanding,2400);assert.equal(b.summary.sales,3200);assert.equal(b.summary.paid,1600);assert.equal(all.products.reduce((n,p)=>n+p.sales,0),8000);

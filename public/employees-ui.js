@@ -1,3 +1,4 @@
+import { alignPageHeader } from './page-header.js';
 import { calculatePayroll, periodBounds } from './payroll-domain.js';
 let ctx; let generation = 0; let modalUnsaved = false;
 const ui = { tab: 'employees', period: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Makassar', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7), historyPeriod: '', historyEmployee: '', employees: [], payrolls: [], drafts: new Map() };
@@ -53,6 +54,7 @@ function drawEmployees() {
   ctx.root.querySelector('#add-employee').onclick = () => employeeForm();
   content.querySelector('#employee-search').oninput = event => content.querySelectorAll('[data-employee-search]').forEach(row => row.classList.toggle('hidden', !row.dataset.employeeSearch.includes(event.target.value.toLowerCase())));
   content.querySelectorAll('[data-edit-employee]').forEach(button => button.onclick = () => employeeForm(ui.employees.find(item => item.id === button.dataset.editEmployee)));
+  alignPageHeader(ctx.root);
 }
 function showDialog(title, html) {
   ctx.dialog.classList.add('master-dialog', 'payroll-dialog');
@@ -132,6 +134,7 @@ function drawPayroll() {
     printSlips(rows);
   });
   updateGrandTotal(rows);
+  alignPageHeader(ctx.root);
 }
 function updateGrandTotal(rows) { ctx.root.querySelector('#payroll-grand-total').textContent = money(rows.reduce((sum, row) => sum + currentDraft(row).calculation.amounts.netSalary, 0)); }
 async function saveDraft(id) {
@@ -196,6 +199,7 @@ function drawHistory() {
   content.querySelector('#clear-history').onclick = () => { ui.historyPeriod = ''; ui.historyEmployee = ''; drawHistory(); };
   content.querySelectorAll('[data-history-slip]').forEach(button => button.onclick = () => payrollForm(currentDraft(rows.find(row => row.id === button.dataset.historySlip))));
   content.querySelector('#print-history')?.addEventListener('click', () => { if (rows.some(row => ui.drafts.get(row.id)?.dirty)) return ctx.toast('Simpan perubahan sebelum mencetak', 'error'); printSlips(rows); });
+  alignPageHeader(ctx.root);
 }
 function slipHtml(row) {
   const c = row.calculation; const a = c.amounts; const employee = row.employee;

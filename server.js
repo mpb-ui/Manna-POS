@@ -702,7 +702,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         createdByName: req.user.name,
         createRequestId: req.body.requestId || null,
         stockCommitted: false,
-        items: workflowSnapshot(priced.items, state.products),
+        items: workflowSnapshot(priced.items, state.products, state.machines),
         total: priced.total,
         createdAt: now(),
         statusEnteredAt: now(),
@@ -740,7 +740,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       if (req.body.confirmed === true) { order.confirmed = true; order.confirmedAt ||= now(); }
       const oldItems = order.items;
       const usedIds = new Set();
-      order.items = workflowSnapshot(priced.items, state.products).map((item, index) => {
+      order.items = workflowSnapshot(priced.items, state.products, state.machines).map((item, index) => {
         const source = req.body.items[index];
         const existing = oldItems.find(old => old.itemId === source.itemId && old.productId === item.productId);
         item.itemId = existing && !usedIds.has(existing.itemId) ? existing.itemId : `${order.id}-item-${crypto.randomUUID()}`;
@@ -801,6 +801,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       let allocation;
       if(type==='PO')order.payments.push({id:crypto.randomUUID(),requestId:req.body.requestId || null,method,type,amount:0,poNumber,poAttachment:poAttachment?{name:text(poAttachment.name),type:text(poAttachment.type),dataUrl:poAttachment.dataUrl}:null,createdAt:now(),actor:req.user.name,actorId:req.user.id,note:text(req.body.note)});
       else if (!(order.total === 0 && invoiceDiscount(order) > 0 && amount === 0 && !Number(req.body.depositAmount))) allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
+      order.paymentConfirmedAt ||= now();
       order.paymentConfirmed = true;
       order.confirmed = true; order.confirmedAt ||= now();
       order.paymentStatus = order.paidAmount >= order.total ? "LUNAS" : "BELUM_LUNAS";
@@ -824,7 +825,8 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
 });
 
 
-app.post('/api/orders/:id/cancel', async (req, res, next) => {
+app.post(['/api/orders/:id/cancel','/api/reports/orders/:id/cancel'], async (req, res, next) => {
+  if(req.path.startsWith('/api/reports/') && (req.user.role!=='OWNER' || !hasPermission(req.user,'reports.view') || !hasPermission(req.user,'reports.money') || !hasPermission(req.user,'orders.view') || !hasPermission(req.user,'deposit.manage')))return res.status(403).json({error:'Hanya Owner yang dapat menghapus transaksi dari Laporan'});
   try {
     const result = await store.mutate(state => {
       const order = state.orders.find(order => order.id === req.params.id);
@@ -834,6 +836,7 @@ app.post('/api/orders/:id/cancel', async (req, res, next) => {
       // cannot turn an unpaid cancellation into an unauthorized reversal.
       const previous = order.cancelledAt;
       const retry = previous && state.customerOperations.some(operation => operation.requestId === req.body.requestId && operation.actorId === req.user.id && operation.result?.orderId === order.id && operation.fingerprint.startsWith('["cancel",'));
+      if(req.path.startsWith('/api/reports/') && !retry && (req.body.expectedUpdatedAt!==order.updatedAt || req.body.expectedTotal!==order.total || req.body.expectedPaidAmount!==order.paidAmount))throw Object.assign(new Error('Transaksi berubah sejak pratinjau dibuka. Muat ulang sebelum membatalkan.'),{status:409});
       if (!retry && !canCancelOrder(order, req.user.role, effectivePermissions(req.user))) throw Object.assign(new Error("Pesanan dengan pembayaran hanya dapat dibatalkan Owner; pesanan belum dibayar hanya saat Menunggu Pembayaran"), { status: 403 });
       if (!previous) commitOrderStock(state, order, now, { actor: req.user.name });
       cancelCustomerOrder(state, order, req.body, req.user);

@@ -1,0 +1,64 @@
+.report-foundation{max-width:none;min-width:0;margin:0;padding:0;background:#f5f7fa;color:#182136}
+.report-foundation .report-body{padding:20px 24px 28px;min-width:0}
+.report-foundation .report-summary-line{display:flex;align-items:flex-start;gap:48px;padding:0 0 24px;flex-wrap:wrap}
+.report-summary-line>div,.report-summary-line>button{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:170px;text-align:left}
+.report-summary-line span{font-size:13px;color:#52627a}
+.report-summary-line strong{font-size:24px;line-height:32px;font-weight:650;color:#17263c;font-variant-numeric:tabular-nums}
+.report-summary-line small{font-size:11px;color:#6d7787}
+.report-summary-link{border:0;background:none;padding:0;cursor:pointer}
+.report-summary-link:hover strong{color:#0a68f4}
+.report-foundation .report-navigation{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;min-width:0;flex-wrap:wrap}
+.report-main-tabs{display:flex;gap:24px;overflow-x:auto;min-width:0;max-width:100%;border-bottom:1px solid #dce1e7}
+.report-main-tabs button{border:0;border-radius:0;background:none;white-space:nowrap;padding:10px 0;color:#182136;font-size:14px;font-weight:700;border-bottom:2px solid transparent}
+.report-main-tabs button.active{color:#0a68f4;border-bottom-color:#0a68f4}
+.report-secondary-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.report-secondary-actions button,.report-secondary-actions select,.report-list-heading select{font-size:12px;padding:8px 10px;min-height:36px;border-radius:8px;border:1px solid #dfe5ed;background:#fff;color:#52627a}
+.report-foundation .report-data{min-width:0}
+.report-list-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px}
+.report-list-heading>div{display:flex;gap:10px;align-items:baseline}
+.report-list-heading h2{font-size:14px;margin:0;line-height:22px}
+.report-list-heading span,.report-period-note,.report-table-note{font-size:12px;color:#6d7787;line-height:18px}
+.report-table-note{margin:4px 0 12px}
+.report-foundation .report-table-wrap{border:1px solid #dce1e7;border-radius:12px;background:#fff;overflow-x:auto}
+.report-foundation .report-table{width:100%;min-width:750px;border-collapse:collapse;table-layout:auto}
+.report-foundation .report-table th{text-transform:uppercase;font-size:11px;line-height:15px;color:#6d7787;background:#dce1e7;padding:9px 12px;text-align:left;white-space:nowrap;font-weight:700}
+.report-foundation .report-table td{font-size:12px;line-height:17px;color:#182136;padding:8px 12px;border-bottom:1px solid #dfe5ed;text-align:left;vertical-align:middle;font-variant-numeric:tabular-nums}
+.report-foundation .report-table tbody tr:nth-child(even){background:#f8f8f8}
+.report-foundation .report-table tbody tr:hover{background:#edf4ff}
+.report-foundation .report-table tr:last-child td{border-bottom:0}
+.report-table td:first-child{white-space:nowrap}
+.report-table td small{display:block;color:#6d7787;font-size:11px}
+.report-table .payment-unpaid{color:#d93732}
+.report-invoice{border:0;background:none;padding:0;color:#0a68f4;font-size:12px;text-align:left;font-weight:600;white-space:nowrap}
+.report-delete{border:0;background:none;font-size:20px;line-height:20px;color:#6d7787;padding:0 4px;min-height:24px;white-space:nowrap}
+.report-delete:hover{background:#fff0ef;border-radius:6px}
+.report-foundation .report-table .report-correction,.report-correction-row td:nth-child(5){color:#b43434}
+.report-table td.report-empty{padding:40px 16px;text-align:center;color:#6d7787}
+.report-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 0;font-size:12px;color:#6d7787}
+.report-pagination>div{display:flex;align-items:center;gap:12px}
+.report-pagination button{font-size:12px;padding:7px 10px}
+.report-dialog{width:520px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:0;border:1px solid #d7dfe9;border-radius:12px;color:#17263c}
+.report-dialog::backdrop{background:#10233866}
+.report-dialog .detail-head{padding:18px 20px;gap:16px}
+.report-dialog h2{font-size:20px;margin:0}
+.report-dialog-body{padding:20px}
+.report-dialog-body form{display:flex;flex-direction:column;gap:14px}
+.report-dialog-body .field{margin:0}
+.report-dialog-body input,.report-dialog-body select,.report-dialog-body textarea{width:100%;box-sizing:border-box;font:inherit;min-width:0}
+.report-dialog-body .form-footer{margin:0;padding-top:12px;justify-content:flex-end}
+.report-range-presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.report-range-presets button{font-size:12px;padding:8px 12px}
+.report-range-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.report-form-error{color:#b43434;font-size:12px;margin:0}
+.report-form-error:empty{display:none}
+.report-cancel-impact{display:flex;flex-direction:column;background:#f5f7fa;border:1px solid #dfe5ed;border-radius:8px;padding:12px;gap:10px}
+.report-cancel-impact>span{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.report-cancel-impact strong{white-space:nowrap}
+.report-cash-impact{font-size:12px;line-height:1.6;color:#52627a;margin:0}
+.report-foundation button:focus-visible,.report-foundation select:focus-visible,.report-dialog button:focus-visible{outline:2px solid #0a68f4;outline-offset:2px}
+.report-foundation .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(max-width:700px){.report-foundation .report-body{padding:16px 12px 24px}.report-foundation .report-summary-line{gap:18px 24px;padding-bottom:16px}.report-summary-line>div,.report-summary-line>button{min-width:135px;flex:1}.report-summary-line strong{font-size:21px;line-height:28px}.report-main-tabs{gap:22px;width:100%}.report-secondary-actions{width:100%}.report-secondary-actions>*{flex:1;text-align:center}.report-list-heading{align-items:flex-start;flex-wrap:wrap}.report-list-heading select{max-width:100%}.report-global-filters>.report-range-trigger{width:100%;flex-basis:100%;text-align:left;height:40px!important}.report-global-filters .report-filter{flex:1;min-width:0}.report-global-filters select{width:100%!important}.report-dialog .detail-head,.report-dialog-body{padding:16px}.report-dialog-body input,.report-dialog-body select,.report-dialog-body textarea{font-size:16px}.report-range-fields{grid-template-columns:1fr}.report-dialog .form-footer{flex-wrap:wrap}.report-dialog .form-footer button{flex:1;font-size:12px}.report-pagination{gap:10px}.report-pagination>div{gap:8px}}
+@media(pointer:coarse){.report-main-tabs button,.report-invoice,.report-delete,.report-secondary-actions button,.report-pagination button{min-height:44px}}
+@media print{.report-print .report-table{width:100%;border-collapse:collapse;font-size:10px}.report-print .report-table th,.report-print .report-table td{padding:6px;border-bottom:1px solid #ccc;text-align:left}.report-print .report-table small{display:block}.report-print .table-wrap{overflow:visible}.report-print .report-delete{display:none}}
+
+#app-shell .report-global-filters .report-range-trigger{background:#fff;border:1px solid #dfe5ed;color:#182136;font-weight:400;padding:8px 12px}
