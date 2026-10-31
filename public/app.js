@@ -26,8 +26,10 @@ import { rollConfigurationHtml, syncRollConfigurator } from "./roll-configurator
 import { configurationSection, configurationFinishing, configurationDesign, configurationNotes, configurationActions, bindConfigurationNotes } from "./product-configurator.js";
 import { bindShirtStockSelection } from "./dtf-stock-selection.js";
 import { createOrderHistory } from "./order-history-ui.js";
-import { paymentReceipts, historyDraft } from "./order-history.js";
+import { paymentReceipts } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
+import { invoiceReceiptHtml, workOrderHtml } from "./thermal-documents.js";
+import { prepareThermalPrint } from "./thermal-print.js";
 import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor } from "./item-workflow.js";
 import { projectDeadlineInfo } from "./project-deadline.js";
 import { PROJECT_STAGES, sortProjectDeadlines, projectPicTone } from "./project-management.js";
@@ -95,14 +97,14 @@ const printDocument = document.querySelector("#print-document");
 const customersUI=createCustomersUI({state,root,api,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
   bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},
   openOrder:async id=>{try{const order=await api('/api/order-history/'+id);const index=state.orders.findIndex(o=>o.id===id);if(index>=0)state.orders[index]=order;else state.orders.push(order);if(dialog.open)dialog.close();openOrder(id);}catch(error){toast(error.message,'error');}},
-  print:html=>{printDocument.className='print-document payment-receipt';printDocument.innerHTML=html;showPrintDocument();}
+  print:html=>showPrintDocument(html,'payment-receipt')
 });
 window.addEventListener('customer-extra-payment',event=>openPaymentDialog(event.detail));
 const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, openOrder, toast,
   onAction:(action,order)=>{
     if(action==='edit')startEditOrder(order);
     else if(action==='payment')openPaymentDialog(order);
-    else printOrder(order,action==='invoice'?'invoice':action==='spk'?'spk':'receipt');
+    else return printOrder(order,action==='invoice'?'invoice':action==='spk'?'spk':'receipt');
   }
 });
 const assistance = createOrderAssistance({
@@ -1426,10 +1428,16 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
   });
   detail.querySelector("#print-spk")?.addEventListener("click", () => printOrder(order, "spk"));
   detail.querySelector("#print-invoice")?.addEventListener("click", () => printOrder(order, "invoice"));
-  detail.querySelectorAll("[data-print-payment]").forEach(button => button.onclick = () => {
-    if (!can("orders.view") || !can("projects.money")) return;
-    const payment = paymentReceipts(order).find(payment => payment.id === button.dataset.printPayment);
-    if (payment) { printDocument.className = "print-document payment-receipt"; printDocument.innerHTML = paymentReceiptHtml(order, payment); showPrintDocument(); }
+  detail.querySelectorAll("[data-print-payment]").forEach(button => button.onclick = async () => {
+    if (!can("orders.view") || !can("projects.money") || !paymentHistoryVisible(state.currentUser.role)) return;
+    const userId = state.currentUser.id;
+    button.disabled = true;
+    try {
+      const [freshOrder,result] = await Promise.all([api(`/api/order-history/${encodeURIComponent(order.id)}`),api(`/api/order-history/${encodeURIComponent(order.id)}/payments/${encodeURIComponent(button.dataset.printPayment)}`)]);
+      if (state.currentUser?.id !== userId) return;
+      await showPrintDocument(paymentReceiptHtml(freshOrder,result.payment),'thermal-print payment-receipt');
+    } catch (error) { toast(error.message,'error'); }
+    finally { button.disabled = false; }
   });
   detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));
   dialog.showModal();
@@ -1569,23 +1577,52 @@ function startEditOrder(order) {
   dialog.close(); render(); window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function printOrder(order, type) {
+async function printOrder(order, type) {
   const isSpk = type === "spk";
   if (!isSpk && !can("projects.money")) return;
-  printDocument.className = `print-document ${type}`;
-  printDocument.innerHTML = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">${isSpk ? "SURAT PERINTAH KERJA" : type === "invoice" ? historyDraft(order) ? "NOTA DRAFT · BELUM DIKONFIRMASI" : "NOTA PESANAN" : "TANDA TERIMA PESANAN"}</div><hr>
-    <div class="print-meta"><b>${escapeHtml(order.code)}</b><span>${dateFormat.format(new Date(order.createdAt))} WITA</span></div>
-    <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}${isSpk ? `<br><b>PIC Design:</b> ${escapeHtml(order.designPic || "—")}` : ""}</p><hr>
-    ${order.items.map((item, index) => `<div class="print-item"><b>${index + 1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item) ? `<br>${escapeHtml(imageSizeNote(item))}` : ""}<br>${escapeHtml(itemQuantityLabel(item))}<br>Status: ${escapeHtml(state.statusLabels[item.status] || item.status)} · PIC: ${escapeHtml(item.designPic || "—")}<br>Deadline: ${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "—"}${item.templateDesign ? `<br>${isSpk ? "Spanduk" : `Harga spanduk: ${rupiah.format(item.baseTotal)}`}<br>${isSpk ? "Design Template" : "Design Template " + escapeHtml(item.templateDesign) + ": " + rupiah.format(item.templateDesignTotal || 35000)}` : `<br>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}`}${(item.finishing || []).length ? `<br>Finishing: ${item.finishing.map((f) => `${escapeHtml(f.name)} × ${f.units}${f.note ? ` (${escapeHtml(f.note)})` : ""}`).join(", ")}` : ""}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || "—")}${isSpk ? "" : `<br><span class="print-price">${rupiah.format(item.subtotal)}</span>`}</div>`).join("<hr>")}
-    ${isSpk ? '<hr><div class="spk-checks">□ File dicek &nbsp; □ Cetak<br>□ Finishing &nbsp; □ QC</div>' : `<hr>${discountPrintLines(order,n=>rupiah.format(n))}<div class="print-total"><span>Total Tagihan</span><b>${rupiah.format(order.total)}</b></div>${depositInvoiceLines(order)}<div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(cancelled(order)?0:Math.max(0, order.total - (order.paidAmount || 0)))}</b></div>`}
-    ${!isSpk ? `<p><b>Status pembayaran: ${escapeHtml(paymentStatus(order).replaceAll("_", " "))}</b><br>WhatsApp: ${escapeHtml(order.phone || "—")}</p>` : ""}<hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
-  showPrintDocument();
+  const userId = state.currentUser?.id;
+  try {
+    // A project row may contain one item; print the complete invoice snapshot.
+    order = can('orders.view') ? await api(`/api/order-history/${encodeURIComponent(order.id)}`)
+      : (await api('/api/bootstrap?view=projects')).orders.find(full=>full.id===order.id);
+    if (!order) throw new Error('Pesanan tidak ditemukan');
+    if (state.currentUser?.id !== userId) return;
+    if (isSpk) { await showPrintDocument(workOrderHtml(order),'thermal-print spk'); return; }
+    if (type === 'invoice') {
+      const latest = paymentReceipts(order).at(-1);
+      const receipt = latest && paymentHistoryVisible(state.currentUser.role)
+        ? (await api(`/api/order-history/${encodeURIComponent(order.id)}/payments/${encodeURIComponent(latest.id)}`)).payment : null;
+      if (state.currentUser?.id !== userId) return;
+      await showPrintDocument(invoiceReceiptHtml(order,null,receipt),'thermal-print invoice'); return;
+    }
+    const html = `<div class="print-brand">MANNA PRINT</div><div class="print-subtitle">TANDA TERIMA PESANAN</div><hr>
+      <div class="print-meta"><b>${escapeHtml(order.code)}</b><span>${dateFormat.format(new Date(order.createdAt))} WITA</span></div>
+      <p><b>Pelanggan:</b> ${escapeHtml(order.customerName)}<br><b>Deadline:</b> ${order.deadline ? dateFormat.format(new Date(order.deadline)) : "—"}</p><hr>
+      ${order.items.map((item,index)=>`<div class="print-item"><b>${index+1}. ${escapeHtml(item.productName)}</b><br>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}${imageSizeNote(item)?`<br>${escapeHtml(imageSizeNote(item))}`:''}<br>${escapeHtml(itemQuantityLabel(item))}<br>Status: ${escapeHtml(state.statusLabels[item.status] || item.status)} · PIC: ${escapeHtml(item.designPic || '—')}<br>Deadline: ${item.deadline?dateFormat.format(new Date(item.deadline))+' WITA':'—'}${item.templateDesign?`<br>Harga spanduk: ${rupiah.format(item.baseTotal)}<br>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}`:`<br>File: ${escapeHtml(item.fileService?.name || 'File Siap Cetak') + (item.fileService?.id && item.fileService.id !== 'READY' ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ''}` : '')}`}${(item.finishing || []).length?`<br>Finishing: ${item.finishing.map(f=>`${escapeHtml(f.name)} × ${f.units}${f.note?` (${escapeHtml(f.note)})`:''}`).join(', ')}`:''}<br><b>Catatan:</b> ${escapeHtml(item.productionNote || '—')}<br><span class="print-price">${rupiah.format(item.subtotal)}</span></div>`).join('<hr>')}
+      <hr>${discountPrintLines(order,n=>rupiah.format(n))}<div class="print-total"><span>Total Tagihan</span><b>${rupiah.format(order.total)}</b></div>${depositInvoiceLines(order)}<div class="print-total"><span>Dibayar</span><b>${rupiah.format(order.paidAmount || 0)}</b></div><div class="print-total"><span>Sisa</span><b>${rupiah.format(cancelled(order)?0:Math.max(0,order.total-(order.paidAmount || 0)))}</b></div>
+      <p><b>Status pembayaran: ${escapeHtml(paymentStatus(order).replaceAll('_',' '))}</b><br>WhatsApp: ${escapeHtml(order.phone || '—')}</p><hr><p class="print-footer">Manna Print · Labuan Bajo<br>Terima kasih</p>`;
+    await showPrintDocument(html,type);
+  } catch (error) { toast(error.message,'error'); }
 }
 
-function showPrintDocument() {
-  document.body.classList.add("printing");
-  window.onafterprint = () => { document.body.classList.remove("printing"); printDocument.innerHTML = ""; };
-  window.print();
+let printBusy = false;
+async function showPrintDocument(html, type) {
+  if (printBusy) { toast('Tunggu proses cetak sebelumnya selesai.'); return; }
+  printBusy = true;
+  const printUserId = state.currentUser?.id;
+  const cleanup = () => {
+    document.body.classList.remove('printing'); printDocument.innerHTML = ''; printBusy = false;
+    window.removeEventListener('afterprint',cleanup);
+  };
+  try {
+    printDocument.className = `print-document ${type}`;
+    printDocument.innerHTML = html;
+    if (printDocument.classList.contains('thermal-print')) await prepareThermalPrint(printDocument);
+    if (state.currentUser?.id !== printUserId) { cleanup(); return; }
+    document.body.classList.add('printing');
+    window.addEventListener('afterprint',cleanup,{once:true});
+    window.print();
+  } catch (error) { cleanup(); toast(error.message,'error'); }
 }
 
 const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n),toast,
@@ -1593,7 +1630,7 @@ const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n)
   canOpenOrder:()=>can('orders.view'),canAssets:()=>canManageSettings() && can('reports.cost'),
   openAssets:()=>{state.view='master';state.masterTab='assets';render();},
   openOrder:async id=>{try{const order=await api('/api/order-history/'+encodeURIComponent(id));const index=state.orders.findIndex(o=>o.id===id);if(index<0)state.orders.push(order);else state.orders[index]=order;openOrder(id);}catch(error){toast(error.message,'error');}},
-  print:html=>{printDocument.className='print-document report-print';printDocument.innerHTML=html;showPrintDocument();}
+  print:html=>showPrintDocument(html,'report-print')
 });
 function renderReports(){return reportsUI.mount();}
 

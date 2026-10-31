@@ -68,13 +68,36 @@ export function filterOrderHistory(orders, filters = {}, { money = true } = {}) 
 }
 // Receipts use immutable snapshots for new payments; reconstruct old ledgers
 // without rewriting historical records or using today's balance for an old DP.
-export function paymentReceipts(order) {
+export function paymentReceipts(order, cashReceipts = []) {
   const entries = (order.payments || []).map((payment, index) => ({ payment, index })).filter(({ payment }) => payment.type !== "PO" && Number(payment.amount) > 0);
   let cumulative = Math.max(0, Number(order.paidAmount || 0) - entries.reduce((sum, { payment }) => sum + Number(payment.amount), 0));
-  return entries.map(({ payment, index }, sequence) => {
+  const snapshots = entries.map(({ payment, index }) => {
     const before = Number(payment.paidBefore ?? cumulative);
     cumulative = Number(payment.paidAfter ?? before + Number(payment.amount));
     const total = Number(payment.orderTotal ?? order.total);
-    return { ...payment, id: payment.id || `${order.id}-payment-${index + 1}`, sequence: payment.sequence || sequence + 1, orderTotal: total, paidBefore: before, paidAfter: cumulative, balanceAfter: Number(payment.balanceAfter ?? Math.max(0, total - cumulative)), reconstructed: payment.balanceAfter == null };
+    return { ...payment, id: payment.id || `${order.id}-payment-${index + 1}`, orderTotal: total, paidBefore: before, paidAfter: cumulative, balanceAfter: Number(payment.balanceAfter ?? Math.max(0, total - cumulative)), reconstructed: payment.balanceAfter == null };
+  });
+  // One confirmation may allocate deposit and new money. Its two accounting
+  // entries are one receipt, without changing or renumbering the ledger itself.
+  const groups = new Map();
+  for (const payment of snapshots) {
+    const key = payment.transactionId || payment.id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(payment);
+  }
+  return [...groups.values()].map((parts, index) => {
+    const first = parts[0], last = parts.at(-1);
+    const cash = cashReceipts.find(receipt => receipt.orderId === order.id && receipt.kind === 'RECEIPT' && (parts.some(p => p.cashReceiptId === receipt.id) || first.transactionId && receipt.transactionId === first.transactionId));
+    const incoming = parts.find(p => p.cashReceiptId || p.amountReceived != null);
+    const tender = cash || incoming;
+    return { ...first, sequence:index + 1, memberIds:parts.map(p => p.id),
+      amount:parts.reduce((sum,p) => sum + Number(p.amount),0),
+      method:[...new Set(parts.map(p => p.method).filter(Boolean))].join(' + '),
+      paidAfter:last.paidAfter, balanceAfter:last.balanceAfter,
+      reconstructed:parts.some(p => p.reconstructed),
+      depositUsed:parts.filter(p => p.type === 'DEPOSIT' || p.method === 'DEPOSIT').reduce((sum,p) => sum + Number(p.amount),0),
+      ...(tender ? {amountReceived:tender.amountReceived,changeAmount:tender.changeAmount,depositAmount:tender.depositAmount} : {}),
+      tenderKnown:Boolean(tender && tender.amountReceived != null)
+    };
   });
 }
