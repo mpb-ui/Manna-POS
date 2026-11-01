@@ -1,6 +1,6 @@
 // Index once per catalog render; searching never needs an API request.
 export function productSearchIndex(products) {
-  return products.filter(product => product.active !== false).map(product => ({ product, text: `${product.name} ${product.category || ''}`.toLocaleLowerCase('id') }));
+  return products.filter(product => product.active !== false).map(product => ({ product, text: `${product.name} ${product.category || ''} ${product.sku || ''} ${product.barcode || ''}`.toLocaleLowerCase('id') }));
 }
 
 export function matchingProducts(index, query) {

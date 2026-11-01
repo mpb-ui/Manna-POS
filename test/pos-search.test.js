@@ -13,3 +13,8 @@ test('global product search is case insensitive and keeps all matches beyond sev
   assert.deepEqual(matchingProducts(index, 'tidak ada'), []);
   assert.deepEqual(matchingProducts(index, ''), []);
 });
+
+test('one global search retains SKU and barcode lookup formerly provided by local catalog searches',()=>{
+ const products=[{id:'pen',name:'Bolpen Faster Biru',category:'ATK',sku:'ATK-F600-BLU',barcode:'00123456789'},{id:'stamp',name:'Stempel Bulat',category:'Stempel',sku:'ST-D12'},{id:'inactive',name:'Archived',sku:'OLD',active:false}];
+ const index=productSearchIndex(products);assert.deepEqual(matchingProducts(index,'atk-f600').map(p=>p.id),['pen']);assert.deepEqual(matchingProducts(index,'00123456789').map(p=>p.id),['pen']);assert.deepEqual(matchingProducts(index,'st-d12').map(p=>p.id),['stamp']);assert.deepEqual(matchingProducts(index,'old'),[]);
+});
