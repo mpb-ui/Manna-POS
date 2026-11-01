@@ -1,4 +1,4 @@
-MANNA PRINT HELPER 1.0.1 - Windows 11 x64
+MANNA PRINT HELPER 1.0.2 - Windows 11 x64
 
 PEMASANGAN / UPDATE
 Tutup jendela error dan JasperViewer versi lama sebelum memasang update.
@@ -16,6 +16,10 @@ Hanya browser -> helper -> JasperViewer -> dialog printer Windows.
 PENGATURAN PRINTER
 Gunakan driver iWare yang telah terpasang, kertas 80 mm, skala 100%.
 Lebar dokumen 80 mm, isi sekitar 72 mm, dan panjang mengikuti seluruh isi.
+Versi 1.0.2 menghapus blok hitam Grand Total. Teks tetap tebal di latar putih.
+Cetak native menyesuaikan lebar isi ke area cetak driver setelah printer dipilih.
+Jika driver membatasi panjang kertas, sisa isi diteruskan ke halaman berikutnya.
+Jangan aktifkan pembesaran di driver. Bersihkan antrean gagal sebelum tes ulang.
 Lakukan satu tes nota dan Work Order lengkap pada printer sebelum dipakai rutin.
 Jika printer berbunyi / menunjukkan error, periksa driver, kertas dan perangkat;
 pembukaan JasperViewer tidak menjamin penyelesaian gangguan fisik printer.

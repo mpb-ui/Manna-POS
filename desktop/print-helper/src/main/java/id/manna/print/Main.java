@@ -9,14 +9,13 @@ import java.time.Duration;
 import javax.swing.*;
 import net.sf.jasperreports.engine.*;
 import net.sf.jasperreports.engine.util.JRSaver;
-import net.sf.jasperreports.view.JasperViewer;
 
 /** On-demand native protocol handler. No inbound port or persistent service. */
 public final class Main {
     static final String ORIGIN="https://manna-pos.onrender.com";
     static final ObjectMapper JSON=new ObjectMapper();
     static IllegalArgumentException invalid(String code){
-        return new IllegalArgumentException("Permintaan cetak tidak dikenali oleh Manna Print Helper 1.0.1 ("+code+"). Tutup jendela ini, lalu klik cetak kembali dari POS.");
+        return new IllegalArgumentException("Permintaan cetak tidak dikenali oleh Manna Print Helper 1.0.2 ("+code+"). Tutup jendela ini, lalu klik cetak kembali dari POS.");
     }
     static String token(String input){
         if(input==null||input.length()>512||input.chars().anyMatch(Character::isISOControl))throw invalid("URI_FORMAT");
@@ -70,10 +69,21 @@ public final class Main {
                 JsonNode data=JSON.readTree("{\"schemaVersion\":1,\"kind\":\"work-order\",\"code\":\"SELF-TEST\",\"customerName\":\"Manna Print Helper\",\"date\":\"31 Okt 2026, 09:00 WITA\",\"deadline\":\"01 Nov 2026, 09:00 WITA\",\"phone\":\"1172\",\"items\":[{\"name\":\"Tes Work Order\",\"quantity\":\"2 pcs\",\"details\":[\"IBM Plex Sans × ²\"],\"note\":\"Dokumen pengujian\"}]}");
                 JasperPrint report=new ReceiptRenderer().render(data);JRSaver.saveObject(report,out.resolve("self-test.jrprint").toFile());
                 net.sf.jasperreports.engine.JasperExportManager.exportReportToPdfFile(report,out.resolve("self-test.pdf").toString());
-                final JasperViewer[] window=new JasperViewer[1];
-                SwingUtilities.invokeAndWait(()->{window[0]=new JasperViewer(report,false);window[0].setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);window[0].setSize(680,700);window[0].setLocationRelativeTo(null);window[0].setVisible(true);});
+                final ThermalViewer[] window=new ThermalViewer[1];
+                SwingUtilities.invokeAndWait(()->{window[0]=new ThermalViewer(report);window[0].setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);window[0].setSize(680,700);window[0].setLocationRelativeTo(null);window[0].setVisible(true);});
                 Thread.sleep(500);
                 javax.imageio.ImageIO.write(new java.awt.Robot().createScreenCapture(window[0].getBounds()),"png",out.resolve("self-test.png").toFile());
+                SwingUtilities.invokeAndWait(()->window[0].dispose());
+                var invoice=(com.fasterxml.jackson.databind.node.ObjectNode)data.deepCopy();
+                invoice.put("kind","invoice").put("shopName","Manna Print").put("shopAddress","Jl. Mangga Golek, Labuan Bajo | WA: 082247299578").put("status","Belum Lunas").put("cashier","Kasir").put("footer","Harap bawa nota ini saat pengambilan barang.").put("slogan","Print apa saja, di Manna aja!");
+                ((com.fasterxml.jackson.databind.node.ObjectNode)invoice.path("items").get(0)).put("price","Rp 220.000");
+                invoice.putArray("rows").addObject().put("label","Grand Total").put("value","Rp 220.000").put("style","grand");
+                JasperPrint nota=new ReceiptRenderer().render(invoice);
+                JRSaver.saveObject(nota,out.resolve("invoice.jrprint").toFile());
+                net.sf.jasperreports.engine.JasperExportManager.exportReportToPdfFile(nota,out.resolve("invoice.pdf").toString());
+                SwingUtilities.invokeAndWait(()->{window[0]=new ThermalViewer(nota);window[0].setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);window[0].setVisible(true);});
+                Thread.sleep(500);
+                javax.imageio.ImageIO.write(new java.awt.Robot().createScreenCapture(window[0].getBounds()),"png",out.resolve("invoice.png").toFile());
                 SwingUtilities.invokeAndWait(()->window[0].dispose());Files.writeString(out.resolve("result.txt"),"JasperViewer opened successfully; report pages="+report.getPages().size());System.exit(0);return;
             }
             if(args.length==3&&args[0].equals("--render-test")){
@@ -92,7 +102,7 @@ public final class Main {
                 Path document=dir.resolve(name+".jrprint");JRSaver.saveObject(report,document.toFile());
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
                 SwingUtilities.invokeAndWait(()->{
-                    JasperViewer viewer=new JasperViewer(report,false);viewer.setTitle("JasperViewer · Manna Print · "+data.path("code").asText());viewer.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);viewer.setSize(780,860);viewer.setLocationRelativeTo(null);viewer.setZoomRatio(1.25f);viewer.setVisible(true);
+                    ThermalViewer viewer=new ThermalViewer(report);viewer.setVisible(true);
                 });
                 try{request("/print-helper/status",currentToken,"{\"status\":\"opened\"}");}catch(Exception ignored){/* Native preview remains usable if acknowledgement cannot reach server. */}
             }

@@ -106,9 +106,9 @@ public final class ReceiptRenderer {
         String label=value(row,"label"),val=value(row,"value");boolean grand=value(row,"style").equals("grand");
         float size=grand?11:9;String weight=grand?"Bold":"Regular";int valueWidth=(int)Math.min(100,Math.max(68,Math.ceil(width(val,weight,size))+2));
         int labelWidth=WIDTH-valueWidth-7,top=y;
-        if(grand){int expected=Math.max(wrap(label,labelWidth-4,weight,size).size(),wrap(val,valueWidth-4,weight,size).size());rect(LEFT,top,WIDTH,(int)Math.ceil(expected*size*1.45)+8,true);top+=3;}
-        int a=text(label,LEFT+(grand?4:0),top,labelWidth,size,weight,HorizontalTextAlignEnum.LEFT,grand?Color.WHITE:Color.BLACK);
-        int b=text(val,LEFT+WIDTH-valueWidth-(grand?4:0),top,valueWidth,size,weight,HorizontalTextAlignEnum.RIGHT,grand?Color.WHITE:Color.BLACK);
+        if(grand)top+=3;
+        int a=text(label,LEFT,top,labelWidth,size,weight,HorizontalTextAlignEnum.LEFT,Color.BLACK);
+        int b=text(val,LEFT+WIDTH-valueWidth,top,valueWidth,size,weight,HorizontalTextAlignEnum.RIGHT,Color.BLACK);
         y=top+Math.max(a,b)+(grand?5:0);
     }
     public JasperPrint render(JsonNode data) throws Exception{
