@@ -1,4 +1,4 @@
-# Manna Print Helper 1.0.0
+# Manna Print Helper 1.0.1
 
 On-demand Windows 11 x64 protocol handler for Manna POS. Bundles Java 17,
 JasperReports 7.0.8, JasperViewer, IBM Plex Sans and the supplied Manna logo.
@@ -7,9 +7,11 @@ No always-on service, local HTTP listener, database login or browser cookie.
 ## User installation
 
 Download `MannaPrintHelper-Windows-x64.zip` from GitHub release
-`print-helper-v1.0.0`, extract all files, and double-click `Install.cmd`.
+`print-helper-v1.0.1`, extract all files, and double-click `Install.cmd`.
 Installation is per Windows user under `%LOCALAPPDATA%\MannaPrintHelper\app`.
 It registers `mannaprint://` under HKCU; administrator rights are not needed.
+For an update, close existing helper/JasperViewer windows and run the new
+package's `Install.cmd` again; no Java reinstall is needed.
 The package is unsigned; verify its SHA256 against the release checksum.
 
 POS buttons issue a short-lived, one-use print capability. The native application
@@ -73,3 +75,13 @@ Server restarts discard pending jobs; clicking print again creates a new job.
 - Eclipse Temurin/OpenJDK: bundled runtime includes its license/legal files.
 - IBM Plex Sans 1.1.0: OFL license is included with the generated font resources.
 - Other Java dependencies: license notices remain inside their JARs.
+
+## 1.0.1 protocol correction
+
+Protocol input is parsed as a URI rather than matched as one exact string. The
+empty path and `/`, case-equivalent scheme/host, and percent-encoded unreserved
+capability characters resolve to the same fixed action. Extra query parameters,
+fragments, other paths/hosts, ports and malformed tokens remain rejected. Error
+messages include a non-sensitive diagnostic code and helper version. CI now
+launches the installed handler through Windows ShellExecute for both valid forms
+and an invalid request, in addition to the direct JasperViewer self-test.

@@ -36,7 +36,7 @@ jobs:
           New-Item -ItemType Directory -Force build/print-helper/input | Out-Null
           Copy-Item desktop/print-helper/target/manna-print-helper.jar build/print-helper/input
           Copy-Item desktop/print-helper/target/lib build/print-helper/input -Recurse
-          jpackage --type app-image --name MannaPrintHelper --app-version 1.0.0 --vendor 'Manna Print' --input build/print-helper/input --dest build/print-helper/package --main-jar manna-print-helper.jar --main-class id.manna.print.Main --java-options '-Xmx256m'
+          jpackage --type app-image --name MannaPrintHelper --app-version 1.0.1 --vendor 'Manna Print' --input build/print-helper/input --dest build/print-helper/package --main-jar manna-print-helper.jar --main-class id.manna.print.Main --java-options '-Xmx256m'
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Copy-Item desktop/print-helper/windows/* build/print-helper/package
           Compress-Archive -Path build/print-helper/package/* -DestinationPath build/print-helper/MannaPrintHelper-Windows-x64.zip
@@ -55,6 +55,27 @@ jobs:
           if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Native application timed out' }
           if ($process.ExitCode -ne 0 -or -not (Test-Path "$out/result.txt")) { throw 'Native application smoke test failed' }
           Get-Content "$out/result.txt"
+          # Exercise ShellExecute through the actual registered protocol, not
+          # just the executable's CLI self-test. No network or real job is used.
+          $key = 'HKCU:\Software\Classes\mannaprint\shell\open\command'
+          $originalCommand = (Get-Item $key).GetValue('')
+          try {
+            $token = 'a' * 43
+            $uris = @("mannaprint://open?job=$token", "mannaprint://OPEN/?job=$token", "mannaprint://open/?job=$token&url=https://example.invalid")
+            for ($i=0; $i -lt $uris.Count; $i++) {
+              $result = Join-Path $out "protocol-$i.txt"
+              Set-Item $key -Value ('"{0}" --protocol-test "{1}" "%1"' -f $exe, $result)
+              $start = New-Object System.Diagnostics.ProcessStartInfo
+              $start.FileName = $uris[$i]
+              $start.UseShellExecute = $true
+              [System.Diagnostics.Process]::Start($start) | Out-Null
+              for ($attempt=0; $attempt -lt 100 -and -not (Test-Path $result); $attempt++) { Start-Sleep -Milliseconds 200 }
+              if (-not (Test-Path $result)) { throw "Protocol activation $i did not reach the helper" }
+              $expected = if ($i -lt 2) { 'accepted' } else { 'rejected' }
+              if ((Get-Content $result -Raw) -ne $expected) { throw "Protocol activation $i returned the wrong result" }
+            }
+          } finally { Set-Item $key -Value $originalCommand }
+
       - uses: actions/upload-artifact@v4
         with:
           name: MannaPrintHelper-Windows-x64
@@ -68,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view print-helper-v1.0.0 --repo $env:GITHUB_REPOSITORY 2>$null
-          if ($LASTEXITCODE -eq 0) { Write-Output 'Release 1.0.0 already exists; bump version before publishing another package.'; exit 0 }
-          gh release create print-helper-v1.0.0 build/print-helper/MannaPrintHelper-Windows-x64.zip build/print-helper/SHA256SUMS.txt --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY --title 'Manna Print Helper 1.0.0' --notes-file desktop/print-helper/windows/PETUNJUK.txt
+          gh release view print-helper-v1.0.1 --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Output 'Release 1.0.1 already exists; bump version before publishing another package.'; exit 0 }
+          gh release create print-helper-v1.0.1 build/print-helper/MannaPrintHelper-Windows-x64.zip build/print-helper/SHA256SUMS.txt --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY --title 'Manna Print Helper 1.0.1' --notes-file desktop/print-helper/windows/PETUNJUK.txt
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

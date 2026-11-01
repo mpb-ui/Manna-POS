@@ -26,8 +26,13 @@ class ReceiptRendererTest {
   for(JRPrintElement e:r.getPages().get(0).getElements())if(e instanceof JRPrintText t)text.append(t.getFullText());
   assertTrue(text.toString().contains("WORK ORDER"));assertTrue(text.toString().contains("Kalender Dinding"));assertFalse(text.toString().contains("Rp"));assertFalse(text.toString().contains("Cashier"));assertFalse(text.toString().contains("Grand Total"));
  }
- @Test void protocolAcceptsOnlyFixedSchemeAndOpaqueCapability(){
-  String t="a".repeat(43);assertEquals(t,Main.token("mannaprint://open?job="+t));
-  for(String bad:new String[]{"https://evil.test", "mannaprint://open?job="+t+"&url=https://evil.test", "mannaprint://open?job=short", "mannaprint://open?job="+t+"\" --self-test x"})assertThrows(IllegalArgumentException.class,()->Main.token(bad));
+ @Test void protocolAcceptsBrowserAndWindowsEquivalentUris(){
+  String t="Aa0-_"+"b".repeat(38);
+  for(String uri:new String[]{"mannaprint://open?job="+t,"mannaprint://open/?job="+t,"MANNAPRINT://OPEN/?job="+t,"mannaprint://open/?job="+t.replace("-","%2D").replace("_","%5F")})assertEquals(t,Main.token(uri),uri);
+ }
+ @Test void protocolRejectsExtraCommandsEndpointsAndMalformedCapabilities(){
+  String t="a".repeat(43);
+  for(String bad:new String[]{"https://evil.test", "mannaprint://open/?job="+t+"&url=https://evil.test", "mannaprint://open?job=short", "mannaprint://open?job="+t+"\" --self-test x", "mannaprint://open/path?job="+t,"mannaprint://open:80/?job="+t,"mannaprint://user@open/?job="+t,"mannaprint://evil.test/?job="+t,"mannaprint://open/?job="+t+"#ignored","mannaprint://open/?job="+t+"&job="+t,"mannaprint://open/?job=%26"+t,"mannaprint://open/?job="+t+"%0A","mannaprint://open/?job=%zz","mannaprint://open/?JOB="+t,"mannaprint://open/?job="+t+"+","mannaprint:open?job="+t})assertThrows(IllegalArgumentException.class,()->Main.token(bad),bad);
+  assertThrows(IllegalArgumentException.class,()->Main.token(null));
  }
 }

@@ -1,6 +1,7 @@
-MANNA PRINT HELPER 1.0.0 - Windows 11 x64
+MANNA PRINT HELPER 1.0.1 - Windows 11 x64
 
-PEMASANGAN
+PEMASANGAN / UPDATE
+Tutup jendela error dan JasperViewer versi lama sebelum memasang update.
 1. Unduh ZIP dan pilih Extract All / Ekstrak Semua.
 2. Buka folder hasil ekstraksi. Klik dua kali Install.cmd.
 3. Setelah berhasil, buka Manna POS di Chrome atau Edge.
