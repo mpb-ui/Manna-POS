@@ -119,3 +119,7 @@ Admin/Owner dapat mencatat aset di **Master Data → Aset**, menghubungkannya de
 ## Pendamping pekerjaan
 
 Briefing Hari Ini menampilkan seluruh pekerjaan sesuai peran dalam popup ringkas, dengan prioritas deadline dan pencatatan harian per akun. Ikon floating di kanan bawah membuka ulang popup tersebut. POS menyediakan pemeriksaan kelengkapan, saran repeat order memakai harga terbaru, dan kesiapan bahan. Detail Pesanan menyediakan penanda tertahan, checklist per produk, serta pengingat sisa pembayaran saat Diambil. Aturan akses, pemisahan draft/tagihan, dan perilaku data lama dijelaskan di [docs/order-assistance.md](docs/order-assistance.md).
+
+## Security dan pemulihan
+
+Pengamanan login bertahap, sesi perangkat, Kunci POS, CSRF, validasi gambar, serta snapshot harian dan ekspor backup terenkripsi tersedia. Buka menu akun → **Keamanan Akun**. Panduan kebijakan, verifikasi/restore ke database kosong, dan batasan backup tersedia di [docs/security-and-recovery.md](docs/security-and-recovery.md). Integrasi R2 menyusul.

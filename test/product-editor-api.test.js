@@ -1,3 +1,4 @@
+import {secureFetch as fetch} from './helpers/http.js';
 import test from 'node:test';import assert from 'node:assert/strict';import {spawn} from 'node:child_process';import net from 'node:net';
 
 test('two tab product API persists types, per combination prices/materials/availability, dates and print-time stock without rewriting history',async()=>{

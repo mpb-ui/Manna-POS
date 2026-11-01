@@ -1,3 +1,4 @@
+import {secureFetch as fetch} from './helpers/http.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -15,7 +16,7 @@ test("akses Manager, briefing lintas sesi, hold, file, checklist, dan repeat ter
     async function request(path,method="GET",body,cookie=owner){const response=await fetch(root+path,{method,headers:{"content-type":"application/json",cookie},body:body==null?undefined:JSON.stringify(body)});return {status:response.status,body:await response.json()};}
     async function ok(path,method,body,cookie){const result=await request(path,method,body,cookie);assert.ok(result.status>=200&&result.status<300,JSON.stringify(result));return result.body;}
     for(const [role,username,profile]of[["MANAGER","manager","auto"],["PRINT","printer","auto"],["PRINT","finishing","finishing"],["CASHIER","cashier","auto"],["WAREHOUSE","warehouse","auto"]])await ok("/api/users","POST",{name:username,username,pin:"5678",role,briefingProfile:profile});
-    const manager=await login("manager"),printer=await login("printer"),finishing=await login("finishing"),warehouse=await login("warehouse");
+    let manager=await login("manager");const printer=await login("printer"),finishing=await login("finishing"),warehouse=await login("warehouse");
     const bootstrap=await ok("/api/bootstrap",undefined,undefined,manager);assert.equal(bootstrap.currentUser.role,"MANAGER");assert.ok(bootstrap.permissions.includes("stock.adjust"));assert.ok(bootstrap.permissions.includes("projects.status"));assert.ok(!bootstrap.permissions.includes("users.manage"));
     assert.equal((await request("/api/users","POST",{name:"bad",username:"bad",pin:"5678",role:"OWNER"},manager)).status,403);
     assert.equal((await request("/api/employees","GET",undefined,manager)).status,403);
@@ -56,6 +57,8 @@ test("akses Manager, briefing lintas sesi, hold, file, checklist, dan repeat ter
     assert.equal((await request("/api/orders/check","POST",{items:[]},printer)).status,403);
     const managerUser=(await ok("/api/bootstrap")).users.find(u=>u.username==="manager");
     await ok(`/api/users/${managerUser.id}`,"PUT",{name:managerUser.name,username:managerUser.username,role:"MANAGER",permissions:["projects.orders"],briefingProfile:"all"});
+    assert.equal((await request("/api/briefing",undefined,undefined,manager)).status,401);
+    manager=await login("manager");
     assert.equal((await request(`/api/orders/${active.id}/deadline`,"PATCH",{deadline:"2026-10-06T12:00:00+08:00"},manager)).status,403);
     assert.equal((await request(`/api/orders/${active.id}/status`,"PATCH",{status:"SELESAI"},manager)).status,403);
     assert.equal((await request(`/api/orders/${active.id}/repeat`,"POST",{},manager)).status,403);
