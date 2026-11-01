@@ -26,6 +26,22 @@ class ReceiptRendererTest {
   for(JRPrintElement e:r.getPages().get(0).getElements())if(e instanceof JRPrintText t)text.append(t.getFullText());
   assertTrue(text.toString().contains("WORK ORDER"));assertTrue(text.toString().contains("Kalender Dinding"));assertFalse(text.toString().contains("Rp"));assertFalse(text.toString().contains("Cashier"));assertFalse(text.toString().contains("Grand Total"));
  }
+ @Test void invoiceAndPaymentUseBoldBlackGrandTotalWithoutSolidBackground() throws Exception {
+  for(String kind:new String[]{"invoice","payment"}){
+   ObjectNode d=fixture();d.put("kind",kind);
+   JasperPrint r=new ReceiptRenderer().render(d);int grandTexts=0;
+   for(JRPrintElement e:r.getPages().get(0).getElements()){
+    if(e instanceof JRPrintRectangle)assertNotEquals(net.sf.jasperreports.engine.type.ModeEnum.OPAQUE,e.getMode());
+    if(e instanceof JRPrintText t){
+     assertEquals(java.awt.Color.BLACK,t.getForecolor());
+     if(t.getFullText().equals("Grand Total")||t.getFullText().equals("Rp 220.000")&&Boolean.TRUE.equals(t.isBold())){
+      assertEquals(Boolean.TRUE,t.isBold());assertEquals(11f,t.getFontSize());grandTexts++;
+     }
+    }
+   }
+   assertEquals(2,grandTexts,kind);
+  }
+ }
  @Test void protocolAcceptsBrowserAndWindowsEquivalentUris(){
   String t="Aa0-_"+"b".repeat(38);
   for(String uri:new String[]{"mannaprint://open?job="+t,"mannaprint://open/?job="+t,"MANNAPRINT://OPEN/?job="+t,"mannaprint://open/?job="+t.replace("-","%2D").replace("_","%5F")})assertEquals(t,Main.token(uri),uri);

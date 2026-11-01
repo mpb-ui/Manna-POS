@@ -25,6 +25,13 @@ Helper menyertakan Java, JasperReports, JasperViewer, font dan logo. Tidak perlu
 memasang Java atau font secara terpisah. Helper aktif saat ada permintaan cetak,
 tanpa layanan permanen atau port HTTP lokal, lalu menampilkan JasperViewer.
 
+Mulai Helper **1.0.2**, Grand Total memakai teks hitam tebal di latar putih pada
+kedua jalur cetak. Cetak native menyesuaikan dokumen dengan lebar area cetak dan
+margin driver yang dipilih di dialog printer. Jika driver membatasi panjang
+roll, bagian berikutnya diteruskan tanpa mengulang header. Pasang ulang helper
+dari paket terbaru agar perubahan native berlaku; refresh POS untuk jalur
+browser. Bersihkan antrean cetak yang gagal sebelum menguji pembaruan.
+
 Jika memakai pilihan **Cetak melalui browser** pada dialog peluncuran, pilih
 roll 80 mm, skala 100%, matikan header/footer browser dan aktifkan grafis latar.
 Fallback HTML tetap mengikuti ukuran kertas driver; jalur utama memakai ukuran

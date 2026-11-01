@@ -1,4 +1,4 @@
-# Manna Print Helper 1.0.1
+# Manna Print Helper 1.0.2
 
 On-demand Windows 11 x64 protocol handler for Manna POS. Bundles Java 17,
 JasperReports 7.0.8, JasperViewer, IBM Plex Sans and the supplied Manna logo.
@@ -7,7 +7,7 @@ No always-on service, local HTTP listener, database login or browser cookie.
 ## User installation
 
 Download `MannaPrintHelper-Windows-x64.zip` from GitHub release
-`print-helper-v1.0.1`, extract all files, and double-click `Install.cmd`.
+`print-helper-v1.0.2`, extract all files, and double-click `Install.cmd`.
 Installation is per Windows user under `%LOCALAPPDATA%\MannaPrintHelper\app`.
 It registers `mannaprint://` under HKCU; administrator rights are not needed.
 For an update, close existing helper/JasperViewer windows and run the new
@@ -85,3 +85,17 @@ fragments, other paths/hosts, ports and malformed tokens remain rejected. Error
 messages include a non-sensitive diagnostic code and helper version. CI now
 launches the installed handler through Windows ShellExecute for both valid forms
 and an invalid request, in addition to the direct JasperViewer self-test.
+
+## 1.0.2 thermal printing correction
+
+Grand Total uses bold black text on white in both browser and native receipts.
+The native preview retains the official JRViewer/toolbar, with its Print action
+using a driver-aware Graphics2D print adapter. After the printer dialog, it
+validates the measured 80 mm roll page against the selected driver, scales down
+to its imageable width, and offsets content inside the actual printable margins.
+It never enlarges the receipt. If a driver caps roll length, consecutive slices
+include the rest of the document instead of clipping it or restarting the header.
+There is one submission per Print click and no application-level retry. Native
+self-tests cover both invoice and Work Order previews; automated printer tests
+use nonzero margins, narrower drivers, long receipts, cancellation and failure.
+Physical output still needs a test on the cashier's iWare J82BT after reinstall.

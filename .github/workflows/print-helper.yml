@@ -36,7 +36,7 @@ jobs:
           New-Item -ItemType Directory -Force build/print-helper/input | Out-Null
           Copy-Item desktop/print-helper/target/manna-print-helper.jar build/print-helper/input
           Copy-Item desktop/print-helper/target/lib build/print-helper/input -Recurse
-          jpackage --type app-image --name MannaPrintHelper --app-version 1.0.1 --vendor 'Manna Print' --input build/print-helper/input --dest build/print-helper/package --main-jar manna-print-helper.jar --main-class id.manna.print.Main --java-options '-Xmx256m'
+          jpackage --type app-image --name MannaPrintHelper --app-version 1.0.2 --vendor 'Manna Print' --input build/print-helper/input --dest build/print-helper/package --main-jar manna-print-helper.jar --main-class id.manna.print.Main --java-options '-Xmx256m'
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           Copy-Item desktop/print-helper/windows/* build/print-helper/package
           Compress-Archive -Path build/print-helper/package/* -DestinationPath build/print-helper/MannaPrintHelper-Windows-x64.zip
@@ -89,7 +89,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view print-helper-v1.0.1 --repo $env:GITHUB_REPOSITORY 2>$null
-          if ($LASTEXITCODE -eq 0) { Write-Output 'Release 1.0.1 already exists; bump version before publishing another package.'; exit 0 }
-          gh release create print-helper-v1.0.1 build/print-helper/MannaPrintHelper-Windows-x64.zip build/print-helper/SHA256SUMS.txt --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY --title 'Manna Print Helper 1.0.1' --notes-file desktop/print-helper/windows/PETUNJUK.txt
+          gh release view print-helper-v1.0.2 --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) { Write-Output 'Release 1.0.2 already exists; bump version before publishing another package.'; exit 0 }
+          gh release create print-helper-v1.0.2 build/print-helper/MannaPrintHelper-Windows-x64.zip build/print-helper/SHA256SUMS.txt --target $env:GITHUB_SHA --repo $env:GITHUB_REPOSITORY --title 'Manna Print Helper 1.0.2' --notes-file desktop/print-helper/windows/PETUNJUK.txt
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
