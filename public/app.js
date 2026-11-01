@@ -1,3 +1,4 @@
+import { createSecurityUI } from './security-ui.js';
 import { createPrintHelperUI } from './print-helper-ui.js';
 import { createReportsUI } from './reports-ui.js';
 import { alignPageHeader } from './page-header.js';
@@ -92,6 +93,8 @@ const state = {
   projectCollapsed: new Set(["DIAMBIL"]),
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" }
 };
+let csrfToken='';
+const securityUI=createSecurityUI({api,user:()=>state.currentUser,e:escapeHtml,toast,onSignOut:()=>showLogin(),onUnlocked:async()=>{await load();showApp();}});
 const root = document.querySelector("#view-root");
 const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
@@ -139,10 +142,14 @@ function bindMoneyInputs(container = document) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
+  const requestUser=state.currentUser?.id;
+  const response = await fetch(path, {...options,headers:{'Content-Type':'application/json',...(csrfToken?{'X-Manna-CSRF':csrfToken}:{}),...(options.headers||{})}});
   const body = await response.json().catch(() => ({}));
-  if (response.status === 401 && path !== "/api/login") showLogin();
-  if (!response.ok) throw Object.assign(new Error(body.error || "Permintaan gagal"), { code: body.code, matches: body.matches });
+  if(requestUser&&requestUser!==state.currentUser?.id&&path!=='/api/login'&&path!=='/api/session')throw new Error('Akun telah berubah. Muat ulang data.');
+  if(body.csrfToken)csrfToken=body.csrfToken;
+  if(response.status===423){if(body.code==='PIN_CHANGE_REQUIRED')securityUI.changePin(true);else securityUI.showLock();}
+  if (response.status === 401 && path !== "/api/login" && body.code!=='AUTH_FAILED') showLogin();
+  if (!response.ok) throw Object.assign(new Error(body.error || "Permintaan gagal"), { code: body.code, matches: body.matches, retryAfter:body.retryAfter, status:response.status });
   return body;
 }
 
@@ -154,6 +161,9 @@ function toast(message, type = "") {
 }
 
 function showLogin() {
+  securityUI.reset();csrfToken='';loadSequence++;
+  state.cart=[];state.editingOrderId=null;state.draft={customerName:'',phone:'',deadline:'',fileStatus:'SIAP_CETAK',fileReadiness:'UNCONFIRMED'};
+  for(const name of ['products','allProducts','orders','materials','finishings','machines','users','auditLogs','inventory','stockMovements','shirtStock'])state[name]=[];
   printHelper.reset();
   closeNavigation();
   homeCampaignUI.reset(); orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
@@ -1865,7 +1875,7 @@ function openUserForm(user = null) {
   const selected = new Set(user?.permissions || state.rolePresets[role]?.permissions || []);
   const groups = state.permissionCatalog.reduce((map, permission) => { (map[permission.group] ||= []).push(permission); return map; }, {});
   const permissionHtml = Object.entries(groups).map(([group, permissions]) => `<section class="permission-group"><div><strong>${escapeHtml(group)}</strong><button type="button" data-check-group="${escapeHtml(group)}">Pilih semua</button></div>${permissions.map((permission) => `<label><input type="checkbox" name="permission" value="${permission.id}" ${selected.has(permission.id) ? "checked" : ""}><span><b>${escapeHtml(permission.label)}</b><small>${escapeHtml(permission.id)}</small></span></label>`).join("")}</section>`).join("");
-  const detail = showMasterDialog(user ? "Atur User & Permission" : "Tambah User", `<form id="user-form" class="master-form user-form"><div class="form-grid"><label class="field"><span>Nama lengkap *</span><input name="name" value="${escapeHtml(user?.name || "")}" required></label><label class="field"><span>Username *</span><input name="username" value="${escapeHtml(user?.username || "")}" required></label><label class="field"><span>Role *</span><select name="role">${Object.entries(state.rolePresets).map(([id, preset]) => `<option value="${id}" ${role === id ? "selected" : ""}>${escapeHtml(preset.label)}</option>`).join("")}</select></label><label class="field"><span>${user ? "PIN baru (kosongkan jika tetap)" : "PIN *"}</span><input name="pin" type="password" inputmode="numeric" minlength="4" ${user ? "" : "required"}></label><label class="field"><span>Scope laporan</span><select name="reportScope"><option value="all" ${user?.reportScope === "all" ? "selected" : ""}>Semua periode</option><option value="today" ${user?.reportScope === "today" ? "selected" : ""}>Hari ini saja</option><option value="own" ${user?.reportScope === "own" ? "selected" : ""}>Pekerjaan sendiri</option></select></label></div><div class="permission-heading"><div><h3>Permission Khusus</h3><p>Role memberikan template awal. Permission dapat disesuaikan untuk user ini.</p></div><button id="reset-role-permissions" class="secondary" type="button">Gunakan Template Role</button></div><div class="permission-grid">${permissionHtml}</div><div class="form-footer">${switchHtml("active", user?.active !== false)}${deleteButtonHtml(user, "User")}<button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan User</button></div></form>`);
+  const detail = showMasterDialog(user ? "Atur User & Permission" : "Tambah User", `<form id="user-form" class="master-form user-form"><div class="form-grid"><label class="field"><span>Nama lengkap *</span><input name="name" value="${escapeHtml(user?.name || "")}" required></label><label class="field"><span>Username *</span><input name="username" value="${escapeHtml(user?.username || "")}" required></label><label class="field"><span>Role *</span><select name="role">${Object.entries(state.rolePresets).map(([id, preset]) => `<option value="${id}" ${role === id ? "selected" : ""}>${escapeHtml(preset.label)}</option>`).join("")}</select></label><label class="field"><span>${user ? "PIN baru (kosongkan jika tetap)" : "PIN *"}</span><input name="pin" type="password" inputmode="numeric" minlength="6" ${user ? "" : "required"}></label><label class="field"><span>Scope laporan</span><select name="reportScope"><option value="all" ${user?.reportScope === "all" ? "selected" : ""}>Semua periode</option><option value="today" ${user?.reportScope === "today" ? "selected" : ""}>Hari ini saja</option><option value="own" ${user?.reportScope === "own" ? "selected" : ""}>Pekerjaan sendiri</option></select></label></div><div class="permission-heading"><div><h3>Permission Khusus</h3><p>Role memberikan template awal. Permission dapat disesuaikan untuk user ini.</p></div><button id="reset-role-permissions" class="secondary" type="button">Gunakan Template Role</button></div><div class="permission-grid">${permissionHtml}</div><div class="form-footer">${switchHtml("active", user?.active !== false)}${deleteButtonHtml(user, "User")}<button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan User</button></div></form>`);
   const form = detail.querySelector("#user-form");
   form.querySelector(".form-grid").insertAdjacentHTML("beforeend", `<label class="field"><span>Profil Briefing Pagi</span><select name="briefingProfile">${briefingProfileOptions.map(([value,label])=>`<option value="${value}" ${(user?.briefingProfile || "auto")===value?"selected":""}>${escapeHtml(label)}</option>`).join("")}</select><small>Isi briefing tetap dibatasi permission akun. Tim Finishing dapat memakai profil ini pada akun produksi.</small></label>`);
   bindDeleteRecord(detail, user, "users", "User", "users");
@@ -1988,11 +1998,17 @@ document.addEventListener("input", (event) => {
 document.addEventListener("change", (event) => {
   if (typeof event.target.setCustomValidity === "function") event.target.setCustomValidity("");
 }, true);
-document.querySelector("#login-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  try { await api("/api/login", { method: "POST", body: JSON.stringify({ username: document.querySelector("#login-username").value, pin: document.querySelector("#login-pin").value }) }); await load(); showApp(); } catch (error) { toast(error.message, "error"); }
+document.querySelector('#login-username').addEventListener('input',()=>{const form=document.querySelector('#login-form');clearInterval(form._countdown);form._countdown=null;form.querySelector('[type=submit]').disabled=false;form.querySelector('[data-security-error]').textContent='';});
+document.querySelector('#login-form').addEventListener('submit',async event=>{
+  event.preventDefault();const form=event.target,button=form.querySelector('[type=submit]');if(button.disabled)return;button.disabled=true;form.querySelector('[data-security-error]').textContent='';
+  try{const session=await api('/api/login',{method:'POST',body:JSON.stringify({username:document.querySelector('#login-username').value,pin:document.querySelector('#login-pin').value})});state.currentUser=session.user;document.querySelector('#login-pin').value='';securityUI.accept(session,{announce:true});if(!session.pinChangeRequired){await load();showApp();}}
+  catch(error){document.querySelector('#login-pin').value='';securityUI.countdown(form,error);}
+  finally{if(!form._countdown)button.disabled=false;}
 });
-document.querySelector("#logout-btn").onclick = async () => { try { await api("/api/logout", { method: "POST" }); } finally { configurationDrafts.clear(); state.currentUser = null; showLogin(); document.querySelector("#login-pin").value = ""; } };
+document.querySelector('#logout-btn').onclick=()=>securityUI.signOut();
+document.querySelector('#lock-btn').onclick=()=>securityUI.lock();
+document.querySelector('#security-btn').onclick=()=>securityUI.open();
 
-const session = await api("/api/session");
-if (session.authenticated) { await load(); showApp(); } else showLogin();
+const session=await api('/api/session');
+if(session.authenticated){state.currentUser=session.user;securityUI.accept(session);if(!session.locked&&!session.pinChangeRequired){await load();showApp();}}
+else showLogin();

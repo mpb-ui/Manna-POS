@@ -1,3 +1,4 @@
+import {secureFetch as fetch} from './helpers/http.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import net from 'node:net';

@@ -1,3 +1,4 @@
+import {secureFetch as fetch} from './helpers/http.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -8,7 +9,7 @@ test('discount payments are atomic and idempotent; DP, PO lock, deposit, free re
   for(let i=0;i<100;i++){try{if((await fetch(base+'/api/health')).ok)break;}catch{}await new Promise(r=>setTimeout(r,50));}
   let cookie;const req=async(path,method='GET',data,auth=cookie)=>{const r=await fetch(base+path,{method,headers:{'content-type':'application/json',...(auth?{cookie:auth}:{})},body:data===undefined?undefined:JSON.stringify(data)});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};const ok=async(...args)=>{const r=await req(...args);assert(r.status>=200&&r.status<300,JSON.stringify(r.body));return r.body;};cookie=(await req('/api/login','POST',{username:'admin',pin:'1234'})).cookie;
   const customer=await ok('/api/customers','POST',{requestId:'customer-discount',name:'Discount Customer',phone:'081200000000'});
-  await ok('/api/users','POST',{username:'cashier-discount',name:'Kasir',role:'CASHIER',pin:'1234'});await ok('/api/users','POST',{username:'printer-discount',name:'Cetak',role:'PRINT',pin:'1234'});const cashier=(await req('/api/login','POST',{username:'cashier-discount',pin:'1234'})).cookie,printer=(await req('/api/login','POST',{username:'printer-discount',pin:'1234'})).cookie;
+  await ok('/api/users','POST',{username:'cashier-discount',name:'Kasir',role:'CASHIER',pin:'1234'});await ok('/api/users','POST',{username:'printer-discount',name:'Cetak',role:'PRINT',pin:'1234'});const cashier=(await req('/api/login','POST',{username:'cashier-discount',pin:'1234'},null)).cookie,printer=(await req('/api/login','POST',{username:'printer-discount',pin:'1234'},null)).cookie;
   const create=()=>ok('/api/orders','POST',{customerId:customer.id,customerName:customer.name,phone:customer.phone,items:[{productId:'poster-backlite-film',sizeVariantId:'a3',quantity:1}]});
   const o=await create(),url=`/api/orders/${o.id}/payments`;assert.equal(o.total,125000);
   for (const invoiceDiscountAmount of [-1,125001,0.5,'2000',null])assert.equal((await req(url,'POST',{requestId:'bad-'+String(invoiceDiscountAmount),invoiceDiscountAmount,method:'TUNAI',amount:1000})).status,400);

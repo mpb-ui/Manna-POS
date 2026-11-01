@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="/reports.css" />
   <link rel="stylesheet" href="/thermal-documents.css" />
   <link rel="stylesheet" href="/print-helper.css" />
+  <link rel="stylesheet" href="/security.css" />
 </head>
 <body>
   <div id="toast" class="toast" aria-live="polite"></div>
@@ -35,6 +36,7 @@
       <p>Masuk menggunakan akun operasional Anda.</p>
       <label>Username<input id="login-username" autocomplete="username" value="admin" required /></label>
       <label>PIN<input id="login-pin" type="password" inputmode="numeric" autocomplete="current-password" required /></label>
+      <p class="security-error" data-security-error role="status" aria-live="polite"></p>
       <button class="primary full" type="submit">Masuk</button>
     </form>
   </section>
@@ -54,7 +56,7 @@
       </nav>
       <details class="account-menu" id="account-menu">
         <summary aria-label="Menu akun"><span class="account-avatar" aria-hidden="true">●</span><strong id="current-user-name">—</strong><span class="account-chevron ui-chevron" aria-hidden="true"></span></summary>
-        <div class="account-popover"><small id="current-user-role">—</small><span id="today"></span><span><i class="online-dot"></i>Sistem aktif</span><button id="refresh-btn" type="button">↻ Muat ulang data</button><button id="logout-btn" type="button">Keluar</button></div>
+        <div class="account-popover"><small id="current-user-role">—</small><span id="today"></span><span><i class="online-dot"></i>Sistem aktif</span><button id="refresh-btn" type="button">↻ Muat ulang data</button><button id="lock-btn" type="button">Kunci POS</button><button id="security-btn" type="button">Keamanan Akun</button><button id="logout-btn" type="button">Keluar</button></div>
       </details>
     </header>
     <main class="main-content">

@@ -1,3 +1,6 @@
+import { createSecurity, installSecurityHeaders, SECURITY_VERSION } from './lib/security.js';
+import { BackupManager, registerBackupRoutes } from './lib/backups.js';
+import { prepareImage } from './lib/media.js';
 import { registerPrintHelper } from './lib/print-helper-routes.js';
 import { DEFAULT_VARIANT_TYPES, DEFAULT_OPTION_TYPES, promoDateBoundary } from './public/product-variants.js';
 import { finishingType, validateFinishingType } from './public/finishing-types.js';
@@ -41,10 +44,15 @@ import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRo
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const appPin = process.env.APP_PIN || "";
+const production = process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || "manna-pos-local-development";
+if(production && (!process.env.SESSION_SECRET || sessionSecret.length<32 || sessionSecret==='manna-pos-local-development'))throw new Error('SESSION_SECRET production harus diatur dengan minimal 32 karakter');
 const store = new Store(process.env.DATABASE_URL);
 
+installSecurityHeaders(app,{production,origin:process.env.APP_ORIGIN || process.env.RENDER_EXTERNAL_URL || 'https://manna-pos.onrender.com'});
 app.use(express.json({ limit: "5mb" }));
+const security=createSecurity({app,store,secret:sessionSecret,production});
+const backups=new BackupManager(store);
 
 function hashPin(pin, salt) {
   return crypto.scryptSync(String(pin), salt, 32).toString("hex");
@@ -55,71 +63,11 @@ function secureEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function sessionToken(user) {
-  const expires = Date.now() + 12 * 60 * 60 * 1000;
-  const body = `${user.id}.${Number(user.sessionVersion || 1)}.${expires}`;
-  const signature = crypto.createHmac("sha256", sessionSecret).update(body).digest("hex");
-  return `${body}.${signature}`;
-}
-
-function parseCookies(header = "") {
-  return Object.fromEntries(header.split(";").filter(Boolean).map((part) => {
-    const index = part.indexOf("=");
-    return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))];
-  }));
-}
-
-function readToken(req) {
-  const token = parseCookies(req.headers.cookie).manna_session || "";
-  const parts = token.split(".");
-  if (parts.length !== 4) return null;
-  const [userId, version, expires, supplied] = parts;
-  const body = `${userId}.${version}.${expires}`;
-  const expected = crypto.createHmac("sha256", sessionSecret).update(body).digest("hex");
-  if (!secureEqual(supplied, expected) || Number(expires) < Date.now()) return null;
-  return { userId, version: Number(version) };
-}
-
-app.get("/api/health", (_req, res) => res.json({ ok: true, saleUnitPricingVersion:SALE_UNIT_PRICING_VERSION, saleUnitPricingBackupVerified:Boolean(store.saleUnitPricingBackupVerified), database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
-app.get("/api/session", async (req, res, next) => {
-  try {
-    const token = readToken(req); const users = token ? await store.readUsers() : [];
-    const user = token ? users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version) : null;
-    res.json({ authenticated: Boolean(user), user: publicUser(user), pinRequired: true });
-  } catch (error) { next(error); }
-});
-app.post("/api/login", async (req, res, next) => {
-  try {
-    const username = text(req.body.username).toLowerCase(); const pin = String(req.body.pin || "");
-    const result = await store.mutate((state) => {
-      const user = state.users.find((item) => item.username.toLowerCase() === username && item.active !== false);
-      if (!user || !secureEqual(hashPin(pin, user.pinSalt), user.pinHash)) throw new Error("Username atau PIN tidak sesuai");
-      user.lastLoginAt = now();
-      audit(state, user, "LOGIN", "User masuk ke sistem");
-      return publicUser(user);
-    });
-    const state = await store.read(); const user = state.users.find((item) => item.id === result.id);
-    res.setHeader("Set-Cookie", `manna_session=${sessionToken(user)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=43200${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
-    res.json({ ok: true, user: result });
-  } catch (error) { res.status(401).json({ error: error.message || "Login gagal" }); }
-});
-app.post("/api/logout", (_req, res) => {
-  res.setHeader("Set-Cookie", `manna_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
-  res.json({ ok: true });
-});
-
-const registerPrintHelperAuthenticated=registerPrintHelper(app,{store,normalizeOrder});
-
-app.use("/api", async (req, res, next) => {
-  try {
-    const token = readToken(req); if (!token) return res.status(401).json({ error: "Sesi berakhir" });
-    const users = await store.readUsers();
-    const user = users.find((item) => item.id === token.userId && item.active !== false && Number(item.sessionVersion || 1) === token.version);
-    if (!user) return res.status(401).json({ error: "Sesi berakhir" });
-    req.user = user; next();
-  } catch (error) { next(error); }
-});
-
+app.get("/api/health", (_req, res) => res.json({ ok: true, securityVersion:SECURITY_VERSION, saleUnitPricingVersion:SALE_UNIT_PRICING_VERSION, saleUnitPricingBackupVerified:Boolean(store.saleUnitPricingBackupVerified), database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
+const registerPrintHelperAuthenticated=registerPrintHelper(app,{store,normalizeOrder,isSessionActive:security.isSessionActive});
+app.use('/api',security.middleware);
+security.registerAuthenticated();
+registerBackupRoutes(app,{store,security,backups});
 registerPrintHelperAuthenticated();
 
 function requirePermission(permission) {
@@ -767,6 +715,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
 
 app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (req, res, next) => {
   try {
+    const preparedAttachment=req.body.type==='PO'&&req.body.poAttachment?await prepareImage(req.body.poAttachment):null;
     const result = await store.mutate((state) => {
       const order = state.orders.find((item) => item.id === req.params.id);
       if (!order) throw new Error("Pesanan tidak ditemukan");
@@ -791,7 +740,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       if (!Number.isFinite(amount) || amount < 0) throw new Error("Nominal pembayaran tidak valid");
       const outstanding = Math.max(0, order.total - order.paidAmount);
       const poNumber = String(req.body.poNumber || "").trim();
-      const poAttachment = req.body.poAttachment || null;
+      const poAttachment = preparedAttachment;
       if (type === "PAYMENT" && amount>0 && !method) throw new Error("Metode pembayaran wajib dipilih");
       if (type === "PAYMENT" && amount <= 0 && !Number(req.body.depositAmount) && !(order.total === 0 && invoiceDiscount(order) > 0 && !order.paymentConfirmed)) throw new Error("Nominal pembayaran wajib diisi");
       if (amount > outstanding && !req.body.excessAction) throw new Error("Nominal diterima melebihi sisa tagihan");
@@ -804,7 +753,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
         if (String(poAttachment.dataUrl).length > 3_500_000) throw new Error("Ukuran gambar PO maksimal 2,5 MB");
       }
       let allocation;
-      if(type==='PO')order.payments.push({id:crypto.randomUUID(),requestId:req.body.requestId || null,method,type,amount:0,poNumber,poAttachment:poAttachment?{name:text(poAttachment.name),type:text(poAttachment.type),dataUrl:poAttachment.dataUrl}:null,createdAt:now(),actor:req.user.name,actorId:req.user.id,note:text(req.body.note)});
+      if(type==='PO')order.payments.push({id:crypto.randomUUID(),requestId:req.body.requestId || null,method,type,amount:0,poNumber,poAttachment,createdAt:now(),actor:req.user.name,actorId:req.user.id,note:text(req.body.note)});
       else if (!(order.total === 0 && invoiceDiscount(order) > 0 && amount === 0 && !Number(req.body.depositAmount))) allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
       order.paymentConfirmedAt ||= now();
       order.paymentConfirmed = true;
@@ -983,7 +932,8 @@ app.post("/api/users", requirePermission("users.manage"), async (req, res, next)
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const username = text(req.body.username).toLowerCase(); const pin = String(req.body.pin || "");
       const role = ROLE_PRESETS[req.body.role] ? req.body.role : "CASHIER";
-      if (!name || !username || pin.length < 4) throw new Error("Nama, username, dan PIN minimal 4 digit wajib diisi");
+      if(req.user.role!=='OWNER'&&(role==='OWNER'||(req.body.permissions || []).includes('audit.view')))throw Object.assign(new Error('Hanya Owner dapat memberikan akses Owner atau audit'),{status:403});
+      if (!name || name.length>200 || !username || username.length>100 || !/^\d{4,12}$/.test(pin) || (production && (pin.length<6 || pin==='123456' || /^(\d)\1+$/.test(pin)))) throw new Error(production?"Nama, username, dan PIN 6–12 digit yang tidak mudah ditebak wajib diisi":"Nama, username, dan PIN minimal 4 digit wajib diisi");
       if (state.users.some((item) => item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
       const pinSalt = crypto.randomBytes(16).toString("hex");
       const user = { id: crypto.randomUUID(), name, username, role, permissions: normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions), reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile), pinSalt, pinHash: hashPin(pin, pinSalt), active: req.body.active !== false, sessionVersion: 1, createdAt: now(), lastLoginAt: null };
@@ -1000,7 +950,9 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
       const user = state.users.find((item) => item.id === req.params.id && !item.deletedAt); if (!user) throw new Error("User tidak ditemukan");
       const name = text(req.body.name); const username = text(req.body.username).toLowerCase();
       const role = ROLE_PRESETS[req.body.role] ? req.body.role : user.role;
-      if (!name || !username) throw new Error("Nama dan username wajib diisi");
+      if(req.user.role!=='OWNER'&&(user.role==='OWNER'||role==='OWNER'||(req.body.permissions || []).includes('audit.view')))throw Object.assign(new Error('Hanya Owner dapat mengelola akses Owner atau audit'),{status:403});
+      const previousAccess=JSON.stringify([user.role,user.permissions,user.reportScope,user.active,user.username]);
+      if (!name || name.length>200 || !username || username.length>100) throw new Error("Nama dan username wajib diisi (maksimal 200 dan 100 karakter)");
       if (state.users.some((item) => item.id !== user.id && item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
       if (user.id === req.user.id && req.body.active === false) throw new Error("Anda tidak dapat menonaktifkan akun sendiri");
       if (user.role === "OWNER" && role !== "OWNER" && state.users.filter((item) => item.role === "OWNER" && item.active !== false).length <= 1) throw new Error("Minimal satu Owner aktif harus tersedia");
@@ -1008,7 +960,8 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
       if (user.id === req.user.id && !permissions.includes("users.manage")) throw new Error("Akses kelola user tidak dapat dicabut dari akun yang sedang digunakan");
       Object.assign(user, { name, username, role, permissions, reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile ?? user.briefingProfile), active: req.body.active !== false });
       const pin = String(req.body.pin || "");
-      if (pin) { if (pin.length < 4) throw new Error("PIN minimal 4 digit"); user.pinSalt = crypto.randomBytes(16).toString("hex"); user.pinHash = hashPin(pin, user.pinSalt); user.sessionVersion = Number(user.sessionVersion || 1) + 1; }
+      if (pin) { if (!/^\d{4,12}$/.test(pin) || (production && (pin.length<6 || pin==='123456' || /^(\d)\1+$/.test(pin)))) throw new Error(production?"PIN harus 6–12 digit dan tidak mudah ditebak":"PIN minimal 4 digit"); user.pinChangeRequired=false; user.pinSalt = crypto.randomBytes(16).toString("hex"); user.pinHash = hashPin(pin, user.pinSalt); user.sessionVersion = Number(user.sessionVersion || 1) + 1; }
+      if(previousAccess!==JSON.stringify([user.role,user.permissions,user.reportScope,user.active,user.username]))user.sessionVersion=Number(user.sessionVersion||1)+1;
       audit(state, req.user, "USER_UPDATE", `Memperbarui user ${name}`, { targetUserId: user.id, role, pinChanged: Boolean(pin) });
       return publicUser(user);
     });
@@ -1079,6 +1032,7 @@ app.delete("/api/users/:id", requirePermission("users.manage"), async (req, res,
     res.json(await store.mutate((state) => {
       const user = state.users.find((item) => item.id === req.params.id && !item.deletedAt);
       if (!user) throw new Error("User tidak ditemukan");
+      if(req.user.role!=='OWNER'&&user.role==='OWNER')throw Object.assign(new Error('Hanya Owner dapat menghapus akun Owner'),{status:403});
       if (user.id === req.user.id) throw new Error("Anda tidak dapat menghapus akun sendiri");
       if (user.role === "OWNER" && user.active !== false && state.users.filter((item) => item.role === "OWNER" && item.active !== false && !item.deletedAt).length <= 1) {
         throw new Error("Minimal satu Owner aktif harus tersedia");
@@ -1095,16 +1049,20 @@ app.get("/api/reports", requirePermission("reports.view"), async (req, res, next
 });
 
 app.get("/vendor/pdf-lib.min.js", (_req, res) => res.sendFile(new URL("./node_modules/pdf-lib/dist/pdf-lib.min.js", import.meta.url).pathname));
-app.use(express.static("public"));
+app.use(express.static("public",{setHeaders(res,path){if(/\.(?:html|js|css)$/.test(path))res.set('Cache-Control','no-cache');}}));
 app.get("/{*path}", (_req, res) => res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
 app.use((error, _req, res, _next) => {
-  console.error(error);
-  res.status([403,404,409].includes(error.status)?error.status:400).json({ error: error.message || "Terjadi kesalahan", ...(error.code==='CUSTOMER_MATCH_REQUIRED'?{code:error.code,matches:error.matches}:{}) });
+  const status=[401,403,404,409,413,415,422,423,429,503].includes(error.status)?error.status:400;
+  const infrastructure=!error.status && error.code && !['CUSTOMER_MATCH_REQUIRED','UNPAID_PICKUP_CONFIRMATION'].includes(error.code) && !error.code.startsWith('SESSION_') && error.code!=='PIN_CHANGE_REQUIRED';
+  if(status>=500||infrastructure)console.error('Request failed',{status,code:error.code || 'INTERNAL',path:_req.path});
+  if(error.retryAfter)res.set('Retry-After',String(error.retryAfter));
+  res.status(infrastructure?503:status).json({error:error.type==='entity.too.large'?'Ukuran data terlalu besar':error.type==='entity.parse.failed'?'Data JSON tidak valid':infrastructure?'Layanan sementara tidak tersedia. Silakan coba kembali.':error.message || 'Terjadi kesalahan',...(error.retryAfter?{retryAfter:error.retryAfter}:{}),...(error.code&&error.status?{code:error.code}:{}),...(error.code==='CUSTOMER_MATCH_REQUIRED'?{code:error.code,matches:error.matches}:{})});
 });
 
 await store.init();
 await store.mutate((state) => {
   if (state.users.length) return;
+  if(production && (!/^\d{6,12}$/.test(appPin)||appPin==='123456'||/^(\d)\1+$/.test(appPin)))throw new Error('Atur APP_PIN awal 6–12 digit yang tidak mudah ditebak');
   const pinSalt = crypto.randomBytes(16).toString("hex");
   state.users.push({
     id: crypto.randomUUID(), name: "Owner Manna", username: "admin", role: "OWNER",
@@ -1113,4 +1071,8 @@ await store.mutate((state) => {
     createdAt: now(), lastLoginAt: null
   });
 });
-app.listen(port, "0.0.0.0", () => console.log(`Manna POS berjalan di port ${port}`));
+await security.init();
+await backups.init();
+backups.start();
+const httpServer=app.listen(port, "0.0.0.0", () => console.log(`Manna POS berjalan di port ${port}`));
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{backups.stop();httpServer.close(async()=>{if(store.pool)await store.pool.end();process.exit(0);});setTimeout(()=>process.exit(1),25000).unref();});
