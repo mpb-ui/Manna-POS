@@ -15,9 +15,28 @@ import net.sf.jasperreports.view.JasperViewer;
 public final class Main {
     static final String ORIGIN="https://manna-pos.onrender.com";
     static final ObjectMapper JSON=new ObjectMapper();
+    static IllegalArgumentException invalid(String code){
+        return new IllegalArgumentException("Permintaan cetak tidak dikenali oleh Manna Print Helper 1.0.1 ("+code+"). Tutup jendela ini, lalu klik cetak kembali dari POS.");
+    }
     static String token(String input){
-        if(input==null||!input.matches("mannaprint://open\\?job=[A-Za-z0-9_-]{43}"))throw new IllegalArgumentException("Buka dokumen melalui tombol cetak Manna POS.");
-        return input.substring(input.indexOf("job=")+4);
+        if(input==null||input.length()>512||input.chars().anyMatch(Character::isISOControl))throw invalid("URI_FORMAT");
+        final URI uri;
+        try{uri=new URI(input);}catch(URISyntaxException error){throw invalid("URI_FORMAT");}
+        if(!"mannaprint".equalsIgnoreCase(uri.getScheme()))throw invalid("URI_SCHEME");
+        if(uri.isOpaque()||!"open".equalsIgnoreCase(uri.getRawAuthority())||uri.getRawFragment()!=null)throw invalid("URI_TARGET");
+        // Windows/browser launchers may canonicalize an empty authority path to /.
+        if(!"".equals(uri.getRawPath())&&!"/".equals(uri.getRawPath()))throw invalid("URI_PATH");
+        String query=uri.getRawQuery();
+        if(query==null||query.indexOf('&')>=0)throw invalid("URI_QUERY");
+        int separator=query.indexOf('=');
+        if(separator<0)throw invalid("URI_QUERY");
+        final String name,value;
+        try{
+            name=URLDecoder.decode(query.substring(0,separator),java.nio.charset.StandardCharsets.UTF_8);
+            value=URLDecoder.decode(query.substring(separator+1),java.nio.charset.StandardCharsets.UTF_8);
+        }catch(IllegalArgumentException error){throw invalid("URI_ENCODING");}
+        if(!name.equals("job")||!value.matches("[A-Za-z0-9_-]{43}"))throw invalid("URI_CAPABILITY");
+        return value;
     }
     static JsonNode request(String path,String token,String body) throws Exception{
         HttpClient client=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).followRedirects(HttpClient.Redirect.NEVER).build();
@@ -38,6 +57,14 @@ public final class Main {
     public static void main(String[] args){
         String capability=null;
         try{
+            if(args.length==3&&args[0].equals("--protocol-test")){
+                // CI calls this through the registered Windows URI handler. The
+                // output contains only a result code, never the opaque capability.
+                Path out=Path.of(args[1]);Files.createDirectories(out.toAbsolutePath().getParent());
+                try{token(args[2]);Files.writeString(out,"accepted");System.exit(0);}
+                catch(IllegalArgumentException rejected){Files.writeString(out,"rejected");System.exit(2);}
+                return;
+            }
             if(args.length==2&&args[0].equals("--self-test")){
                 Path out=Path.of(args[1]);Files.createDirectories(out);
                 JsonNode data=JSON.readTree("{\"schemaVersion\":1,\"kind\":\"work-order\",\"code\":\"SELF-TEST\",\"customerName\":\"Manna Print Helper\",\"date\":\"31 Okt 2026, 09:00 WITA\",\"deadline\":\"01 Nov 2026, 09:00 WITA\",\"phone\":\"1172\",\"items\":[{\"name\":\"Tes Work Order\",\"quantity\":\"2 pcs\",\"details\":[\"IBM Plex Sans × ²\"],\"note\":\"Dokumen pengujian\"}]}");
@@ -54,7 +81,7 @@ public final class Main {
                 JRSaver.saveObject(report,args[2]+".jrprint");
                 net.sf.jasperreports.engine.JasperExportManager.exportReportToPdfFile(report,args[2]+".pdf");return;
             }
-            if(args.length!=1)throw new IllegalArgumentException("Buka dokumen melalui tombol cetak Manna POS.");
+            if(args.length!=1)throw invalid("ARG_COUNT_"+args.length);
             capability=token(args[0]);String currentToken=capability;
             Path dir=directory(),lockFile=dir.resolve(Integer.toHexString(capability.hashCode())+".lock");
             try(var channel=java.nio.channels.FileChannel.open(lockFile,StandardOpenOption.CREATE,StandardOpenOption.WRITE);FileLock lock=channel.tryLock()){
