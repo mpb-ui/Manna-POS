@@ -91,7 +91,7 @@ R2 is deferred. `lib/media.js` is the upload/storage adapter. New PO/campaign
 uploads are decoded, validated, re-encoded to WebP without metadata, and assigned
 a checksum/reference. PO input stays limited to 2.5 MB; thumbnails to 1 MB before
 optimization and 96 KB after. Animated, corrupt, mismatched and excessive-pixel
-files are rejected. Existing images are not mass-migrated or deleted by this release.
+files are rejected. Decoding is serialized with a bounded queue to limit memory use. Existing images are not mass-migrated or deleted by this release.
 
 ## Release verification
 
