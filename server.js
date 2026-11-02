@@ -1,3 +1,4 @@
+import { initializeOwnerPinPolicy, validOwnerPin } from './lib/owner-pins.js';
 import {productA3Settings} from './lib/a3-presentation.js';
 import { createSecurity, installSecurityHeaders, SECURITY_VERSION } from './lib/security.js';
 import { BackupManager, registerBackupRoutes } from './lib/backups.js';
@@ -64,7 +65,7 @@ function secureEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, securityVersion:SECURITY_VERSION, saleUnitPricingVersion:SALE_UNIT_PRICING_VERSION, saleUnitPricingBackupVerified:Boolean(store.saleUnitPricingBackupVerified), database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, securityVersion:SECURITY_VERSION,ownerPinPolicyVersion:store.ownerPinPolicyVersion || 0,ownerPinRecovery:store.ownerPinRecovery || null, saleUnitPricingVersion:SALE_UNIT_PRICING_VERSION, saleUnitPricingBackupVerified:Boolean(store.saleUnitPricingBackupVerified), database: process.env.DATABASE_URL ? "postgres" : "memory", stockSchemaVersion: STOCK_SCHEMA_VERSION, stockBackupVerified: Boolean(store.stockBackupVerified), lfRollWidthVersion: LF_ROLL_VERSION, lfRollBackupVerified: Boolean(store.lfRollBackupVerified), customerDirectoryVersion:CUSTOMER_DIRECTORY_VERSION,customerDirectoryBackupVerified:Boolean(store.customerDirectoryBackupVerified),customerSchemaVersion:CUSTOMER_SCHEMA_VERSION, customerBackupVerified:Boolean(store.customerBackupVerified), invoiceNumberVersion:INVOICE_NUMBER_VERSION, invoiceBackupVerified:Boolean(store.invoiceBackupVerified), printStockVersion:PRINT_STOCK_VERSION, printStockBackupVerified:Boolean(store.printStockBackupVerified), dtfMerchandiseVersion:DTF_MERCHANDISE_VERSION, dtfMerchandiseBackupVerified:Boolean(store.dtfMerchandiseBackupVerified) }));
 const registerPrintHelperAuthenticated=registerPrintHelper(app,{store,normalizeOrder,isSessionActive:security.isSessionActive});
 app.use('/api',security.middleware);
 security.registerAuthenticated();
@@ -933,11 +934,11 @@ app.post("/api/users", requirePermission("users.manage"), async (req, res, next)
     const result = await store.mutate((state) => {
       const name = text(req.body.name); const username = text(req.body.username).toLowerCase(); const pin = String(req.body.pin || "");
       const role = ROLE_PRESETS[req.body.role] ? req.body.role : "CASHIER";
-      if(req.user.role!=='OWNER'&&(role==='OWNER'||(req.body.permissions || []).includes('audit.view')))throw Object.assign(new Error('Hanya Owner dapat memberikan akses Owner atau audit'),{status:403});
-      if (!name || name.length>200 || !username || username.length>100 || !/^\d{4,12}$/.test(pin) || (production && (pin.length<6 || pin==='123456' || /^(\d)\1+$/.test(pin)))) throw new Error(production?"Nama, username, dan PIN 6–12 digit yang tidak mudah ditebak wajib diisi":"Nama, username, dan PIN minimal 4 digit wajib diisi");
+      if(req.user.role!=='OWNER')throw Object.assign(new Error("Hanya Owner dapat menambahkan user dan menetapkan PIN"),{status:403});
+      if (!name || name.length>200 || !username || username.length>100 || !validOwnerPin(pin)) throw new Error("Nama, username, dan PIN 4–12 digit wajib diisi");
       if (state.users.some((item) => item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
       const pinSalt = crypto.randomBytes(16).toString("hex");
-      const user = { id: crypto.randomUUID(), name, username, role, permissions: normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions), reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile), pinSalt, pinHash: hashPin(pin, pinSalt), active: req.body.active !== false, sessionVersion: 1, createdAt: now(), lastLoginAt: null };
+      const user = { id: crypto.randomUUID(), name, username, role, permissions: normalizePermissions(Array.isArray(req.body.permissions) ? req.body.permissions : ROLE_PRESETS[role].permissions), reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile), pinSalt, pinHash: hashPin(pin, pinSalt), pinOwnerAssignedAt:now(), active: req.body.active !== false, sessionVersion: 1, createdAt: now(), lastLoginAt: null };
       state.users.push(user); audit(state, req.user, "USER_CREATE", `Membuat user ${name}`, { targetUserId: user.id, role });
       return publicUser(user);
     });
@@ -952,6 +953,7 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
       const name = text(req.body.name); const username = text(req.body.username).toLowerCase();
       const role = ROLE_PRESETS[req.body.role] ? req.body.role : user.role;
       if(req.user.role!=='OWNER'&&(user.role==='OWNER'||role==='OWNER'||(req.body.permissions || []).includes('audit.view')))throw Object.assign(new Error('Hanya Owner dapat mengelola akses Owner atau audit'),{status:403});
+      if(String(req.body.pin || "") && req.user.role!=="OWNER")throw Object.assign(new Error("PIN hanya dapat diubah oleh Owner melalui Edit User"),{status:403});
       const previousAccess=JSON.stringify([user.role,user.permissions,user.reportScope,user.active,user.username]);
       if (!name || name.length>200 || !username || username.length>100) throw new Error("Nama dan username wajib diisi (maksimal 200 dan 100 karakter)");
       if (state.users.some((item) => item.id !== user.id && item.username.toLowerCase() === username)) throw new Error("Username sudah digunakan");
@@ -961,7 +963,7 @@ app.put("/api/users/:id", requirePermission("users.manage"), async (req, res, ne
       if (user.id === req.user.id && !permissions.includes("users.manage")) throw new Error("Akses kelola user tidak dapat dicabut dari akun yang sedang digunakan");
       Object.assign(user, { name, username, role, permissions, reportScope: req.body.reportScope || ROLE_PRESETS[role].reportScope, briefingProfile: normalizeBriefingProfile(req.body.briefingProfile ?? user.briefingProfile), active: req.body.active !== false });
       const pin = String(req.body.pin || "");
-      if (pin) { if (!/^\d{4,12}$/.test(pin) || (production && (pin.length<6 || pin==='123456' || /^(\d)\1+$/.test(pin)))) throw new Error(production?"PIN harus 6–12 digit dan tidak mudah ditebak":"PIN minimal 4 digit"); user.pinChangeRequired=false; user.pinSalt = crypto.randomBytes(16).toString("hex"); user.pinHash = hashPin(pin, user.pinSalt); user.sessionVersion = Number(user.sessionVersion || 1) + 1; }
+      if (pin) { if (!validOwnerPin(pin)) throw new Error("PIN harus 4–12 digit angka"); user.pinRecoveryNeeded=false; user.pinOwnerAssignedAt=now(); user.pinSalt = crypto.randomBytes(16).toString("hex"); user.pinHash = hashPin(pin, user.pinSalt); user.sessionVersion = Number(user.sessionVersion || 1) + 1; }
       if(previousAccess!==JSON.stringify([user.role,user.permissions,user.reportScope,user.active,user.username]))user.sessionVersion=Number(user.sessionVersion||1)+1;
       audit(state, req.user, "USER_UPDATE", `Memperbarui user ${name}`, { targetUserId: user.id, role, pinChanged: Boolean(pin) });
       return publicUser(user);
@@ -1063,7 +1065,7 @@ app.use((error, _req, res, _next) => {
 await store.init();
 await store.mutate((state) => {
   if (state.users.length) return;
-  if(production && (!/^\d{6,12}$/.test(appPin)||appPin==='123456'||/^(\d)\1+$/.test(appPin)))throw new Error('Atur APP_PIN awal 6–12 digit yang tidak mudah ditebak');
+  if(production && !validOwnerPin(appPin))throw new Error('Atur APP_PIN awal 4–12 digit angka');
   const pinSalt = crypto.randomBytes(16).toString("hex");
   state.users.push({
     id: crypto.randomUUID(), name: "Owner Manna", username: "admin", role: "OWNER",
@@ -1074,6 +1076,7 @@ await store.mutate((state) => {
 });
 await security.init();
 await backups.init();
+await initializeOwnerPinPolicy(store,security.database);
 backups.start();
 const httpServer=app.listen(port, "0.0.0.0", () => console.log(`Manna POS berjalan di port ${port}`));
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{backups.stop();httpServer.close(async()=>{if(store.pool)await store.pool.end();process.exit(0);});setTimeout(()=>process.exit(1),25000).unref();});
