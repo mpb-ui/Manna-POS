@@ -7,29 +7,30 @@
   timeout. A successful authentication or 30 minutes without another failure
   resets the account counter. A separate guard permits at most 40 reservations
   per source IP per 10-minute window before applying a 1-minute pause.
-- Counters, locks and sessions live in `pos_security`, separately from business
+- Counters and sessions live in `pos_security`, separately from business
   data. PostgreSQL row locking serializes simultaneous guesses across processes.
   Restarting/redeploying does not clear limits or restore revoked sessions.
 - Cookies contain a random 256-bit token; only an HMAC digest is stored. Cookies
   are HttpOnly/SameSite=Lax, Secure in production, and expire after 12 hours.
   CSRF headers are bound to each session; browser origins are also checked.
-- An idle session locks after 15 minutes. Background polling does not count as
-  user activity. Locking preserves the in-tab cart/draft. Logout clears local
-  business state and revokes the session on the server. PIN/access changes
-  invalidate existing sessions; at most 10 sessions per account are retained.
-- A production login using the old default PIN `1234` must change it before
-  accessing business data. New production PINs must contain 6–12 digits and reject
-  common repeated/sequence values. No existing PIN is silently replaced.
+- **Owner manages PINs through Tambah/Edit User.** PINs contain 4–12 digits,
+  including leading zeroes. Users cannot change their own PIN through account
+  settings or API, including users with the custom `users.manage` permission.
+  Only Owner can add a user and assign/reset a PIN. Leaving Edit User's PIN blank
+  preserves it. A changed PIN or access version invalidates existing sessions.
+- The forced default-PIN change, manual Kunci POS and idle lock are removed.
+  Existing lock flags are ignored. Sessions still expire after 12 hours; logout
+  and session revocation work as before. At most 10 sessions per account remain.
 - Account menu → **Keamanan Akun** lists sessions. Users revoke their own sessions;
   Owner can revoke staff sessions, inspect failed logins, and unblock accounts
   after entering an explanation and the Owner's PIN. Admin cannot create or edit
   Owner access. Session versions are rechecked inside business mutation locks.
 - Native print capabilities remain short-lived and single-use, and are refused
-  after the source POS session is revoked or locked. No browser cookie is passed
+  after the source POS session expires, is revoked or its account version changes. No browser cookie is passed
   to the helper. Existing helper 1.0.1 remains compatible.
 
 `SESSION_SECRET` must have at least 32 characters in production. A fresh database
-also requires a nontrivial initial `APP_PIN`; the local-only fallback remains for
+also requires an Owner-selected initial `APP_PIN` of 4–12 digits; the local-only fallback remains for
 development. Set `APP_ORIGIN` to the canonical HTTPS origin when using a custom
 domain. Never place credentials, PINs, session tokens or backup passphrases in logs.
 
@@ -100,3 +101,23 @@ account to test a cooldown. Verify security headers, origin/CSRF rejection,
 logout/revocation, roles, lock/unlock, upload and printing workflows. Merge only
 the tested tree, wait for Render `live`, then verify public health/static bytes
 and deployment logs. Rotating the session secret signs every device out once.
+
+## Owner PIN policy migration (2026-11-02)
+
+Startup applies `owner-pin-policy-v1` once, under the business row lock. It saves
+an atomic before-image in `app_state_backups`, removes obsolete forced-change
+flags, and preserves current PINs unless an audited self-service PIN change can
+be reversed safely. Recovery uses checksum-verified daily snapshots captured
+between the last Owner assignment and the first subsequent self-service change.
+Snapshot/user IDs and session-version increments must agree; unexplained changes
+or missing/corrupt snapshots never trigger a guessed reset. A restored PIN
+invalidates sessions issued under the changed credential. Orders, stock, payments,
+customer balances and later Owner PIN assignments are preserved.
+
+An unrecoverable self-service change keeps the current credential and marks the
+user `pinRecoveryNeeded`; Owner sees a required PIN field and explanation in Edit
+User. `ownerPinRecovery` health metadata contains only counts, never PINs/hashes.
+The account settings screen has no PIN-change action, activity tracking, lock
+overlay or inactivity timer. Removed lock APIs return 410 and the self-service
+PIN API returns 403. Login throttling, CSRF, session revocation, uploads and backups
+remain enabled.

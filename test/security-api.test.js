@@ -5,7 +5,7 @@ import net from 'node:net';
 import sharp from 'sharp';
 import {decryptBackup} from '../lib/backups.js';
 
-test('real server enforces session revocation, CSRF, lock, Owner boundaries, upload validation and encrypted exports',async()=>{
+test('real server enforces session revocation, CSRF, Owner-managed PINs, Owner boundaries, upload validation and encrypted exports',async()=>{
  const socket=net.createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
  const child=spawn(process.execPath,['server.js'],{cwd:new URL('..',import.meta.url).pathname,env:{...process.env,DATABASE_URL:'',NODE_ENV:'test',PORT:String(port),APP_PIN:'1234'},stdio:'ignore'}),base='http://127.0.0.1:'+port;
  const request=async(path,method='GET',body,session,extra={})=>{const r=await fetch(base+path,{method,headers:{'content-type':'application/json',...(session?{cookie:session.cookie,'x-manna-csrf':session.csrf}:{}),...extra},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,headers:r.headers,body:await r.json()};};
@@ -26,11 +26,12 @@ test('real server enforces session revocation, CSRF, lock, Owner boundaries, upl
   assert.equal((await request('/api/users/'+owner.user.id,'DELETE',{},administrator)).status,403);
   const order=await request('/api/orders','POST',{customerName:'Security test',phone:'9876',items:[{productId:'poster-backlite-film',sizeVariantId:'a3',quantity:1}]},cashier);assert.equal(order.status,201);
   const path='/api/orders/'+order.body.id;
-  assert.equal((await request('/api/security/lock','POST',{},cashier)).status,200);
-  assert.equal((await request('/api/bootstrap','GET',undefined,cashier)).status,423);
-  assert.equal((await request('/api/security/unlock','POST',{pin:'0000'},cashier)).body.code,'AUTH_FAILED');
-  assert.equal((await request('/api/security/unlock','POST',{pin:'1234'},cashier)).status,200);
+  for(const endpoint of ['lock','unlock','activity'])assert.equal((await request('/api/security/'+endpoint,'POST',{},cashier)).status,410);
   assert.equal((await request('/api/bootstrap','GET',undefined,cashier)).status,200);
+  for(const session of [owner,cashier,administrator,warehouse])assert.equal((await request('/api/security/pin','POST',{pin:'1234',newPin:'827194'},session)).status,403);
+  assert.equal((await request('/api/users','POST',{name:'Not Owner',username:'admin-created',pin:'1234',role:'CASHIER'},administrator)).status,403);
+  for(const target of [cashier,administrator])assert.equal((await request('/api/users/'+target.user.id,'PUT',{name:target.user.name,username:target.user.username,role:target.user.role,pin:'827194'},administrator)).status,403);
+  await login('cashier'); // rejected PIN changes preserve the Owner-assigned PIN
   assert.equal((await request(path+'/payments','POST',{type:'PO',poNumber:'PO-X',poAttachment:{type:'image/png',dataUrl:'data:image/png;base64,iVBORw0KGgo='}},cashier)).status,400);
   const unchanged=await request('/api/order-history/'+order.body.id,'GET',undefined,owner);assert.equal(unchanged.body.paidAmount,0);assert.equal(unchanged.body.payments.length,0);
   const bytes=await sharp({create:{width:30,height:20,channels:3,background:'white'}}).png().toBuffer();
@@ -45,7 +46,13 @@ test('real server enforces session revocation, CSRF, lock, Owner boundaries, upl
   const exported=await request('/api/security/backups/export','POST',{pin:'1234',passphrase:'backup secret phrase'},owner);assert.equal(exported.status,200,JSON.stringify(exported.body));assert.equal(exported.headers.get('cache-control'),'no-store');const restored=await decryptBackup(exported.body,'backup secret phrase');assert.equal(restored.data.orders[0].id,order.body.id);assert.equal(restored.data.orders[0].payments[0].poAttachment.checksum,po.body.payments[0].poAttachment.checksum);
   assert.equal((await request('/api/logout','POST',{},warehouse)).status,200);assert.equal((await request('/api/bootstrap','GET',undefined,warehouse)).status,401);
   const sessions=await request('/api/security/sessions','GET',undefined,owner),other=sessions.body.sessions.find(s=>s.userId===administrator.user.id);assert(other);assert.equal((await request('/api/security/sessions/'+other.id,'DELETE',undefined,cashier)).status,403);assert.equal((await request('/api/security/sessions/'+other.id,'DELETE',undefined,owner)).status,200);assert.equal((await request('/api/bootstrap','GET',undefined,administrator)).status,401);
-  assert.equal((await request('/api/security/pin','POST',{pin:'1234',newPin:'827194'},cashier)).status,200);assert.equal((await request('/api/bootstrap','GET',undefined,cashier)).status,401);await login('cashier','827194');
+  // Owner can reset through Edit User. Blank PIN preserves it; leading zeroes survive.
+  assert.equal((await request('/api/users/'+cashier.user.id,'PUT',{name:cashier.user.name,username:'cashier',role:'CASHIER',pin:''},owner)).status,200);await login('cashier');
+  assert.equal((await request('/api/users/'+cashier.user.id,'PUT',{name:cashier.user.name,username:'cashier',role:'CASHIER',pin:'0071'},owner)).status,200);
+  assert.equal((await request('/api/bootstrap','GET',undefined,cashier)).status,401);await login('cashier','0071');
+  assert.equal((await request('/api/login','POST',{username:'cashier',pin:'1234'})).status,401);
+  assert.equal((await request('/api/users/'+owner.user.id,'PUT',{name:owner.user.name,username:'admin',role:'OWNER',pin:'8172'},owner)).status,200);
+  assert.equal((await request('/api/bootstrap','GET',undefined,owner)).status,401);await login('admin','8172');
 
  }finally{child.kill();await new Promise(r=>child.once('exit',r));}
 });
