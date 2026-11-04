@@ -2,6 +2,7 @@ import {A3_TABS,A3_QUICK_LIMIT,a3QuickCount,a3ProductKind} from './a3-selection.
 import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSaleUnit, defaultWholesaleBasis } from './sale-units.js';
 import { DEFAULT_VARIANT_TYPES, DEFAULT_OPTION_TYPES, variantCardName, copyTierRanges, mergeMaterialSources, promoDate } from './product-variants.js';
 import { enhanceMaterialSelects } from './material-picker.js';
+import {categoryWidthChoices,normalizeProductWidths} from './product-widths.js';
 
 export function openProductEditor(ctx, product = null) {
   const {state,dialog,api,e,toast,showDialog,finishingOptionsHtml,materialRowHtml,readMaterialRows,variantSourcesHtml,deleteButtonHtml,bindDeleteRecord} = ctx;
@@ -49,7 +50,7 @@ export function openProductEditor(ctx, product = null) {
       ${reference('Kategori','category',categories,product?.category || '', 'categories','Pilih kategori')}
       ${field('Tab Print A3+',select('a3Kind',A3_TABS.map(([value,label])=>({value,label})),product&&ctx.categoryId(product.category)==='print-a3'?a3ProductKind(product):'','Pilih tab'),'a3Kind','data-a3-field')}
       ${reference('Satuan Jual','saleUnit',units,unit,'saleUnits','Pilih satuan jual')}
-      ${field('Pilihan Lebar Bahan',input('widths',(product?.widths || []).join(', '),'placeholder="1, 1.27, 1.52"'),'widths','data-width-field')}
+      ${field('<span id="pe-width-label">Pilihan Lebar Bahan</span>',`<div id="pe-width-chips" class="pe-width-chips" role="group" aria-labelledby="pe-width-label"></div>${input('widths',(product?.widths || []).join(', '),'placeholder="Contoh: 1, 1.5" aria-describedby="pe-width-help"')}<small id="pe-width-help" class="pe-width-help"></small>`,'widths','data-width-field')}
       ${field('Mesin yang Digunakan',select('machineId',machineOptions,product?.machineIds?.[0] || '','Pilih mesin'),'machineId')}
       ${field('Jenis ATK',select('retailAtK',[{value:'false',label:'Jasa produksi'},{value:'true',label:'Barang dagangan'}],String(Boolean(product?.retailAtK))),'retailAtK','data-atk-field')}
       ${field('Tab ATK',select('atkGroup',ctx.atkGroups,product?.atkGroup || ctx.atkGroups[0]),'atkGroup','data-atk-field')}
@@ -90,6 +91,19 @@ export function openProductEditor(ctx, product = null) {
   detail.querySelector('.detail-close').setAttribute('aria-label','Tutup pengaturan produk');
   const form=detail.querySelector('#product-form'), scroll=form.querySelector('.pe-scroll'), list=form.querySelector('[data-price-cards]');
   const el=name=>form.elements.namedItem(name);
+  let widthCategory=ctx.categoryId(product?.category || '');
+  const widthDrafts=new Map([[widthCategory,(product?.widths || []).join(', ')]]);
+  const readWidths=()=>normalizeProductWidths(el('widths').value.split(',').map(v=>v.trim()).filter(Boolean));
+  function syncWidths(mode){
+    const category=ctx.categoryId(el('category').value);
+    if(category!==widthCategory){widthDrafts.set(widthCategory,el('widths').value);widthCategory=category;el('widths').value=widthDrafts.get(category)||'';}
+    const stored=product&&ctx.categoryId(product.category)===category?product.widths||[]:[];
+    const choices=categoryWidthChoices(category,stored),group=form.querySelector('#pe-width-chips');
+    group.hidden=!choices;el('widths').hidden=Boolean(choices);el('widths').disabled=mode==='unit';
+    const selected=choices?readWidths():[];
+    group.innerHTML=(choices||[]).map(width=>`<button type="button" class="pe-width-chip" data-roll-width="${width}" aria-pressed="${selected.includes(width)}" aria-label="Lebar bahan ${width.toLocaleString('id-ID')} meter" ${mode==='unit'?'disabled':''}>${width.toLocaleString('id-ID',{maximumFractionDigits:8})} m</button>`).join('');
+    form.querySelector('#pe-width-help').textContent=choices?'Pilih satu atau lebih lebar bahan yang tersedia.':'Pisahkan setiap lebar bahan dengan koma (gunakan titik untuk desimal).';
+  }
   const isVariants=()=>el('productMode').value==='variants';
   const hasOptions=()=>isVariants() && el('hasOptions').checked;
   const measured=()=>el('wholesaleBasis').value!=='quantity';
@@ -126,7 +140,7 @@ export function openProductEditor(ctx, product = null) {
   }
   function syncBasics() {
     const mode=saleUnitBasis(el('saleUnit').value), category=ctx.categoryId(el('category').value), allowed=category==='print-a3' && mode==='unit' && /^(lbr|lembar)$/i.test(el('saleUnit').value);
-    form.querySelector('[data-width-field]').hidden=mode==='unit';el('widths').disabled=mode==='unit';
+    form.querySelector('[data-width-field]').hidden=mode==='unit';syncWidths(mode);
     form.querySelectorAll('[data-atk-field]').forEach(f=>f.hidden=category!=='atk');
     const a3=category==='print-a3';form.querySelector('[data-a3-field]').hidden=!a3;form.querySelector('[data-a3-quick-setting]').hidden=!a3;
     el('a3Kind').disabled=!a3;
@@ -166,6 +180,7 @@ export function openProductEditor(ctx, product = null) {
   });
   form.addEventListener('click',async event=>{
     const b=event.target.closest('button');if(!b)return;
+    if(b.hasAttribute('data-roll-width')){const width=Number(b.dataset.rollWidth),selected=readWidths(),checked=!selected.includes(width);el('widths').value=(checked?[...selected,width]:selected.filter(v=>v!==width)).join(', ');widthDrafts.set(widthCategory,el('widths').value);b.setAttribute('aria-pressed',String(checked));}
     if(b.dataset.editorTab)showTab(b.dataset.editorTab);
     if(b.hasAttribute('data-cancel-editor'))dialog.close();
     if(b.hasAttribute('data-minimum-step'))el('minimumQuantity').value=Math.max(1,(Number(el('minimumQuantity').value)||1)+Number(b.dataset.minimumStep));
@@ -202,6 +217,7 @@ export function openProductEditor(ctx, product = null) {
     event.preventDefault();if(form.dataset.saving)return;capture();form.querySelector('.pe-error').hidden=true;
     try {
       for(const name of ['sku','name','category','saleUnit'])if(!el(name).value.trim())fail('Lengkapi '+({sku:'SKU produk',name:'nama produk',category:'kategori',saleUnit:'Satuan Jual'}[name]),el(name),'info');
+      if(!el('widths').disabled&&!readWidths().length)fail('Pilih minimal satu lebar bahan',form.querySelector('#pe-width-chips button')||el('widths'),'info');
       if(ctx.categoryId(el('category').value)==='print-a3'&&!el('a3Kind').value)fail('Pilih tab Print A3+',el('a3Kind'),'info');
       if(el('minimumEnabled').checked && (!Number.isSafeInteger(Number(el('minimumQuantity').value)) || Number(el('minimumQuantity').value)<1))fail('Minimum pembelian harus bilangan bulat minimal 1',el('minimumQuantity'),'info');
       if(isVariants()) {
@@ -217,7 +233,7 @@ export function openProductEditor(ctx, product = null) {
       const specs=cardSpecs(),first=cards.get(specs.find(s=>cards.get(s.key).active!==false && Number(cards.get(s.key).price)>0)?.key || specs.find(s=>Number(cards.get(s.key).price)>0)?.key || specs[0].key),variantMode=isVariants();
       const normalizedCard=c=>({...c,baseCost:Number(c.baseCost || 0),price:c.price===''?null:Number(c.price),priceTiers:c.priceTiers.map(t=>({...t,price:Number(t.price)}))});
       const materialVariants=variantMode?variants.map(v=>{const c=normalizedCard(cardState(v.id));const combinations=hasOptions()?options.map(o=>({subVariantId:o.id,...normalizedCard(cardState(v.id+'|'+o.id))})):[];return {id:v.id,label:v.label.trim(),...c,price:c.price || combinations[0]?.price || Number(first.price),sheetProfileId:v.sheetProfileId || '',combinations};}):[];
-      const payload={productEditorVersion:1,sku:el('sku').value.trim(),name:el('name').value.trim(),category:el('category').value,a3Kind:el('a3Kind').disabled?null:el('a3Kind').value,a3Popular:ctx.categoryId(el('category').value)==='print-a3'&&el('a3Popular').checked,saleUnit:normalizeSaleUnit(el('saleUnit').value),widths:el('widths').disabled?[]:el('widths').value.split(',').map(v=>v.trim()).filter(Boolean),machineIds:el('machineId').value?[el('machineId').value]:[],note:el('note').value,
+      const payload={productEditorVersion:1,sku:el('sku').value.trim(),name:el('name').value.trim(),category:el('category').value,a3Kind:el('a3Kind').disabled?null:el('a3Kind').value,a3Popular:ctx.categoryId(el('category').value)==='print-a3'&&el('a3Popular').checked,saleUnit:normalizeSaleUnit(el('saleUnit').value),widths:el('widths').disabled?[]:readWidths(),machineIds:el('machineId').value?[el('machineId').value]:[],note:el('note').value,
         active:el('active').checked,featured:el('featured').checked,minimumEnabled:el('minimumEnabled').checked,minimumQuantity:Number(el('minimumQuantity').value),sheetCalculatorEnabled:el('sheetCalculatorEnabled').checked,sheetProfileId:el('sheetProfileId')?.value || '',retailAtK:el('retailAtK').value==='true',atkGroup:el('atkGroup').value,barcode:el('barcode').value,
         price:Number(first.price),baseCost:Number(first.baseCost || 0),materialSources:variantMode?[]:first.materialSources,wholesaleEnabled:!variantMode && first.priceTiers.length>0,wholesaleBasis:el('wholesaleBasis').value,priceTiers:variantMode?[]:normalizedCard(first).priceTiers,
         hasMaterialVariants:variantMode,variantType:el('variantType').value,optionType:hasOptions()?el('optionType').value:'',subVariantLabel:hasOptions()?el('optionType').value:'',materialVariants,subVariants:hasOptions()?options.map(o=>({id:o.id,label:o.label.trim()})):[],finishingIds:[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value),
