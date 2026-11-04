@@ -1,3 +1,4 @@
+import {bindBackdropClose} from './dialog-dismiss.js';
 const collator = new Intl.Collator('id-ID', {numeric:true,sensitivity:'base'});
 const normalized = value => String(value || '').normalize('NFKD').replace(/\p{M}/gu,'').toLocaleLowerCase('id-ID').trim();
 
@@ -63,7 +64,7 @@ export function enhanceMaterialSelects(scope, materials, settings={}) {
         else if(e.key==='Enter'&&document.activeElement===search){e.preventDefault();const row=rows[active>=0?active:0];if(row&&!row.disabled)choose(row.dataset.materialOption);}
       });
       picker.querySelector('[data-picker-close]').onclick=()=>picker.close();
-      picker.addEventListener('click',e=>{const r=picker.getBoundingClientRect();if(e.target===picker&&(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom))picker.close();});
+      bindBackdropClose(picker);
       const parent=select.closest('dialog'),close=()=>picker.open&&picker.close();parent?.addEventListener('close',close);
       const observer=new MutationObserver(()=>{if(!select.isConnected)close();});observer.observe(document.body,{childList:true,subtree:true});
       const viewport=window.visualViewport;
