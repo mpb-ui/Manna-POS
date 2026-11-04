@@ -1,3 +1,5 @@
+import {createMasterFilters,bindMasterFilters} from './master-filters.js';
+import {bindBackdropClose,trackDialogMutation} from './dialog-dismiss.js';
 import {A3_TABS,a3ProductKind,a3Choices,a3QuickProducts} from './a3-selection.js';
 import { createSecurityUI } from './security-ui.js';
 import { createPrintHelperUI } from './print-helper-ui.js';
@@ -94,13 +96,14 @@ const state = {
   projectCollapsed: new Set(["DIAMBIL"]),
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" }
 };
+const masterFilters=createMasterFilters({identity:()=>state.currentUser?.id});
 let csrfToken='';
 const securityUI=createSecurityUI({api,user:()=>state.currentUser,e:escapeHtml,toast,onSignOut:()=>showLogin()});
 const root = document.querySelector("#view-root");
 const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
 const printHelper=createPrintHelperUI({api,identity:()=>state.currentUser?.id,toast});
-const customersUI=createCustomersUI({state,root,api,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
+const customersUI=createCustomersUI({state,root,api,masterFilters,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
   bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},
   openOrder:async id=>{try{const order=await api('/api/order-history/'+id);const index=state.orders.findIndex(o=>o.id===id);if(index>=0)state.orders[index]=order;else state.orders.push(order);if(dialog.open)dialog.close();openOrder(id);}catch(error){toast(error.message,'error');}},
   print:html=>showPrintDocument(html,'payment-receipt')
@@ -143,6 +146,8 @@ function bindMoneyInputs(container = document) {
 }
 
 async function api(path, options = {}) {
+  const finishMutation=trackDialogMutation(document,options.method);
+  try {
   const requestUser=state.currentUser?.id;
   const response = await fetch(path, {...options,headers:{'Content-Type':'application/json',...(csrfToken?{'X-Manna-CSRF':csrfToken}:{}),...(options.headers||{})}});
   const body = await response.json().catch(() => ({}));
@@ -151,6 +156,7 @@ async function api(path, options = {}) {
   if (response.status === 401 && path !== "/api/login" && body.code!=='AUTH_FAILED') showLogin();
   if (!response.ok) throw Object.assign(new Error(body.error || "Permintaan gagal"), { code: body.code, matches: body.matches, retryAfter:body.retryAfter, status:response.status });
   return body;
+  } finally {finishMutation();}
 }
 
 function toast(message, type = "") {
@@ -161,6 +167,7 @@ function toast(message, type = "") {
 }
 
 function showLogin() {
+  masterFilters.clear();
   securityUI.reset();csrfToken='';loadSequence++;
   state.cart=[];state.editingOrderId=null;state.draft={customerName:'',phone:'',deadline:'',fileStatus:'SIAP_CETAK',fileReadiness:'UNCONFIRMED'};
   for(const name of ['products','allProducts','orders','materials','finishings','machines','users','auditLogs','inventory','stockMovements','shirtStock'])state[name]=[];
@@ -1625,7 +1632,7 @@ function masterHeader(title, includeSummary = true) {
 }
 
 function assetContext() {
-  return { root, dialog, printDocument, api, toast, escapeHtml, moneyField, parseMoney, bindMoneyInputs, rupiah, machines: state.machines,
+  return { root, dialog, printDocument, api, masterFilters, toast, escapeHtml, moneyField, parseMoney, bindMoneyInputs, rupiah, machines: state.machines,
     header: masterHeader("Aset", false), showDialog: showMasterDialog,
     isActive: () => state.view === "master" && state.masterTab === "assets" && canManageSettings(),
     isReportActive: () => false,
@@ -1674,15 +1681,19 @@ function renderMaster() {
   document.querySelectorAll("[data-edit-finishing]").forEach((button) => button.onclick = () => openFinishingForm(state.finishings.find((item) => item.id === button.dataset.editFinishing)));
   document.querySelectorAll("[data-edit-machine]").forEach((button) => button.onclick = () => openMachineForm(state.machines.find((item) => item.id === button.dataset.editMachine)));
   document.querySelectorAll("[data-edit-user]").forEach((button) => button.onclick = () => openUserForm(state.users.find((item) => item.id === button.dataset.editUser)));
-  let promoOnly = false;
-  const applyFilters = () => { const query = document.querySelector("#master-search").value.toLowerCase(); const category = document.querySelector("#filter-category")?.value || ""; const machine = document.querySelector("#filter-machine")?.value || ""; const type = document.querySelector("#filter-finishing-type")?.value || ""; document.querySelectorAll(".master-table tbody tr").forEach((row) => { const matches = row.textContent.toLowerCase().includes(query) && (!category || row.dataset.category === category || JSON.parse(row.dataset.categories || "[]").includes(category)) && (!machine || (row.dataset.machines || "").split(",").includes(machine)) && (!promoOnly || row.dataset.promo === "true") && (!type || row.dataset.finishingType === type); row.classList.toggle("hidden", !matches); }); };
   alignPageHeader(root);
-  document.querySelector("#master-search").oninput = applyFilters;
-  document.querySelector("#filter-finishing-type")?.addEventListener("change", applyFilters);
-  document.querySelector("#filter-category")?.addEventListener("change", applyFilters); document.querySelector("#filter-machine")?.addEventListener("change", applyFilters);
-  const sortRows = () => { const mode = document.querySelector("#sort-master")?.value; if (!mode) return; const body = document.querySelector(".master-table tbody"); const rows = [...body.rows].sort((a, b) => { const nameA = a.cells[0].querySelector("strong")?.textContent || ""; const nameB = b.cells[0].querySelector("strong")?.textContent || ""; const group = mode === "name" ? 0 : (a.dataset.sortCategory || "").localeCompare(b.dataset.sortCategory || "", "id") * (mode === "category-desc" ? -1 : 1); return group || nameA.localeCompare(nameB, "id", { numeric: true }); }); rows.forEach((row) => body.append(row)); };
-  document.querySelector("#sort-master")?.addEventListener("change", sortRows); sortRows();
-  document.querySelector("#filter-promo")?.addEventListener("click", (event) => { promoOnly = !promoOnly; event.currentTarget.classList.toggle("active", promoOnly); applyFilters(); });
+  bindMasterFilters(masterFilters,state.masterTab,root,{query:'#master-search',category:'#filter-category',machine:'#filter-machine',type:'#filter-finishing-type',sort:'#sort-master',promoOnly:{selector:'#filter-promo',toggle:true}},filters=>{
+    const query=filters.query.toLocaleLowerCase('id-ID');
+    root.querySelectorAll('.master-table tbody tr').forEach(row=>{
+      const matches=row.textContent.toLocaleLowerCase('id-ID').includes(query)&&(!filters.category||row.dataset.category===filters.category||JSON.parse(row.dataset.categories||'[]').includes(filters.category))&&(!filters.machine||(row.dataset.machines||'').split(',').includes(filters.machine))&&(!filters.promoOnly||row.dataset.promo==='true')&&(!filters.type||row.dataset.finishingType===filters.type);
+      row.classList.toggle('hidden',!matches);
+    });
+    if(filters.sort){const body=root.querySelector('.master-table tbody');[...body.rows].sort((a,b)=>{
+      const nameA=a.cells[0].querySelector('strong')?.textContent||'',nameB=b.cells[0].querySelector('strong')?.textContent||'';
+      const group=filters.sort==='name'?0:(a.dataset.sortCategory||'').localeCompare(b.dataset.sortCategory||'','id')*(filters.sort==='category-desc'?-1:1);
+      return group||nameA.localeCompare(nameB,'id',{numeric:true});
+    }).forEach(row=>body.append(row));}
+  });
 }
 
 function renderSettingsMaster() {
@@ -1701,7 +1712,7 @@ function renderSettingsMaster() {
   document.querySelectorAll("[data-sheet-profiles]").forEach(button => button.onclick = () => openSheetProfiles({ getProfiles: () => state.catalogOptions.sheetCalculatorProfiles || [], showDialog: showMasterDialog, api, refresh: load, toast, escapeHtml }));
   document.querySelectorAll("[data-edit-pic]").forEach((button) => button.onclick = () => openPicForm(activePics().find((pic) => pic.id === button.dataset.editPic)));
   alignPageHeader(root);
-  document.querySelector("#settings-search").oninput = (event) => document.querySelectorAll(".master-table tbody tr").forEach((row) => row.classList.toggle("hidden", !row.textContent.toLowerCase().includes(event.target.value.toLowerCase())));
+  bindMasterFilters(masterFilters,categories?'categories:'+kind:'pics',root,{query:'#settings-search'},filters=>root.querySelectorAll('.master-table tbody tr').forEach(row=>row.classList.toggle('hidden',!row.textContent.toLocaleLowerCase('id-ID').includes(filters.query.toLocaleLowerCase('id-ID')))));
 }
 
 function openCategoryForm(kind, name = null) {
@@ -1726,7 +1737,7 @@ function openDeleteCategoryDialog(kind, name) {
     event.preventDefault(); const button = confirm.querySelector('[type="submit"]'); button.disabled = true;
     try { await api(`/api/categories/${kind}/${encodeURIComponent(name)}`, { method: "DELETE", body: JSON.stringify({ replacement: event.target.elements.replacement.value }) }); state.selectedCategory = "all"; state.selectedProduct = null; close(); dialog.close(); await load(); renderMaster(); toast("Kategori dipindahkan dan dihapus"); } catch (error) { toast(error.message, "error"); button.disabled = false; }
   };
-  confirm.showModal();
+  bindBackdropClose(confirm);confirm.showModal();
 }
 
 function openPicForm(pic = null) {
@@ -1744,7 +1755,8 @@ function showMasterDialog(title, body) {
   const detail = document.querySelector("#order-detail");
   detail.innerHTML = `<div class="detail-head"><div><span class="eyebrow">Master Data</span><h2 style="margin:5px 0 0">${title}</h2></div><button class="detail-close">×</button></div><div class="detail-body">${body}</div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
-  dialog.onclose = () => { dialog.classList.remove("master-dialog"); dialog.onclose = null; };
+  dialog.onclose = () => { if(dialog.open)return;dialog.classList.remove("master-dialog"); dialog.onclose = null; };
+  bindBackdropClose(dialog);
   dialog.showModal();
   return detail;
 }
@@ -1785,7 +1797,7 @@ function bindDeleteRecord(detail, item, kind, label, tab) {
         close(); dialog.close(); await load(); state.view = "master"; state.masterTab = tab; render(); toast(`${label} berhasil dihapus`);
       } catch (error) { toast(error.message, "error"); button.disabled = false; }
     };
-    confirm.showModal();
+    bindBackdropClose(confirm);confirm.showModal();
   };
 }
 
