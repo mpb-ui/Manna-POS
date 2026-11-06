@@ -117,8 +117,19 @@ const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, 
   }
 });
 const assistance = createOrderAssistance({
-  state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, deadlineLabel: formatProjectDeadline, canAuto: () => !hasUnsavedPayroll(),
-  openOrder: async id => { await load(); if (state.orders.some(o=>o.id===id)) openOrder(id); else toast("Pesanan tidak lagi tersedia untuk akun ini", "error"); },
+  state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, canAuto: () => !hasUnsavedPayroll(),
+  openOrder: async (id, { payment, itemId }) => {
+    const uid = state.currentUser?.id;
+    let order;
+    if (can("orders.view")) order = await api(`/api/order-history/${encodeURIComponent(id)}`);
+    else { await load(); order = state.orders.find(o => o.id === id); }
+    if (uid !== state.currentUser?.id || dialog.open) return;
+    if (!order) return toast("Pesanan tidak lagi tersedia untuk akun ini", "error");
+    if (payment && can("pos.payment") && can("projects.money") && !cancelled(order) && Number(order.total) > Number(order.paidAmount || 0)) return openPaymentDialog(order);
+    const index = state.orders.findIndex(o => o.id === id);
+    if (index >= 0) state.orders[index] = order; else state.orders.push(order);
+    openOrder(id, false, itemId);
+  },
   refreshProjects: () => { if (state.view === "projects") renderProjectContent(PROJECT_STAGES.map(([status]) => status)); },
   useRepeat: quote => {
     state.cart = quote.items.map(cartLineFromPricedItem); state.editingOrderId = null;
@@ -1184,10 +1195,6 @@ function witaDateKey(value = new Date()) {
 
 function projectDeadlineState(order) {
   return projectDeadlineInfo(order).state;
-}
-
-function formatProjectDeadline(order) {
-  return projectDeadlineInfo(order).label;
 }
 
 function projectDeadlineHtml(order) {

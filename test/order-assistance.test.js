@@ -43,6 +43,31 @@ test("tagihan yang sudah diambil tetapi belum lunas tetap outstanding; draft dan
   assert.equal(unconfirmedDraft(state.orders[2]),true);assert.equal(unconfirmedDraft(state.orders[1]),false);
 });
 
+test("briefing separates payment from production and keeps the most urgent item's PIC and status together", () => {
+  const oldDeadline = "2026-10-02T01:00:00Z";
+  const state={orders:[
+    order("unpaid",{status:"MENUNGGU_PEMBAYARAN",paymentConfirmed:false,confirmed:true,deadline:oldDeadline}),
+    order("multi",{paidAmount:30000,items:[
+      {itemId:"design",productName:"Poster",quantity:1,status:"DESAIN",designPic:"Gema",deadline:"2026-10-05T01:00:00Z"},
+      {itemId:"print",productName:"Banner",quantity:2,status:"CETAK",designPic:"Qori",deadline:oldDeadline},
+      {itemId:"retail",productName:"ATK",quantity:1,status:"CETAK",stockTiming:"SALE",deadline:"2026-10-01T01:00:00Z"}
+    ]}),
+    order("paid-retail",{status:"CETAK",paidAmount:100000,items:[{productName:"ATK",quantity:1,stockTiming:"SALE"}]})
+  ]};
+  const owner=briefingForUser(state,user("OWNER"),at);
+  assert.equal(owner.canSeePayments,true);assert.equal(owner.overdueCount,1);
+  assert.deepEqual(owner.orders.map(row=>row.id),["multi","unpaid"]);
+  const [multi, unpaid]=owner.orders;
+  assert.deepEqual([multi.workItemId,multi.pic,multi.status,multi.deadline], ["print","Qori","CETAK",oldDeadline]);
+  assert.deepEqual(multi.jobs.map(job=>job.itemId),["design","print"]);
+  assert.equal(multi.outstanding,70000);assert.equal(multi.paymentItem.otherItems,2);
+  assert.equal(unpaid.workItemId,null);assert.equal(unpaid.deadline,null);assert.equal(unpaid.priority,2);
+  const operator=briefingForUser(state,user("PRINT"),at);
+  assert.equal(operator.canSeePayments,false);
+  assert.deepEqual(operator.orders.map(row=>row.id),["multi"]);
+  assert.ok(!("outstanding" in operator.orders[0]) && !("paymentItem" in operator.orders[0]));
+});
+
 test("briefing operator memakai kesiapan file yang dikonfirmasi; profil tidak menaikkan izin atau membuka nominal", () => {
   const state={orders:[order("legacy",{fileStatus:"SIAP_CETAK"}),order("ready",{fileReadiness:"READY"}),order("printing",{status:"CETAK"}),order("finishing",{status:"FINISHING"}),order("unpaid-waiting",{status:"MENUNGGU_PEMBAYARAN",paymentConfirmed:false,confirmed:true})]};
   const print=briefingForUser(state,user("PRINT"),at);
