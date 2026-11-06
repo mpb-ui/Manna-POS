@@ -13,3 +13,8 @@ export function alignPageHeader(root) {
     else {for(const child of [...source.children])if(!child.matches('h2'))slot.append(child);source.remove();}
   }
 }
+
+// Master Data keeps its list controls in the active tab's panel.
+export function masterPanelHeader(title, { filters = "", actions = "" } = {}) {
+  return `<div class="panel-head master-panel-head"><h2>${title}</h2>${filters || actions ? `<div class="master-panel-controls">${filters ? `<div class="master-panel-filters">${filters}</div>` : ""}${actions ? `<div class="master-panel-actions">${actions}</div>` : ""}</div>` : ""}</div>`;
+}

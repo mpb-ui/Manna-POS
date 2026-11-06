@@ -4,7 +4,7 @@ import {A3_TABS,a3ProductKind,a3Choices,a3QuickProducts} from './a3-selection.js
 import { createSecurityUI } from './security-ui.js';
 import { createPrintHelperUI } from './print-helper-ui.js';
 import { createReportsUI } from './reports-ui.js';
-import { alignPageHeader } from './page-header.js';
+import { masterPanelHeader } from './page-header.js';
 import { openProductEditor } from './product-editor.js';
 import { availableVariants } from './product-variants.js';
 import { FINISHING_TYPES, finishingType, finishingTypeLabel, groupFinishingTypes } from './finishing-types.js';
@@ -104,7 +104,7 @@ const dialog = document.querySelector("#order-dialog");
 const printDocument = document.querySelector("#print-document");
 const printHelper=createPrintHelperUI({api,identity:()=>state.currentUser?.id,toast});
 const customersUI=createCustomersUI({state,root,api,masterFilters,moneyField,bindMoneyInputs,parseMoney,e:escapeHtml,money:n=>rupiah.format(n),date:value=>dateFormat.format(new Date(value))+' WITA',toast,can,header:masterHeader,
-  bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},
+  bindHeader:bindMasterTabs,
   openOrder:async id=>{try{const order=await api('/api/order-history/'+id);const index=state.orders.findIndex(o=>o.id===id);if(index>=0)state.orders[index]=order;else state.orders.push(order);if(dialog.open)dialog.close();openOrder(id);}catch(error){toast(error.message,'error');}},
   print:html=>showPrintDocument(html,'payment-receipt')
 });
@@ -465,7 +465,7 @@ function catalogCardHtml(product, promo = false) {
   return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}"><div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong></div><div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><small>${escapeHtml(product.unitLabel)}</small><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong><small>${escapeHtml(product.unitLabel)}</small>`}</div></button>`;
 }
 
-const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:()=>{alignPageHeader(root);root.querySelectorAll('[data-master-tab]').forEach(b=>b.onclick=()=>{state.masterTab=b.dataset.masterTab;renderMaster();});},load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
+const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:bindMasterTabs,load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
 function allCatalogHtml(){return `<div class="pos-home">${homeCampaignUI.homeHtml()}<section class="catalog-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Terlaris</h3></div><div class="catalog-grid">${state.products.filter(p=>p.featured).map(p=>catalogCardHtml(p)).join('')}</div></section></div>`;}
 
 function productConfigurationHtml(product) {
@@ -1630,20 +1630,33 @@ const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n)
 });
 function renderReports(){return reportsUI.mount();}
 
-function masterHeader(title, includeSummary = true) {
+function masterHeader() {
   const labels = { campaigns:"Campaign",customers:"Pelanggan",products: "Produk", materials: "Bahan", categories: "Kategori", finishings: "Finishing", machines: "Mesin", assets: "Aset", users: "User & Akses", pics: "PIC" };
   const allowed = { campaigns:state.currentUser?.role==="OWNER"&&can("master.products"),customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
-  return `<div class="master-top page-toolbar"><div><h1>Master Data</h1><p>Kelola katalog, komposisi bahan, mesin, harga, serta akses user.</p></div><button id="add-master" class="primary" ${state.masterTab === "users" && state.currentUser?.role !== "OWNER" ? 'disabled title="Hanya Owner dapat menambahkan user dan menetapkan PIN"' : ""}>+ Tambah ${title}</button></div>
-    ${includeSummary ? `<div class="master-summary"><div><span>Produk aktif</span><strong>${state.allProducts.filter((item) => item.active !== false).length}</strong></div><div><span>Bahan aktif</span><strong>${state.materials.filter((item) => item.active !== false).length}</strong></div><div><span>Mesin aktif</span><strong>${state.machines.filter((item) => item.active !== false).length}</strong></div><div><span>Stok menipis</span><strong>${state.inventory.filter((item) => !item.stockNeedsCount && Number(item.quantity) <= Number(item.minStock || 0)).length}</strong></div></div>` : ""}
-    <div class="master-tabs">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button class="${state.masterTab === id ? "active" : ""}" data-master-tab="${id}">${label}</button>`).join("")}</div>`;
+  return `<header class="master-top page-toolbar"><h1>Master Data</h1></header>
+    <nav class="master-tabs" aria-label="Tab Master Data">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button type="button" ${state.masterTab === id ? 'class="active" aria-current="page"' : ""} data-master-tab="${id}">${label}</button>`).join("")}</nav>`;
+}
+
+function bindMasterTabs() {
+  const bar = root.querySelector('.master-tabs');
+  const active = bar.querySelector('.active');
+  if (active && bar.scrollWidth > bar.clientWidth) {
+    const delta = active.getBoundingClientRect().right - bar.getBoundingClientRect().right;
+    if (delta > 0) bar.scrollLeft += delta;
+  }
+  bar.querySelectorAll('[data-master-tab]').forEach(button => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
+}
+
+function masterAddButton(title) {
+  return `<button id="add-master" type="button" class="primary" ${state.masterTab === "users" && state.currentUser?.role !== "OWNER" ? 'disabled title="Hanya Owner dapat menambahkan user dan menetapkan PIN"' : ""}>+ Tambah ${title}</button>`;
 }
 
 function assetContext() {
   return { root, dialog, printDocument, api, masterFilters, toast, escapeHtml, moneyField, parseMoney, bindMoneyInputs, rupiah, machines: state.machines,
-    header: masterHeader("Aset", false), showDialog: showMasterDialog,
+    header: masterHeader(), showDialog: showMasterDialog,
     isActive: () => state.view === "master" && state.masterTab === "assets" && canManageSettings(),
     isReportActive: () => false,
-    bindHeader: () => { alignPageHeader(root); root.querySelectorAll("[data-master-tab]").forEach(button => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); }); root.querySelector("#add-master")?.addEventListener("click", () => openAssetForm(assetContext())); },
+    bindHeader: bindMasterTabs,
     afterSave: async () => { state.view = "master"; state.masterTab = "assets"; await load(); },
     manageAssets: () => { state.view = "master"; state.masterTab = "assets"; render(); }
   };
@@ -1680,15 +1693,15 @@ function renderMaster() {
   };
   const productFilters = ["materials", "finishings"].includes(state.masterTab) ? `<select id="filter-category" class="filter-select"><option value="">Semua kategori</option>${[...(state.masterTab === "materials" ? state.catalogOptions.materialCategories : state.catalogOptions.categories)].sort((a, b) => a.localeCompare(b, "id")).map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}</select><select id="sort-master" class="filter-select"><option value="category-asc">Kategori A–Z</option><option value="category-desc">Kategori Z–A</option><option value="name">Nama A–Z</option></select>` : state.masterTab === "products" ? `<select id="filter-category" class="filter-select"><option value="">Semua kategori</option>${productCategories().filter(([id]) => id !== "all").map(([, label]) => `<option>${escapeHtml(label)}</option>`).join("")}</select><select id="filter-machine" class="filter-select"><option value="">Semua mesin</option>${state.machines.map((machine) => `<option value="${machine.id}">${escapeHtml(machine.name)}</option>`).join("")}</select><button id="filter-promo" class="filter-chip" type="button">✦ Diskon</button>` : "";
   const audit = state.masterTab === "users" && can("audit.view") ? `<section class="panel audit-panel"><div class="panel-head"><h2>Audit Log Terakhir</h2><span>${state.auditLogs.length} aktivitas</span></div><div class="audit-list">${state.auditLogs.slice(0, 30).map((item) => `<div><span>${escapeHtml(item.action)}</span><p><strong>${escapeHtml(item.userName)}</strong> · ${escapeHtml(item.description)}</p><small>${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("") || '<p class="note">Belum ada aktivitas.</p>'}</div></section>` : "";
-  root.innerHTML = `<div class="master-page">${masterHeader(title)}<section class="panel"><div class="panel-head master-list-head"><h2>Daftar ${title}</h2><div class="master-filters"><input id="master-search" class="search" placeholder="Cari ${title.toLowerCase()}…">${productFilters}${state.masterTab === "finishings" ? `<select id="filter-finishing-type" class="filter-select" aria-label="Filter tipe finishing"><option value="">Semua tipe</option>${FINISHING_TYPES.map(type=>`<option value="${type.id}">${type.label}</option>`).join("")}</select>` : ""}</div></div><div class="table-wrap master-table">${tables[state.masterTab]}</div></section>${audit}</div>`;
-  document.querySelectorAll("[data-master-tab]").forEach((button) => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
+  const filters = `<input id="master-search" class="search" type="search" aria-label="Cari ${title.toLowerCase()}" placeholder="Cari ${title.toLowerCase()}…">${productFilters}${state.masterTab === "finishings" ? `<select id="filter-finishing-type" class="filter-select" aria-label="Filter tipe finishing"><option value="">Semua tipe</option>${FINISHING_TYPES.map(type=>`<option value="${type.id}">${type.label}</option>`).join("")}</select>` : ""}`;
+  root.innerHTML = `<div class="master-page master-data-page">${masterHeader()}<section class="panel">${masterPanelHeader(`Daftar ${title}`, { filters, actions: masterAddButton(title) })}<div class="table-wrap master-table">${tables[state.masterTab]}</div></section>${audit}</div>`;
+  bindMasterTabs();
   document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : state.masterTab === "finishings" ? openFinishingForm() : state.masterTab === "machines" ? openMachineForm() : openUserForm();
   document.querySelectorAll("[data-edit-product]").forEach((button) => button.onclick = () => openProductForm(state.allProducts.find((item) => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-material]").forEach((button) => button.onclick = () => openMaterialForm(state.materials.find((item) => item.id === button.dataset.editMaterial)));
   document.querySelectorAll("[data-edit-finishing]").forEach((button) => button.onclick = () => openFinishingForm(state.finishings.find((item) => item.id === button.dataset.editFinishing)));
   document.querySelectorAll("[data-edit-machine]").forEach((button) => button.onclick = () => openMachineForm(state.machines.find((item) => item.id === button.dataset.editMachine)));
   document.querySelectorAll("[data-edit-user]").forEach((button) => button.onclick = () => openUserForm(state.users.find((item) => item.id === button.dataset.editUser)));
-  alignPageHeader(root);
   bindMasterFilters(masterFilters,state.masterTab,root,{query:'#master-search',category:'#filter-category',machine:'#filter-machine',type:'#filter-finishing-type',sort:'#sort-master',promoOnly:{selector:'#filter-promo',toggle:true}},filters=>{
     const query=filters.query.toLocaleLowerCase('id-ID');
     root.querySelectorAll('.master-table tbody tr').forEach(row=>{
@@ -1711,14 +1724,17 @@ function renderSettingsMaster() {
     const count = (kind === "products" ? state.allProducts : state.materials).filter((item) => item.category === name).length;
     return `<tr><td><strong>${escapeHtml(name)}</strong></td><td>${count} ${kind === "products" ? "produk" : "bahan"}</td><td><button class="secondary" data-edit-category-name="${escapeHtml(name)}">Edit</button>${kind === "products" && categoryId(name) === "print-a3" && canManageSettings() ? ' <button class="secondary" data-sheet-profiles>Profil Kalkulator</button>' : ""}</td></tr>`;
   }).join("") : activePics().map((pic) => `<tr><td><strong>${escapeHtml(pic.name)}</strong></td><td>${projectJobs(state.orders).filter(job => job.designPicId === pic.id && !["SELESAI", "DIAMBIL"].includes(job.status)).length} produk berjalan</td><td><button class="secondary" data-edit-pic="${escapeHtml(pic.id)}">Edit</button></td></tr>`).join("");
-  root.innerHTML = `<div class="master-page">${masterHeader(categories ? "Kategori" : "PIC")}${categories ? `<div class="settings-kind-tabs">${[["products", "Kategori Produk"], ["materials", "Kategori Bahan"]].map(([id, name]) => `<button class="secondary ${kind === id ? "active" : ""}" data-settings-category-kind="${id}">${name}</button>`).join("")}</div>` : '<p class="product-note">PIC adalah daftar nama mandiri untuk kolom PIC pesanan, terpisah dari akun User.</p>'}<section class="panel"><div class="panel-head master-list-head"><h2>${categories ? kind === "products" ? "Kategori Produk" : "Kategori Bahan" : "Daftar PIC"}</h2><input id="settings-search" class="search" type="search" placeholder="Cari ${categories ? "kategori" : "PIC"}…"></div><div class="table-wrap master-table"><table><thead><tr><th>Nama</th><th>Penggunaan</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">Belum ada data.</td></tr>'}</tbody></table></div></section></div>`;
-  document.querySelectorAll("[data-master-tab]").forEach((button) => button.onclick = () => { state.masterTab = button.dataset.masterTab; renderMaster(); });
+  const title = categories ? kind === "products" ? "Kategori Produk" : "Kategori Bahan" : "Daftar PIC";
+  const searchName = categories ? "kategori" : "PIC";
+  const controls = masterPanelHeader(title, { filters: `<input id="settings-search" class="search" type="search" aria-label="Cari ${searchName}" placeholder="Cari ${searchName}…">`, actions: masterAddButton(categories ? "Kategori" : "PIC") });
+  const context = categories ? `<div class="settings-kind-tabs master-panel-context" aria-label="Jenis kategori">${[["products", "Kategori Produk"], ["materials", "Kategori Bahan"]].map(([id, name]) => `<button type="button" class="secondary ${kind === id ? "active" : ""}" aria-pressed="${kind === id}" data-settings-category-kind="${id}">${name}</button>`).join("")}</div>` : '<p class="product-note master-panel-context">PIC adalah daftar nama mandiri untuk kolom PIC pesanan, terpisah dari akun User.</p>';
+  root.innerHTML = `<div class="master-page master-data-page">${masterHeader()}<section class="panel">${controls}${context}<div class="table-wrap master-table"><table><thead><tr><th>Nama</th><th>Penggunaan</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="3">Belum ada data.</td></tr>'}</tbody></table></div></section></div>`;
+  bindMasterTabs();
   document.querySelectorAll("[data-settings-category-kind]").forEach((button) => button.onclick = () => { state.categorySettingsKind = button.dataset.settingsCategoryKind; renderSettingsMaster(); });
   document.querySelector("#add-master").onclick = () => categories ? openCategoryForm(kind) : openPicForm();
   document.querySelectorAll("[data-edit-category-name]").forEach((button) => button.onclick = () => openCategoryForm(kind, button.dataset.editCategoryName));
   document.querySelectorAll("[data-sheet-profiles]").forEach(button => button.onclick = () => openSheetProfiles({ getProfiles: () => state.catalogOptions.sheetCalculatorProfiles || [], showDialog: showMasterDialog, api, refresh: load, toast, escapeHtml }));
   document.querySelectorAll("[data-edit-pic]").forEach((button) => button.onclick = () => openPicForm(activePics().find((pic) => pic.id === button.dataset.editPic)));
-  alignPageHeader(root);
   bindMasterFilters(masterFilters,categories?'categories:'+kind:'pics',root,{query:'#settings-search'},filters=>root.querySelectorAll('.master-table tbody tr').forEach(row=>row.classList.toggle('hidden',!row.textContent.toLocaleLowerCase('id-ID').includes(filters.query.toLocaleLowerCase('id-ID')))));
 }
 
