@@ -30,3 +30,42 @@ Tidak ada perubahan harga, pembayaran, status produksi, stok, API, schema databa
 - Tidak ditemukan error JavaScript browser. Seluruh QA memakai server memory lokal terisolasi; tidak menulis data produksi.
 
 Status rilis mengikuti commit GitHub dan deployment Railway. Batch ini tidak memerlukan migrasi database.
+
+## Production detail and status selection (November 2026)
+
+Project Management opens a dedicated, production-only item dialog. Status Order
+continues opening the existing invoice dialog. The PM API uses an explicit
+projection, identical for Owner and production users: it does not return payment
+history, amounts, material costs, or the other invoice lines.
+
+- `/api/orders/:id/items/:itemId/production-details` GET/PATCH reads or atomically
+  saves optional `productionNote` and `driveUrl`. `expectedRevision` prevents
+  concurrent note/link overwrites. Empty strings remove values. Only HTTPS links
+  on `drive.google.com` and `docs.google.com` are accepted. Saving a link never
+  changes file-readiness or Google sharing permissions.
+- `/hold` PATCH marks/releases one item, with its reason, note, actor and time.
+  Old invoice holds are inherited once by unfinished items; clearing one cannot
+  spread a remaining sibling hold back onto it. The existing invoice hold API
+  remains compatible with Status Order and applies to its active items.
+- `/project-status` PATCH accepts any of DESAIN/CETAK/FINISHING/SELESAI, including
+  backwards and skipped stages, for accounts with `projects.status`. Existing
+  cashier pickup permission continues to allow FINISHING → SELESAI only. Waiting,
+  cancelled, retail and picked-up items cannot enter this route. Status and hold
+  concurrency guards reject stale writes.
+- An actual status change releases that item's hold in the same transaction.
+  Other item holds stay intact. The original sequential status API is retained
+  for the existing Status Order flow.
+- Stock is consumed on the first entry into CETAK or a later production stage.
+  Backwards transitions neither restore nor consume stock; subsequent forward
+  transitions do not consume it again. Stock validation failure rolls back the
+  status and hold release together. Financial records are unchanged.
+- `completedAt` freezes overdue calendar days in WITA at completion. Reopening a
+  job clears it; a later completion records the new time. Existing completed
+  items use their recorded completion event or their SELESAI entry time; a
+  missing historical timestamp never invents an ongoing overdue count.
+- List and Kanban expose a Drive link and status selector. Clicking a row opens
+  only that item; link/select interaction does not open the dialog. The six list
+  columns follow the updated desktop proportions, with wrapping mobile rows.
+- One sticky footer saves notes and link. Backdrop/Escape/close dismiss unsaved
+  drafts. Closing during an active write is guarded; failed saves retain inputs.
+  Logout closes production dialogs. Note/link/hold/status changes are audited.

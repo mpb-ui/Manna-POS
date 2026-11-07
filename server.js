@@ -885,7 +885,7 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
       if (target === STATUS.PICKED_UP) order.pickedUpAt = now();
       order.statusEnteredAt = now();
       order.updatedAt = now();
-      order.items.forEach(item => { item.status = target; item.statusEnteredAt = now(); item.updatedAt = now(); });
+      order.items.forEach(item => { item.status = target; item.statusEnteredAt = now(); item.updatedAt = now(); if (target === "SELESAI") item.completedAt = item.statusEnteredAt; });
       refreshOrderWorkflow(order, now());
       commitOrderStock(state, order, now, { actor: req.user.name });
       activity(state, order, `Status berubah menjadi ${STATUS_LABEL[target]}`, req.user.name);
