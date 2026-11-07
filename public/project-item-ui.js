@@ -34,7 +34,7 @@ export async function openProjectItem({orderId,itemId,api,toast,escapeHtml:h,cur
         if(hold)return updateHold({release:true},host.querySelector('button'));
         const reasons=['Menunggu approval customer','Menunggu file customer','Bahan belum tersedia','Menunggu pembayaran','Kendala mesin','Alasan lainnya'];
         host.innerHTML=`<fieldset class="project-item-hold-editor"><legend>Tandai item tertahan</legend><label>Alasan<select name="holdReason">${reasons.map(reason=>`<option value="${h(reason)}">${h(holdLabel(reason))}</option>`).join('')}</select></label><label>Catatan alasan <small>(opsional)</small><textarea name="holdNote" rows="2" maxlength="1000"></textarea></label><div><button type="button" class="secondary" data-hold-cancel>Batal</button><button type="button" class="secondary" data-hold-save>Simpan Penanda</button></div></fieldset>`;
-        host.querySelector('[data-hold-cancel]').onclick=holdTools;
+        host.querySelector('[data-hold-cancel]').onclick=()=>{if(!dialog.hasAttribute('data-saving'))holdTools();};
         host.querySelector('[data-hold-save]').onclick=event=>updateHold({reason:form.elements.holdReason.value,note:form.elements.holdNote.value},event.currentTarget);
       });
     }
@@ -50,7 +50,7 @@ export async function openProjectItem({orderId,itemId,api,toast,escapeHtml:h,cur
       try {
         const link=driveLink(form.elements.driveUrl.value);
         const result=await api(path+'/production-details',{method:'PATCH',body:JSON.stringify({productionNote:form.elements.productionNote.value,driveUrl:link,expectedRevision:data.item.productionRevision})});
-        if(!live())return;data=result;form.elements.productionNote.value=result.item.productionNote;form.elements.driveUrl.value=result.item.driveUrl;savedLink();feedback.textContent='Tersimpan';onChanged(result);
+        if(!live())return;data=result;form.elements.productionNote.value=result.item.productionNote;form.elements.driveUrl.value=result.item.driveUrl;savedLink();holdTools();feedback.textContent='Tersimpan';onChanged(result);
       } catch(error){if(live()){feedback.textContent=error.message;toast(error.message,'error');}}
       finally{dialog.removeAttribute('data-saving');button.disabled=false;}
     };
