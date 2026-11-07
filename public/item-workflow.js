@@ -21,7 +21,25 @@ export function initializeOrderItems(order) {
     item.statusEnteredAt ??= order.statusEnteredAt || order.createdAt;
     item.updatedAt ??= order.updatedAt || order.createdAt;
   });
+  // Migrate an old invoice hold once, preserving it on unfinished jobs only.
+  if (order.hold && !order.itemHoldVersion) {
+    for (const item of order.items || []) if (!finishedItem(item) && !Object.hasOwn(item, "hold")) item.hold = structuredClone(order.hold);
+    order.itemHoldVersion = 1;
+  }
+  for (const item of order.items || []) {
+    if (order.itemHoldVersion) item.hold ??= null;
+    if (finishedItem(item) && !item.completedAt) {
+      const entry = (order.timeline || []).find(row => row.itemId === item.itemId && /→ Selesai|menjadi Selesai/.test(row.message || ""));
+      const completedAt = entry?.createdAt || (item.status === "SELESAI" ? item.statusEnteredAt : null);
+      if (completedAt) item.completedAt = completedAt;
+    }
+  }
   return order;
+}
+
+export function refreshOrderHold(order) {
+  order.itemHoldVersion = 1;
+  order.hold = order.items?.find(item => item.hold && !finishedItem(item))?.hold || null;
 }
 
 export function initializeItemWorkflow(state) {
@@ -48,6 +66,7 @@ export function projectJobs(orders) {
     status: item.status ?? order.status, designPic: item.designPic ?? order.designPic ?? "",
     designPicId: item.designPicId ?? order.designPicId ?? "",
     deadline: Object.hasOwn(item, "deadline") ? item.deadline : order.deadline,
+    hold: Object.hasOwn(item, "hold") ? item.hold : order.itemHoldVersion ? null : order.hold || null, completedAt: item.completedAt || null,
     statusEnteredAt: item.statusEnteredAt || order.statusEnteredAt || order.createdAt
   })));
 }

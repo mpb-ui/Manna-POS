@@ -1,3 +1,5 @@
+import { closeProjectItems, openProjectItem } from './project-item-ui.js';
+import { PRODUCTION_STATUSES, productionStatusLabel, canMoveProduction, driveLink, productionSpecification } from './project-item.js';
 import {createMasterFilters,bindMasterFilters} from './master-filters.js';
 import {bindBackdropClose,trackDialogMutation} from './dialog-dismiss.js';
 import {A3_TABS,a3ProductKind,a3Choices,a3QuickProducts} from './a3-selection.js';
@@ -35,7 +37,7 @@ import { paymentReceipts } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
 import { invoiceReceiptHtml, workOrderHtml } from "./thermal-documents.js";
 import { prepareThermalPrint } from "./thermal-print.js";
-import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor } from "./item-workflow.js";
+import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor, refreshOrderHold } from "./item-workflow.js";
 import { projectDeadlineInfo } from "./project-deadline.js";
 import { PROJECT_STAGES, sortProjectDeadlines, projectPicTone } from "./project-management.js";
 import { holdLabel } from "./hold-label.js";
@@ -117,7 +119,7 @@ const orderHistory = createOrderHistory({ state, root, api, escapeHtml, rupiah, 
   }
 });
 const assistance = createOrderAssistance({
-  state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, canAuto: () => !hasUnsavedPayroll(),
+  state, root, dialog, api, toast, escapeHtml, rupiah, dateFormat, canAuto: () => !hasUnsavedPayroll() && !document.querySelector(".project-item-dialog[open]"),
   openOrder: async (id, { payment, itemId }) => {
     const uid = state.currentUser?.id;
     let order;
@@ -128,6 +130,7 @@ const assistance = createOrderAssistance({
     if (payment && can("pos.payment") && can("projects.money") && !cancelled(order) && Number(order.total) > Number(order.paidAmount || 0)) return openPaymentDialog(order);
     const index = state.orders.findIndex(o => o.id === id);
     if (index >= 0) state.orders[index] = order; else state.orders.push(order);
+    if(itemId)return openProjectOrder(id,itemId);
     openOrder(id, false, itemId);
   },
   refreshProjects: () => { if (state.view === "projects") renderProjectContent(PROJECT_STAGES.map(([status]) => status)); },
@@ -187,7 +190,7 @@ function showLogin() {
   homeCampaignUI.reset(); orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
   clearEmployeeSession(); reportsUI.reset();
   state.currentUser = null;
-  assistance.resetSession();
+  assistance.resetSession(); closeProjectItems();
   state.permissions = [];
   root.innerHTML = "";
   dialog.close();
@@ -1229,12 +1232,12 @@ function renderProjectContent(statuses) {
   content.querySelectorAll("[data-project-row-order]").forEach((row) => {
     const openRow = (event) => {
       if (event.target.closest("button, select, input, a")) return;
-      openOrder(row.dataset.projectRowOrder, false, row.dataset.projectRowItem);
+      openProjectOrder(row.dataset.projectRowOrder, row.dataset.projectRowItem);
     };
     row.addEventListener("click", openRow);
     row.addEventListener("keydown", (event) => {
       if (["Enter", " "].includes(event.key) && !event.target.closest("button, select, input, a")) {
-        event.preventDefault(); openOrder(row.dataset.projectRowOrder, false, row.dataset.projectRowItem);
+        event.preventDefault(); openProjectOrder(row.dataset.projectRowOrder, row.dataset.projectRowItem);
       }
     });
   });
@@ -1253,6 +1256,18 @@ function renderProjectContent(statuses) {
       toast(error.message, "error");
     } finally { select.disabled = false; }
   }));
+  content.querySelectorAll('[data-project-status-order]').forEach(select=>select.addEventListener('change',async()=>{
+    const order=state.orders.find(order=>order.id===select.dataset.projectStatusOrder);
+    const item=order?.items.find(item=>item.itemId===select.dataset.projectStatusItem);
+    if(!item)return;
+    const previous=item.status,target=select.value;select.disabled=true;
+    try {
+      await api(`/api/orders/${order.id}/items/${item.itemId}/project-status`,{method:'PATCH',body:JSON.stringify({status:target,expectedStatus:previous,expectedHoldUpdatedAt:item.hold?.updatedAt || null})});
+      state.projectCollapsed.delete(target);await load();
+      toast(`Produk dipindahkan ke ${productionStatusLabel(target)}`);
+    } catch(error) {select.value=previous;toast(error.message,'error');}
+    finally{select.disabled=false;}
+  }));
   content.querySelectorAll("[data-project-group]").forEach((button) => button.onclick = () => {
     const status = button.dataset.projectGroup;
     if (state.projectCollapsed.has(status)) state.projectCollapsed.delete(status); else state.projectCollapsed.add(status);
@@ -1264,9 +1279,9 @@ function renderProjectContent(statuses) {
 function projectListHtml(statuses, orders) {
   if (!orders.length) return '<div class="project-empty">Tidak ada pesanan yang sesuai dengan filter.</div>';
   const groups = statuses.map(status => ({ status, label: PROJECT_STAGES.find(([id]) => id === status)?.[1] || state.statusLabels[status], orders: orders.filter(o => o.status === status) }));
-  return `<div class="project-table-wrap"><table aria-label="Daftar produk pesanan" class="project-table"><colgroup><col><col><col><col><col></colgroup><thead class="project-accessible-head"><tr><th scope="col">Order</th><th scope="col">PIC</th><th scope="col">Produk</th><th scope="col">Jumlah</th><th scope="col">Deadline</th></tr></thead>${groups.filter(group => group.orders.length).map(group => {
+  return `<div class="project-table-wrap"><table aria-label="Daftar produk pesanan" class="project-table"><colgroup><col><col><col><col><col><col></colgroup><thead class="project-accessible-head"><tr><th scope="col">Order</th><th scope="col">PIC</th><th scope="col">Produk</th><th scope="col">Jumlah</th><th scope="col">Deadline</th><th scope="col">Status</th></tr></thead>${groups.filter(group => group.orders.length).map(group => {
     const { status, label, orders: grouped } = group, collapsed = state.projectCollapsed.has(status);
-    return `<tbody class="project-status-group status-${status.toLowerCase()}${collapsed ? " collapsed" : ""}"><tr class="project-group-row status-${status.toLowerCase()}"><td colspan="5"><button type="button" class="project-stage-toggle" data-project-group="${status}" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Buka" : "Tutup"} kelompok ${escapeHtml(label)}, ${grouped.length} produk"><span class="project-stage-label"><span class="ui-chevron" aria-hidden="true"></span><strong>${escapeHtml(label)}</strong></span></button></td></tr>${collapsed ? "" : grouped.map((job, index) => projectListRow(job, index + 1)).join("")}</tbody>`;
+    return `<tbody class="project-status-group status-${status.toLowerCase()}${collapsed ? " collapsed" : ""}"><tr class="project-group-row status-${status.toLowerCase()}"><td colspan="6"><button type="button" class="project-stage-toggle" data-project-group="${status}" aria-expanded="${!collapsed}" aria-label="${collapsed ? "Buka" : "Tutup"} kelompok ${escapeHtml(label)}, ${grouped.length} produk"><span class="project-stage-label"><span class="ui-chevron" aria-hidden="true"></span><strong>${escapeHtml(label)}</strong></span></button></td></tr>${collapsed ? "" : grouped.map((job, index) => projectListRow(job, index + 1)).join("")}</tbody>`;
   }).join("")}</table></div><div class="project-list-footer"><span>Menampilkan ${orders.length} produk dari ${new Set(orders.map(job => job.id)).size} pesanan</span><span>Diperbarui otomatis setiap menit</span></div>`;
 }
 
@@ -1286,21 +1301,31 @@ function projectListRow(order, position) {
   const item = order.items[0], product = item.productName || "—", specification = projectProductSpecification(item);
   const waitingApproval = Boolean(order.hold && holdLabel(order.hold.reason) === "Menunggu ACC");
   const approvalBadge = waitingApproval ? `<span class="project-deadline-divider" aria-hidden="true"></span><span class="project-approval-badge" title="${escapeHtml(order.hold.note || "Menunggu ACC")}">Menunggu ACC</span>` : "";
-  return `<tr class="project-order-row status-${order.status.toLowerCase()}" data-project-row-order="${order.id}" data-project-row-item="${order.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(product)} untuk ${escapeHtml(order.customerName)}"><td class="project-order-identity"><span class="project-row-number" aria-hidden="true">${position}</span><div class="project-customer"><strong title="${escapeHtml(order.customerName)}">${escapeHtml(order.customerName)}</strong><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b></div></td><td class="project-pic-cell" data-label="PIC">${projectPicHtml(order)}</td><td class="project-product-cell" data-label="Produk"><strong title="${escapeHtml(product)}">${escapeHtml(product)}</strong><small class="project-product-summary"><span title="${escapeHtml(specification)}">${escapeHtml(specification)}</span></small>${waitingApproval ? "" : projectSignifier(order)}</td><td class="project-quantity" data-label="Jumlah">${escapeHtml(itemQuantityLabel(item))}</td><td class="project-deadline ${projectDeadlineState(order)}" data-label="Deadline"><div class="project-deadline-content">${projectDeadlineHtml(order)}${approvalBadge}</div></td></tr>`;
+  return `<tr class="project-order-row status-${order.status.toLowerCase()}" data-project-row-order="${order.id}" data-project-row-item="${order.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(product)} untuk ${escapeHtml(order.customerName)}"><td class="project-order-identity"><span class="project-row-number" aria-hidden="true">${position}</span><div class="project-customer"><strong title="${escapeHtml(order.customerName)}">${escapeHtml(order.customerName)}</strong><b class="project-phone">${escapeHtml(order.phone || "Walk-in")}</b></div></td><td class="project-pic-cell" data-label="PIC">${projectPicHtml(order)}</td><td class="project-product-cell" data-label="Produk"><div class="project-product-heading"><strong title="${escapeHtml(product)}">${escapeHtml(product)}</strong>${projectDriveLink(item)}</div><small class="project-product-summary"><span title="${escapeHtml(specification)}">${escapeHtml(specification)}</span></small>${waitingApproval ? "" : projectSignifier(order)}</td><td class="project-quantity" data-label="Jumlah">${escapeHtml(itemQuantityLabel(item))}</td><td class="project-deadline ${projectDeadlineState(order)}" data-label="Deadline"><div class="project-deadline-content">${projectDeadlineHtml(order)}${approvalBadge}</div></td><td class="project-status-cell" data-label="Status">${projectStatusHtml(order)}</td></tr>`;
 }
 
-function projectProductSpecification(item) {
-  if (item.sheetCalculation) return sheetSpecification(item.sheetCalculation);
-  const size = item.imageWidthCm > 0 && item.imageLengthCm > 0
-    ? `${Number(item.imageWidthCm).toLocaleString("id-ID")} × ${Number(item.imageLengthCm).toLocaleString("id-ID")} cm${item.allowanceCm > 0 ? ` · Lebihan ${Number(item.allowanceCm).toLocaleString("id-ID")} cm/sisi` : ""}`
-    : item.displaySize || "";
-  const finishes = (item.finishing || []).map(finish => finish.name).filter(Boolean);
-  return [size, ...finishes.filter(name => !size.toLocaleLowerCase("id-ID").includes(name.toLocaleLowerCase("id-ID")))].filter(Boolean).join(" · ");
+function projectProductSpecification(item) { return productionSpecification(item); }
+
+function projectDriveLink(item) {
+  let link=''; try { link=driveLink(item.driveUrl || ''); } catch {}
+  return link ? `<a class="project-drive-link" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer" aria-label="Buka file Google Drive ${escapeHtml(item.productName)}" title="Buka Google Drive"><img src="/project-assets/link.svg" alt=""></a>` : '';
+}
+function projectStatusHtml(job) {
+  const user={...state.currentUser,permissions:state.permissions};
+  const editable=PRODUCTION_STATUSES.some(target=>target!==job.status && canMoveProduction(user,job.status,target));
+  return `<span class="project-status-control"><span class="project-status-dot" aria-hidden="true"></span><select data-project-status-order="${job.id}" data-project-status-item="${job.itemId}" aria-label="Ubah status ${escapeHtml(job.items[0].productName)}" ${editable?'':'disabled'}>${PRODUCTION_STATUSES.map(target=>`<option value="${target}" ${target===job.status?'selected':''} ${target!==job.status && !canMoveProduction(user,job.status,target)?'disabled':''}>${productionStatusLabel(target)}</option>`).join('')}</select></span>`;
+}
+function openProjectOrder(orderId,itemId) {
+  return openProjectItem({orderId,itemId,api,toast,escapeHtml,currentUser:()=>state.currentUser,onChanged:result=>{
+    const order=state.orders.find(o=>o.id===orderId),item=order?.items.find(i=>i.itemId===itemId);
+    if(item){for(const key of ['productionNote','driveUrl','productionRevision','productionUpdatedAt','productionUpdatedBy','hold'])if(Object.hasOwn(result.item,key))item[key]=result.item[key];refreshOrderHold(order);}
+    if(state.view==='projects')renderProjectContent(PROJECT_STAGES.map(([status])=>status));
+  }});
 }
 
 function projectColumn(status, source = projectJobs(state.orders)) {
   const jobs = source.filter(job => job.status === status);
-  return `<section class="kanban-column status-${status.toLowerCase()}"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${jobs.length}</span></div>${jobs.map(job => `<article class="order-card status-${status.toLowerCase()}" data-project-row-order="${job.id}" data-project-row-item="${job.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(job.items[0].productName)}"><div class="order-card-head">${projectSignifier(job)}<span class="project-pic-static project-pic-${projectPicTone(job.items[0])}">${escapeHtml(job.designPic || "Belum ada PIC")}</span></div><h4>${escapeHtml(job.customerName)}</h4><b class="project-phone">${escapeHtml(job.phone || "Walk-in")}</b><p class="project-card-product">${escapeHtml(job.items[0].productName)}</p><p class="project-card-specification">${escapeHtml(projectProductSpecification(job.items[0]))}</p><strong class="project-card-quantity">${escapeHtml(itemQuantityLabel(job.items[0]))}</strong><p class="project-deadline ${projectDeadlineState(job)}">${projectDeadlineHtml(job)}</p></article>`).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
+  return `<section class="kanban-column status-${status.toLowerCase()}"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${jobs.length}</span></div>${jobs.map(job => `<article class="order-card status-${status.toLowerCase()}" data-project-row-order="${job.id}" data-project-row-item="${job.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(job.items[0].productName)}"><div class="order-card-head">${projectSignifier(job)}<span class="project-pic-static project-pic-${projectPicTone(job.items[0])}">${escapeHtml(job.designPic || "Belum ada PIC")}</span></div><h4>${escapeHtml(job.customerName)}</h4><b class="project-phone">${escapeHtml(job.phone || "Walk-in")}</b><div class="project-product-heading"><p class="project-card-product">${escapeHtml(job.items[0].productName)}</p>${projectDriveLink(job.items[0])}</div><p class="project-card-specification">${escapeHtml(projectProductSpecification(job.items[0]))}</p><strong class="project-card-quantity">${escapeHtml(itemQuantityLabel(job.items[0]))}</strong><p class="project-deadline ${projectDeadlineState(job)}">${projectDeadlineHtml(job)}</p>${projectStatusHtml(job)}</article>`).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
 }
 
 function nextAction(order) {

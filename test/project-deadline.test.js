@@ -37,3 +37,13 @@ test("deadline kosong atau invalid aman dan tiap produk dihitung secara independ
   assert.deepEqual(items.map(item => projectDeadlineInfo(item, now).state), ["late", "future"]);
   assert.deepEqual(items, before);
 });
+
+test('keterlambatan selesai membeku pada waktu penyelesaian, dibuka kembali mengikuti waktu sekarang', () => {
+  const done={status:'SELESAI',deadline:'2026-10-10T08:00:00+08:00',completedAt:'2026-10-12T17:00:00+08:00'};
+  const expected={label:'Terlambat 2 hari',state:'late',overdueDays:2};
+  assert.deepEqual(projectDeadlineInfo(done,'2026-10-13T17:30:00+08:00'),expected);
+  assert.deepEqual(projectDeadlineInfo(done,'2026-11-30T17:30:00+08:00'),expected);
+  assert.equal(projectDeadlineInfo({...done,status:'CETAK',completedAt:null},'2026-10-15T17:30:00+08:00').overdueDays,5);
+  assert.equal(projectDeadlineInfo({...done,completedAt:'2026-10-09T17:30:00+08:00'},now).state,'future');
+  assert.equal(projectDeadlineInfo({...done,completedAt:'2026-10-10T07:30:00+08:00'},'2026-11-30T17:30:00+08:00').label,'10 Okt, 08.00');
+});

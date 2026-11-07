@@ -10,15 +10,18 @@ function witaDay(date) {
 export function projectDeadlineInfo(job, now = Date.now()) {
   const deadline = job.deadline ? new Date(job.deadline) : null;
   if (!deadline || !Number.isFinite(deadline.getTime())) return { label: "-", state: "none", overdueDays: 0 };
-  const current = new Date(now);
-  const dayOffset = Math.round((witaDay(deadline) - witaDay(current)) / 86400000);
   const finished = ["SELESAI", "DIAMBIL"].includes(job.status);
-  const state = finished ? "future" : deadline < current ? "late" : dayOffset === 0 ? "today" : "future";
+  const completion = job.completedAt ? new Date(job.completedAt) : null;
+  const frozen = finished && completion && Number.isFinite(completion.getTime());
+  const current = frozen ? completion : new Date(now);
+  const dayOffset = Math.round((witaDay(deadline) - witaDay(current)) / 86400000);
+  const state = finished && !frozen ? "future" : deadline < current ? "late" : finished ? "future" : dayOffset === 0 ? "today" : "future";
   const overdueDays = state === "late" ? Math.max(0, -dayOffset) : 0;
   const time = timeFormat.format(deadline);
+  const displayOffset = Math.round((witaDay(deadline) - witaDay(new Date(now))) / 86400000);
   const label = overdueDays ? `Terlambat ${overdueDays} hari`
-    : dayOffset === 0 ? `Hari ini, ${time}`
-    : dayOffset === 1 ? `Besok, ${time}`
+    : displayOffset === 0 ? `Hari ini, ${time}`
+    : displayOffset === 1 ? `Besok, ${time}`
     : `${dateFormat.format(deadline)}, ${time}`;
   return { label, state, overdueDays };
 }
