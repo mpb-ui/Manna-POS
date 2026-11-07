@@ -66,6 +66,10 @@ history, amounts, material costs, or the other invoice lines.
 - List and Kanban expose a Drive link and status selector. Clicking a row opens
   only that item; link/select interaction does not open the dialog. The six list
   columns follow the updated desktop proportions, with wrapping mobile rows.
-- One sticky footer saves notes and link. Backdrop/Escape/close dismiss unsaved
+- The Drive icon is vertically centered in the product cell, across its name and specification.
+- Named variant choices (including FL410 Glossy in historical `sizeVariantLabel`)
+  appear beside the quantity, without an invented size label or repeated quantity.
+- One sticky footer saves notes and link, then closes on success. Failed saves
+  keep the dialog and draft open. Backdrop/Escape/close dismiss unsaved
   drafts. Closing during an active write is guarded; failed saves retain inputs.
   Logout closes production dialogs. Note/link/hold/status changes are audited.

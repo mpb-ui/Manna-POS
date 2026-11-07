@@ -37,8 +37,14 @@ export function productionDetail(order, item) {
     result.variantSummary=item.dtfPackageLabel || '';
     details.push(...item.shirtVariants.map(v=>`${v.color} · ${v.size} × ${v.quantity} pcs`));
   } else {
-    result.variantSummary=row?.variant !== '—' ? row.variant.replaceAll(' | ', ', ') : row?.size !== '—' ? row.size : '';
-    if (row?.variant !== '—' && row?.size !== '—') details.push(`Ukuran: ${row.size}`);
+    // The historical sizeVariantLabel also stores named choices such as FL410
+    // Glossy. A choice label is not evidence of a physical measurement.
+    const variants=[...new Set([item.materialVariantLabel,item.sizeVariantLabel,item.subVariantLabel,...(item.choices || []).map(choice=>choice.optionLabel)].map(value=>String(value || '').trim()).filter(Boolean))];
+    const quantityOnly=/^\d+(?:[.,]\d+)?\s*(set|pack|box|paket|roll|rim|produk|buah|kaos|pcs|unit|lbr|lembar)$/i;
+    const historicalVariants=(row?.variant || '').split(' | ').filter(value=>value && value!=='—' && !quantityOnly.test(value));
+    const physicalSize=item.priceBasis!=='unit' && row?.size!=='—' ? row?.size : '';
+    result.variantSummary=variants.length ? variants.join(', ') : historicalVariants.join(', ') || physicalSize || '';
+    if (physicalSize && physicalSize!==result.variantSummary && !variants.includes(physicalSize)) details.push(`Ukuran: ${physicalSize}`);
   }
   if (Number(item.allowanceCm)>0) {
     details.push(`Lebihan ${Number(item.allowanceCm).toLocaleString('id-ID')} cm/sisi`);

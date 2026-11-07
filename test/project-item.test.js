@@ -35,6 +35,14 @@ test('spesifikasi produksi mempertahankan ukuran asli, lebihan, varian sisi dan 
  const detail=item=>productionDetail({id:'o',items:[item]},item).item;
  const print=detail({productName:'Outdoor',priceBasis:'sqm',imageWidthCm:100,imageLengthCm:120,allowanceCm:5,finalImageWidthCm:110,finalImageLengthCm:130,billedLength:1.5,width:1,quantity:1});
  assert.equal(print.variantSummary,'100 × 120 cm');assert.ok(print.details.includes('Ukuran akhir: 110 × 130 cm'));assert.ok(print.details.includes('Lebihan 5 cm/sisi'));
- const a3=detail({productName:'Kertas',priceBasis:'unit',materialVariantLabel:'Cream',subVariantLabel:'Cetak 1 Sisi',sizeVariantLabel:'A3',quantity:2});assert.equal(a3.variantSummary,'Cream, Cetak 1 Sisi');assert.ok(a3.details.includes('Ukuran: A3'));
+ const a3=detail({productName:'Kertas',priceBasis:'unit',materialVariantLabel:'Cream',subVariantLabel:'Cetak 1 Sisi',sizeVariantLabel:'A3',quantity:2});assert.equal(a3.variantSummary,'Cream, A3, Cetak 1 Sisi');assert.deepEqual(a3.details,[]);
  const shirt=detail({productName:'Kaos',priceBasis:'unit',dtfPackageLabel:'A3 1 Sisi',shirtVariants:[{color:'Hitam',size:'XL',quantity:2},{color:'Putih',size:'M',quantity:1}],quantity:3});assert.equal(shirt.variantSummary,'A3 1 Sisi');assert.deepEqual(shirt.details,['Hitam · XL × 2 pcs','Putih · M × 1 pcs']);
+});
+
+test('varian bernama FL410 Glossy tampil sebagai varian, tanpa jumlah berulang atau label ukuran',()=>{
+ const item={productName:'X-Banner',priceBasis:'unit',sizeVariantLabel:'FL410 Glossy',displaySize:'FL410 Glossy · 1 set',quantity:1,unitName:'set',width:1,actualLength:1,billedLength:1};
+ const before=structuredClone(item),result=productionDetail({id:'o',items:[item]},item).item;
+ assert.equal(result.variantSummary,'FL410 Glossy');assert.deepEqual(result.details,[]);assert.equal(result.quantity,1);assert.equal(result.unitName,'set');assert.deepEqual(item,before);
+ const legacy={...item,sizeVariantLabel:'',displaySize:'1 set'};
+ assert.equal(productionDetail({id:'o',items:[legacy]},legacy).item.variantSummary,'');
 });
