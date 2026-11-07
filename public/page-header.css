@@ -27,7 +27,7 @@
 
 /* Master Data: choose a tab, then work with that panel's controls. */
 .master-data-page>.master-tabs{margin-top:0;overflow-x:auto;scrollbar-width:thin}
-.master-data-page>.master-tabs button{flex:0 0 auto;white-space:nowrap;min-height:40px;font-size:14pt}
+.master-data-page>.master-tabs button{flex:0 0 auto;white-space:nowrap;min-height:40px;font-size:14px}
 .master-panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;padding:14px 16px}
 .master-panel-head>h2{font-size:18px;line-height:1.35;margin:0}
 .master-panel-controls,.master-panel-filters,.master-panel-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%}
