@@ -50,7 +50,7 @@ export async function openProjectItem({orderId,itemId,api,toast,escapeHtml:h,cur
       try {
         const link=driveLink(form.elements.driveUrl.value);
         const result=await api(path+'/production-details',{method:'PATCH',body:JSON.stringify({productionNote:form.elements.productionNote.value,driveUrl:link,expectedRevision:data.item.productionRevision})});
-        if(!live())return;data=result;form.elements.productionNote.value=result.item.productionNote;form.elements.driveUrl.value=result.item.driveUrl;savedLink();holdTools();feedback.textContent='Tersimpan';onChanged(result);
+        if(!live())return;onChanged(result);dialog.close();toast('Catatan dan link produksi disimpan.');
       } catch(error){if(live()){feedback.textContent=error.message;toast(error.message,'error');}}
       finally{dialog.removeAttribute('data-saving');button.disabled=false;}
     };
