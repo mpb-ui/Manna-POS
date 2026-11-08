@@ -90,19 +90,20 @@ export function createCustomersUI({state,root,api,masterFilters,moneyField,bindM
     root.querySelector('#customers-list').innerHTML=`<div class="customer-table customer-directory-table"><table><thead><tr><th>Pelanggan / WhatsApp</th><th>Transaksi Lunas</th><th>Total Belanja</th><th>Pembelian Terakhir</th><th>Sisa Tagihan</th><th>Deposit</th><th></th></tr></thead><tbody>${data.rows.map(c=>`<tr><td><strong>${e(c.name)}</strong><small>${e(c.phone)}</small>${c.matchReason==='Nama mirip'?'<small>Nama mirip</small>':''}</td><td>${c.paidOrders}</td><td><strong>${money(c.totalSpend)}</strong></td><td>${c.lastPurchaseAt?e(date(c.lastPurchaseAt)):'—'}</td><td>${money(c.outstanding)}</td><td><span class="deposit-tag ${c.depositBalance?'has-deposit':''}">${money(c.depositBalance)}</span></td><td><button class="secondary" data-customer-detail="${c.id}">Detail</button></td></tr>`).join('')||'<tr><td colspan="7">Belum ada pelanggan yang cocok.</td></tr>'}</tbody></table></div>`;root.querySelectorAll('[data-customer-detail]').forEach(b=>b.onclick=()=>detail(b.dataset.customerDetail).catch(error=>toast(error.message,'error')));const pages=root.querySelector('#customers-pages');pages.innerHTML=`<button data-prev ${data.page<=1?'disabled':''}>Sebelumnya</button><span>${data.total} pelanggan · ${data.page}/${data.pages}</span><button data-next ${data.page>=data.pages?'disabled':''}>Berikutnya</button>`;pages.querySelector('[data-prev]').onclick=()=>fetchRows(data.page-1);pages.querySelector('[data-next]').onclick=()=>fetchRows(data.page+1);}catch(error){if(token===generation)toast(error.message,'error');}};
   bindMasterFilters(masterFilters,'customers',root,{query:'#customer-search',sort:'#customer-sort',deposit:'#customer-with-deposit',outstanding:'#customer-with-outstanding'},(_filters,event)=>{seq++;clearTimeout(searchTimer);if(event?.type==='input')searchTimer=setTimeout(()=>fetchRows(),200);else fetchRows();});
  }
- async function mountOrder(scope,order) {
+ async function mountOrder(scope,order,{compact=false,onReceipts}={}) {
   const canCancel = canCancelOrder(order, state.currentUser.role, state.permissions);
   if (!can('pos.payment') && !canCancel) return;
   const identity = uid(), body = scope.querySelector('.detail-body');
-  const showHistory = can('pos.payment') && paymentHistoryVisible(state.currentUser.role);
+  const showHistory = can('pos.payment') && paymentHistoryVisible(state.currentUser.role) && (!compact || can('projects.money'));
   const data = showHistory ? await api(`/api/orders/${order.id}/cash-receipts`) : [];
   if (identity !== uid() || !body?.isConnected || !scope.contains(body)) return;
+  if(compact){onReceipts?.(data);if(!canCancel)return;}
   const paid = Boolean(order.paymentConfirmed || Number(order.paidAmount) || (order.payments || []).some(p => p.type === 'PO' || Number(p.amount) > 0));
   const cancelLabel = paid ? 'Batalkan Transaksi' : 'Batalkan Pesanan';
   const section = document.createElement('section');
-  section.className = 'customer-order-receipts';
-  section.innerHTML = `${showHistory ? `<h3>Bukti penerimaan uang / pengembalian</h3>${data.map(r => `<div class="payment-ledger-row"><span>${money(r.amount)} · ${e(r.method)}${r.depositAmount ? ` · Deposit ${money(r.depositAmount)}` : ''}${r.kind === 'REFUND' ? ' · Refund' : ''}</span><button class="secondary" data-cash-receipt="${r.id}">Cetak Bukti</button></div>`).join('') || '<small>Belum ada bukti penerimaan terpisah.</small>'}` : ''}${can('pos.payment') && !cancelled(order) ? '<button type="button" class="secondary" data-extra-transfer>Catat Transfer Tambahan</button>' : ''}${canCancel ? `<button type="button" class="secondary" data-cancel-order>${cancelLabel}</button>` : ''}`;
-  body.append(section);
+  section.className = compact ? 'invoice-secondary-actions' : 'customer-order-receipts';
+  section.innerHTML = `${showHistory && !compact ? `<h3>Bukti penerimaan uang / pengembalian</h3>${data.map(r => `<div class="payment-ledger-row"><span>${money(r.amount)} · ${e(r.method)}${r.depositAmount ? ` · Deposit ${money(r.depositAmount)}` : ''}${r.kind === 'REFUND' ? ' · Refund' : ''}</span><button class="secondary" data-cash-receipt="${r.id}">Cetak Bukti</button></div>`).join('') || '<small>Belum ada bukti penerimaan terpisah.</small>'}` : ''}${!compact && can('pos.payment') && !cancelled(order) ? '<button type="button" class="secondary" data-extra-transfer>Catat Transfer Tambahan</button>' : ''}${canCancel ? `<button type="button" class="secondary" data-cancel-order>${cancelLabel}</button>` : ''}`;
+  (compact ? body.querySelector('[data-invoice-secondary]') : body).append(section);
   section.querySelectorAll('[data-cash-receipt]').forEach(button => button.onclick = () => print(cashReceiptHtml(data.find(r => r.id === button.dataset.cashReceipt))));
   section.querySelector('[data-extra-transfer]')?.addEventListener('click', () => {
     scope.closest('dialog').close();
