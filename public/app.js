@@ -1,3 +1,4 @@
+import { invoiceDetailHtml, invoicePaymentHistoryHtml, invoicePickupAllowed } from './invoice-detail.js';
 import { closeProjectItems, openProjectItem } from './project-item-ui.js';
 import { PRODUCTION_STATUSES, productionStatusLabel, canMoveProduction, driveLink, productionSpecification } from './project-item.js';
 import {createMasterFilters,bindMasterFilters} from './master-filters.js';
@@ -22,7 +23,7 @@ import { checkoutDeadlineHtml, bindCheckoutDeadline } from "./checkout-deadline.
 import { mountPosSearch } from "./pos-search.js";
 import { installDatePickers } from "./date-picker.js";
 import { createCustomersUI } from "./customers-ui.js";
-import { depositInvoiceLines } from "./customer-documents.js";
+import { cashReceiptHtml, depositInvoiceLines } from "./customer-documents.js";
 import { openSheetProfiles } from "./sheet-profile-ui.js";
 import { effectivePriceTiers, updateWholesalePrices } from "./wholesale-prices.js";
 import { sheetCalculatorHtml, bindSheetCalculator, sheetProfileOptions } from "./sheet-calculator-ui.js";
@@ -37,7 +38,7 @@ import { paymentReceipts } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
 import { invoiceReceiptHtml, workOrderHtml } from "./thermal-documents.js";
 import { prepareThermalPrint } from "./thermal-print.js";
-import { projectJobs, itemQuantityLabel, nextItemStatus, roleCanAdvance, picColor, refreshOrderHold } from "./item-workflow.js";
+import { projectJobs, itemQuantityLabel, refreshOrderHold } from "./item-workflow.js";
 import { projectDeadlineInfo } from "./project-deadline.js";
 import { PROJECT_STAGES, sortProjectDeadlines, projectPicTone } from "./project-management.js";
 import { holdLabel } from "./hold-label.js";
@@ -1328,28 +1329,10 @@ function projectColumn(status, source = projectJobs(state.orders)) {
   return `<section class="kanban-column status-${status.toLowerCase()}"><div class="column-head"><h3>${state.statusLabels[status]}</h3><span>${jobs.length}</span></div>${jobs.map(job => `<article class="order-card status-${status.toLowerCase()}" data-project-row-order="${job.id}" data-project-row-item="${job.itemId}" tabindex="0" aria-label="Buka ${escapeHtml(job.items[0].productName)}"><div class="order-card-head">${projectSignifier(job)}<span class="project-pic-static project-pic-${projectPicTone(job.items[0])}">${escapeHtml(job.designPic || "Belum ada PIC")}</span></div><h4>${escapeHtml(job.customerName)}</h4><b class="project-phone">${escapeHtml(job.phone || "Walk-in")}</b><div class="project-product-heading"><p class="project-card-product">${escapeHtml(job.items[0].productName)}</p>${projectDriveLink(job.items[0])}</div><p class="project-card-specification">${escapeHtml(projectProductSpecification(job.items[0]))}</p><strong class="project-card-quantity">${escapeHtml(itemQuantityLabel(job.items[0]))}</strong><p class="project-deadline ${projectDeadlineState(job)}">${projectDeadlineHtml(job)}</p>${projectStatusHtml(job)}</article>`).join("") || '<div class="cart-empty" style="padding:28px 5px">Kosong</div>'}</section>`;
 }
 
-function nextAction(order) {
-  return { DESAIN: "Lanjut ke Proses Cetak", CETAK: "Lanjut ke Finishing", FINISHING: "Selesaikan Pesanan", SELESAI: "Pesanan Diterima" }[order.status];
-}
-
-function itemDetail(item) {
-  const finishing = (item.finishing || []).map((finish) => `${escapeHtml(finish.name)} × ${finish.units}${finish.note ? ` — ${escapeHtml(finish.note)}` : ""}`).join(", ");
-  const templateParts = item.templateDesign ? (can("projects.money") ? `<small>Harga spanduk: ${rupiah.format(item.baseTotal)}</small><small>Design Template ${escapeHtml(item.templateDesign)}: ${rupiah.format(item.templateDesignTotal || 35000)}</small>` : `<small>Template: ${escapeHtml(item.templateDesign)}</small>`) : "";
-  return `<strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize || `${item.width} × ${item.billedLength} m · ${item.quantity}x`)}</small>${templateParts}${item.templateDesign ? "" : `<small>File: ${escapeHtml(item.fileService?.name || "File Siap Cetak") + (item.fileService?.id && item.fileService.id !== "READY" ? ` × ${item.fileService.quantity || 1}${item.fileService.note ? ` (${escapeHtml(item.fileService.note)})` : ""}` : "")}</small>`}${finishing ? `<small>Finishing: ${finishing}</small>` : ""}${imageSizeNote(item) ? `<small class="image-size-note">${escapeHtml(imageSizeNote(item))}</small>` : ""}<small>Catatan: ${escapeHtml(item.productionNote || "—")}</small>`;
-}
-
-function itemWorkflowHtml(order, item) {
-  if (item.stockTiming === "SALE") return `<div class="item-workflow"><strong class="item-status">Barang Dagangan · ${escapeHtml(state.statusLabels[item.status] || item.status)}</strong></div>`;
-  const editableDeadline = ["OWNER", "CASHIER"].includes(state.currentUser.role) || state.currentUser.role === "MANAGER" && can("pos.edit");
-  const active = ["DESAIN", "CETAK", "FINISHING", "SELESAI"].includes(item.status);
-  const canAdvance = (can("projects.status") || state.currentUser.role === "CASHIER" && can("orders.pickup") && item.status === "FINISHING") && ["DESAIN", "CETAK", "FINISHING"].includes(item.status) && roleCanAdvance(state.currentUser.role, item.status, nextItemStatus(item));
-  return `<div class="item-workflow"><strong class="item-status">${escapeHtml(state.statusLabels[item.status])}</strong><label class="item-pic-field"><span>PIC</span>${can("projects.assign") && active ? `<select class="project-pic-select pic-${picColor(item)}" data-item-pic="${item.itemId}" aria-label="PIC ${escapeHtml(item.productName)}"><option value="" disabled ${item.designPic ? "" : "selected"}>-</option>${picSelectOptions(item)}</select>` : `<b class="project-pic-static pic-${picColor(item)}">${escapeHtml(item.designPic || "-")}</b>`}</label><div class="item-deadline"><span>Deadline</span>${editableDeadline ? `<form data-item-deadline="${item.itemId}"><input type="datetime-local" name="deadline" aria-label="Deadline ${escapeHtml(item.productName)} (WITA)" value="${localDateTimeInput(item.deadline)}"><button type="submit" class="secondary">Simpan</button></form>` : `<b>${item.deadline ? dateFormat.format(new Date(item.deadline)) + " WITA" : "-"}</b>`}</div>${canAdvance ? `<button type="button" class="primary item-advance" data-item-advance="${item.itemId}">${item.status === "FINISHING" ? "Selesaikan Produk" : nextAction(item)}</button>` : ""}</div>`;
-}
-
 function confirmUnpaidPickup(order) {
   return new Promise((resolve) => {
     const modal = document.createElement("dialog"); modal.className = "delete-confirm unpaid-confirm";
-    modal.innerHTML = `<div class="delete-confirm-body"><h3>Pesanan belum lunas</h3>${can("projects.money") && order ? `<p class="assist-payment-reminder">Masih ada sisa pembayaran <strong>${rupiah.format(order.outstanding ?? Math.max(0, Number(order.total || 0) - Number(order.paidAmount || 0)))}</strong></p>` : ""}<p>Cek kembali status pembayaran. Apakah Anda yakin mau menyelesaikan pesanan?</p><div class="delete-confirm-actions"><button type="button" class="primary" data-confirm>Ya, Selesaikan Pesanan</button><button type="button" class="secondary" data-cancel>Cek Kembali</button></div></div>`;
+    modal.innerHTML = `<div class="delete-confirm-body"><h3>Pesanan belum lunas</h3>${can("projects.money") && order ? `<p class="assist-payment-reminder">Masih ada sisa pembayaran <strong>${rupiah.format(order.outstanding ?? Math.max(0, Number(order.total || 0) - Number(order.paidAmount || 0)))}</strong></p>` : ""}<p>Barang akan ditandai diterima. Sisa tagihan tetap tercatat. Lanjutkan?</p><div class="delete-confirm-actions"><button type="button" class="primary" data-confirm>Ya, Pesanan Diterima</button><button type="button" class="secondary" data-cancel>Cek Kembali</button></div></div>`;
     document.body.append(modal);
     const close = (accepted) => { modal.close(); modal.remove(); resolve(accepted); };
     modal.querySelector("[data-confirm]").onclick = () => close(true);
@@ -1359,39 +1342,22 @@ function confirmUnpaidPickup(order) {
   });
 }
 
-function openOrder(id, showPayment = false, focusedItemId = null) {
-  const order = state.orders.find((item) => item.id === id);
-  if (!order) return toast("Pesanan tidak ditemukan", "error");
-  const showMoney = can("projects.money");
-  const isDesign = order.status === "DESAIN" && state.view !== "order-history";
-  const isWaiting = order.status === "MENUNGGU_PEMBAYARAN";
-  const outstanding = showMoney && !cancelled(order) ? Math.max(0, order.total - Number(order.paidAmount || 0)) : 0;
-  const detail = document.querySelector("#order-detail");
-  const paymentForm = can("pos.payment") && outstanding > 0 ? `<div id="payment-form-wrap" class="payment-form-wrap">${paymentFormHtml(order, outstanding)}</div>` : "";
-  detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${order.code}</span><h2 style="margin:5px 0 0">${escapeHtml(order.customerName)}</h2></div><button class="detail-close">×</button></div><div class="detail-body">
-    ${isWaiting ? paymentForm : ""}
-    <div class="detail-meta ${isDesign ? "design-meta" : ""}"><div class="meta-card"><span>Status</span><strong>${state.statusLabels[order.status]}</strong></div>${showMoney && !isDesign ? `<div class="meta-card"><span>Pembayaran</span><strong class="${paymentStatus(order)==="BELUM_LUNAS"?"payment-unpaid":""}">${paymentStatus(order).replaceAll("_", " ")}</strong></div>` : ""}${isWaiting ? "" : `<div class="meta-card"><span>PIC Design</span><strong>${escapeHtml(order.designPic || "Belum diambil")}</strong></div>`}</div>
-    <div class="order-items-detail">${order.items.map((item,index) => `<div class="detail-item status-${item.status.toLowerCase()}" data-detail-item="${item.itemId}" tabindex="-1"><span class="item-number">${index+1}</span><div class="detail-item-content">${itemDetail(item)}${itemWorkflowHtml(order,item)}</div>${showMoney && !isDesign ? `<strong class="item-price">${rupiah.format(item.subtotal)}</strong>` : ""}</div>`).join("")}</div>
-    ${showMoney && !isDesign ? `<div class="order-discount-totals">${invoiceDiscount(order) ? `<div class="detail-total discount-line"><span>Total Pesanan</span><strong>${rupiah.format(invoiceGross(order))}</strong></div><div class="detail-total discount-line"><span>Diskon Pesanan</span><strong>− ${rupiah.format(invoiceDiscount(order))}</strong></div>` : ""}<div class="detail-total"><span>${invoiceDiscount(order) ? "Total Tagihan" : "Total Pesanan"}</span><strong>${rupiah.format(order.total)}</strong></div></div>` : ""}
-    <div id="order-assistance" class="order-assistance"></div>
-    ${showMoney && can("orders.view") && paymentHistoryVisible(state.currentUser.role) ? `<section class="payment-ledger"><h3>Riwayat pembayaran</h3>${paymentReceipts(order).map(payment => `<div class="payment-ledger-row"><div><strong>${rupiah.format(payment.amount)} · ${escapeHtml(payment.method)}</strong><small>${dateFormat.format(new Date(payment.createdAt))} WITA · ${escapeHtml(payment.actor || "Riwayat lama")}</small></div><button class="secondary" data-print-payment="${escapeHtml(payment.id)}">Cetak Bukti #${payment.sequence}</button></div>`).join("") || (order.total === 0 && invoiceDiscount(order) ? '<p>Tagihan lunas melalui diskon penuh; tidak ada uang masuk.</p>' : '<p>Belum ada pembayaran diterima.</p>')}${(order.payments || []).filter(payment => payment.type === "PO").map(payment => `<p>PO / Tempo · ${escapeHtml(payment.poNumber)} · ${dateFormat.format(new Date(payment.createdAt))} WITA</p>`).join("")}</section>` : ""}
-    ${!isWaiting ? paymentForm : ""}
-    <p class="section-label" style="margin-top:18px">Riwayat pekerjaan</p><div class="timeline">${(order.timeline || []).map((item) => `<div class="timeline-item"><p>${escapeHtml(item.message)}</p><small>${escapeHtml(item.actor)} · ${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("")}</div>
-  </div><div class="detail-actions">
-      ${can("orders.return") && can("orders.view") && order.items.some(item => returnableRetailItem(order,item)) ? '<button id="return-goods" type="button" class="secondary detail-return">Retur Barang</button>' : ""}
-      ${isWaiting && can("pos.edit") ? '<button id="edit-order" class="secondary">Edit Pesanan</button>' : ""}
-      ${!isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="secondary">Konfirmasi Pembayaran</button>' : ""}
-      ${!isWaiting ? '<button id="print-spk" class="secondary">Print SPK</button>' : ""}
-      ${showMoney && can("orders.view") ? '<button id="print-invoice" class="secondary">Nota Ulang</button>' : ""}
-      ${showMoney && ["SELESAI", "DIAMBIL"].includes(order.status) ? '<button id="print-receipt" class="secondary">Print Tanda Terima</button>' : ""}
-      ${isWaiting && can("pos.payment") && outstanding > 0 ? '<button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button>' : ""}
-      ${(can("projects.status") || can("orders.pickup")) && order.status === "SELESAI" && roleCanAdvance(state.currentUser.role, order.status, "DIAMBIL") ? `<button id="advance-order" class="primary">${nextAction(order)}</button>` : ""}
-    </div>`;
-  detail.querySelector(".detail-close").onclick = () => dialog.close();
-  detail.querySelector("#edit-order")?.addEventListener("click", () => startEditOrder(order));
-  bindPaymentForm(order, outstanding);
-  const returnUserId = state.currentUser.id;
-  const validReturn = () => state.currentUser?.id === returnUserId && dialog.open && detail.isConnected;
+function openOrder(id) {
+  const order=state.orders.find(item=>item.id===id);
+  if(!order)return toast("Pesanan tidak ditemukan","error");
+  const detail=document.querySelector('#order-detail');
+  const c={escapeHtml,rupiah,dateFormat,statusLabels:state.statusLabels,user:{...state.currentUser,permissions:state.permissions},
+    showMoney:can('projects.money'),showPayments:can('projects.money') && can('orders.view') && paymentHistoryVisible(state.currentUser.role),
+    canReturn:can('orders.return') && can('orders.view') && order.items.some(item=>returnableRetailItem(order,item))};
+  detail.innerHTML=invoiceDetailHtml(order,c);
+  const invoice=detail.querySelector('.invoice-detail'),returnUserId=state.currentUser.id;
+  const validReturn=()=>state.currentUser?.id===returnUserId && dialog.open && invoice.isConnected;
+  let invoiceCashReceipts=[];
+  detail.querySelector('.invoice-detail-close').onclick=()=>{if(!invoice.hasAttribute('data-saving'))dialog.close();};
+  dialog.oncancel=event=>{if(invoice.hasAttribute('data-saving'))event.preventDefault();};
+  dialog.onclose=()=>{if(dialog.open)return;if(invoice.isConnected)detail.replaceChildren();dialog.oncancel=dialog.onclose=null;};
+  bindBackdropClose(dialog,{canClose:()=>!invoice.hasAttribute('data-saving')});
+  detail.querySelector('#edit-order')?.addEventListener('click',()=>startEditOrder(order));
   detail.querySelector("#return-goods")?.addEventListener("click", () => openGoodsReturn({ order, api, escapeHtml, valid:validReturn, toast,
     onSaved:async record => {
       dialog.close();
@@ -1407,49 +1373,30 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     }
   }));
   if(can("orders.view"))mountGoodsReturnHistory({scope:detail,order,api,escapeHtml,valid:validReturn}).catch(error=>{if(validReturn())toast(error.message,"error");});
-  const updateItem = async (itemId, field, body, control) => {
-    const related = [...detail.querySelectorAll("[data-item-advance]")].filter(button => button.dataset.itemAdvance === itemId);
-    control.disabled = true; related.forEach(button => { button.disabled = true; });
+
+  detail.querySelector('#advance-order')?.addEventListener('click',async event=>{
+    const button=event.currentTarget;if(button.disabled)return;button.disabled=true;invoice.setAttribute('data-saving','');
     try {
-      await api(`/api/orders/${order.id}/items/${itemId}/${field}`, { method: "PATCH", body: JSON.stringify(body) });
-      dialog.close(); await load(); openOrder(order.id, false, itemId); toast("Produk diperbarui dan dicatat di riwayat");
-    } catch (error) {
-      if (control.tagName === "SELECT") control.value = order.items.find(item => item.itemId === itemId)?.designPic || "";
-      toast(error.message, "error"); control.disabled = false; related.forEach(button => { button.disabled = false; });
-    }
-  };
-  detail.querySelectorAll("[data-item-pic]").forEach(select => select.onchange = () => updateItem(select.dataset.itemPic, "design-pic", { designPic: select.value }, select));
-  detail.querySelectorAll("[data-item-deadline]").forEach(form => form.onsubmit = event => {
-    event.preventDefault(); updateItem(form.dataset.itemDeadline, "deadline", { deadline: makassarInputToIso(form.elements.deadline.value) || null }, form.querySelector("button"));
+      const fresh=await api(`/api/order-history/${encodeURIComponent(order.id)}`);
+      if(!validReturn())return;
+      if(!invoicePickupAllowed(fresh,c.user))throw new Error('Seluruh item harus selesai sebelum pesanan diterima. Muat ulang detail.');
+      const outstanding=Math.max(0,Number(fresh.total || 0)-Number(fresh.paidAmount || 0));
+      let confirmed=false;
+      if(c.showMoney && outstanding>0){confirmed=await confirmUnpaidPickup({...fresh,outstanding});if(!confirmed)return;}
+      try { await api(`/api/orders/${order.id}/status`,{method:'PATCH',body:JSON.stringify({status:'DIAMBIL',confirmUnpaid:confirmed})}); }
+      catch(error){
+        if(error.code!=='UNPAID_PICKUP_CONFIRMATION' || confirmed)throw error;
+        confirmed=await confirmUnpaidPickup(fresh);if(!confirmed)return;
+        await api(`/api/orders/${order.id}/status`,{method:'PATCH',body:JSON.stringify({status:'DIAMBIL',confirmUnpaid:true})});
+      }
+      if(validReturn()){dialog.close();await load();toast('Pesanan ditandai diterima.');}
+    }catch(error){if(validReturn())toast(error.message,'error');}
+    finally{invoice.removeAttribute('data-saving');button.disabled=false;}
   });
-  detail.querySelectorAll("[data-item-advance]").forEach(button => button.onclick = () => {
-    const item = order.items.find(item => item.itemId === button.dataset.itemAdvance);
-    updateItem(item.itemId, "status", { status: nextItemStatus(item), expectedStatus: item.status }, button);
-  });
-  const advance = async (confirmUnpaid = false) => {
-    const button = detail.querySelector("#advance-order"); button.disabled = true;
-    try {
-      const sequence = ["MENUNGGU_PEMBAYARAN", "DESAIN", "CETAK", "FINISHING", "SELESAI", "DIAMBIL"];
-      await api(`/api/orders/${order.id}/status`, { method: "PATCH", body: JSON.stringify({ status: sequence[sequence.indexOf(order.status) + 1], confirmUnpaid, actor: order.designPic || "Tim Produksi" }) });
-      dialog.close(); await load(); toast("Status pesanan diperbarui");
-    } catch (error) {
-      if (error.code === "UNPAID_PICKUP_CONFIRMATION" && !confirmUnpaid) { if (await confirmUnpaidPickup(order)) await advance(true); }
-      else toast(error.message, "error");
-    } finally { button.disabled = false; }
-  };
-  detail.querySelector("#advance-order")?.addEventListener("click", async event => {
-    const button = event.currentTarget; if (button.disabled) return; button.disabled = true;
-    try {
-      const checked = await assistance.checkBeforeAdvance(order.id);
-      if (!checked.allow) return;
-      if (checked.outstanding != null) order.outstanding = checked.outstanding;
-      if (order.status === "SELESAI" && showMoney && (checked.outstanding ?? Math.max(0, order.total - Number(order.paidAmount || 0))) > 0) { if (await confirmUnpaidPickup(order)) await advance(true); }
-      else await advance();
-    } finally { button.disabled = false; }
-  });
-  detail.querySelector("#print-spk")?.addEventListener("click", () => printOrder(order, "spk"));
-  detail.querySelector("#print-invoice")?.addEventListener("click", () => printOrder(order, "invoice"));
-  detail.querySelectorAll("[data-print-payment]").forEach(button => button.onclick = async () => {
+  detail.querySelector('#print-spk')?.addEventListener('click',()=>printOrder(order,'spk'));
+  detail.querySelector('#print-invoice')?.addEventListener('click',()=>printOrder(order,'invoice'));
+  invoice.addEventListener("click", async event => {
+    const button=event.target.closest("[data-print-payment]"); if(!button || button.disabled)return;
     if (!can("orders.view") || !can("projects.money") || !paymentHistoryVisible(state.currentUser.role)) return;
     const userId = state.currentUser.id;
     button.disabled = true;
@@ -1460,15 +1407,19 @@ function openOrder(id, showPayment = false, focusedItemId = null) {
     } catch (error) { toast(error.message,'error'); }
     finally { button.disabled = false; }
   });
-  detail.querySelector("#print-receipt")?.addEventListener("click", () => printOrder(order, "receipt"));
+
+  invoice.addEventListener('click',event=>{
+    const refund=event.target.closest('[data-print-refund]');
+    if(refund && c.showPayments){const record=invoiceCashReceipts.find(row=>row.id===refund.dataset.printRefund);if(record)showPrintDocument(cashReceiptHtml(record),'payment-receipt');}
+    const po=event.target.closest('[data-invoice-po]');
+    if(po && c.showPayments){const payment=(order.payments || []).filter(p=>p.type==='PO')[Number(po.dataset.invoicePo)];if(payment){dialog.close();openPurchaseOrder({row:{poNumber:payment.poNumber,code:order.code,customer:order.customerName,attachment:payment.poAttachment},dialog,escapeHtml,canDownload:false,toast});}}
+  });
+  detail.querySelector('#print-receipt')?.addEventListener('click',()=>printOrder(order,'receipt'));
   dialog.showModal();
-  customersUI.mountOrder(detail,order).catch(error=>toast(error.message,"error"));
-  assistance.mountOrder(order, detail.querySelector("#order-assistance"));
-  if (focusedItemId && !(isWaiting && paymentForm)) {
-    const target = [...detail.querySelectorAll("[data-detail-item]")].find(element => element.dataset.detailItem === focusedItemId);
-    target?.classList.add("focused-item"); target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "center" });
-  }
-  if (showPayment) detail.querySelector("#payment-form-wrap")?.classList.remove("hidden");
+  customersUI.mountOrder(detail,order,{compact:true,onReceipts:records=>{
+    if(!validReturn() || !c.showPayments)return;
+    invoiceCashReceipts=records;invoice.querySelector('[data-invoice-payments]').innerHTML=invoicePaymentHistoryHtml(order,c,records);
+  }}).catch(error=>{if(validReturn())toast(error.message,'error');});
 }
 
 function openPaymentDialog(order, initial={}) {
