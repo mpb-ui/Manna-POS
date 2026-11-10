@@ -61,6 +61,10 @@ before cancellation; its outstanding receivable is zero after cancellation.
 - CSV and Print/PDF use the active tab, all filtered rows, and current ordering.
   CSV currency fields are numeric rupiah; user text is guarded against spreadsheet
   formula interpretation. On-screen tables show 25 rows per page.
+- On Penjualan, click or tap rows to toggle each selection, or use the date button
+  with the keyboard. Selection persists across pages, clears when filters change,
+  and can be cleared with Hapus pilihan. Invoice links and transaction actions
+  remain separate, and the selection does not affect CSV or Print/PDF.
 - Retur Barang/Piutang/PO are secondary views. Aset & Penyusutan opens the existing
   Master Data asset screen. Inventory and customer management stay in their pages.
 - Existing orders/payment/stock records are not migrated or repriced. For old

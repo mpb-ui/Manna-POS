@@ -3,6 +3,7 @@ export function createReportsUI(c) {
   const {root,api,escapeHtml:e,money,toast}=c;
   let generation=0,report=null,tab='sales',sort={key:'date',direction:-1},page=1;
   let filters={from:'',to:'',paymentStatus:'',paymentMethod:''};
+  const selectedSales=new Set();
   const pageSize=25;
   const tabs=[['sales','Penjualan'],['payments','Mutasi Kas'],['categories','Kategori'],['products','Produk'],['machines','Mesin']];
   const title=()=>[...tabs,['receivables','Piutang'],['returns','Retur Barang'],['po','Dokumen PO']].find(t=>t[0]===tab)?.[1] || 'Penjualan';
@@ -25,7 +26,14 @@ export function createReportsUI(c) {
     return [index+1,`${e(r.label)}${r.category?`<small>${e(r.category)}</small>`:''}`,Number(r.orders || 0).toLocaleString('id-ID'),qty(r),...(report.capabilities.money?[money(r.sales)]:[])];
   };
   const scopeNote=()=>report.range.locked?'Akses dibatasi pada data hari ini.':report.range.scope==='own'?'Hanya transaksi yang dibuat atau ditugaskan kepada Anda.':'';
-  const table=(data,offset=0,interactive=true)=>`<div class="table-wrap report-table-wrap"><table class="report-table"><thead><tr>${headers().map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${data.map((r,i)=>`<tr${r.kind!=='SALE' && r.kind?' class="report-correction-row"':''}>${cells(r,offset+i,interactive).map(cell=>`<td>${cell}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${headers().length}" class="report-empty">Belum ada data untuk filter ini.</td></tr>`}</tbody></table></div>`;
+  const table=(data,offset=0,interactive=true)=>`<div class="table-wrap report-table-wrap"><table class="report-table"><thead><tr>${headers().map(h=>`<th scope="col">${h}</th>`).join('')}</tr></thead><tbody>${data.map((r,i)=>{
+    const values=cells(r,offset+i,interactive),selectable=interactive && tab==='sales';
+    if(selectable){
+      const label=r.kind==='CANCELLATION'?'Koreksi pembatalan':r.kind==='DISCOUNT'?'Diskon invoice':'Penjualan';
+      values[0]=`<button type="button" class="report-row-toggle" data-report-row-toggle aria-pressed="false" aria-label="Pilih baris ${e(label)} ${e(r.code)}, ${e(values[0])}">${values[0]}</button>`;
+    }
+    return `<tr${r.kind!=='SALE' && r.kind?' class="report-correction-row"':''}${selectable?` data-report-sales-row="${e(r.eventId)}"`:''}>${values.map(cell=>`<td>${cell}</td>`).join('')}</tr>`;
+  }).join('') || `<tr><td colspan="${headers().length}" class="report-empty">Belum ada data untuk filter ini.</td></tr>`}</tbody></table></div>`;
   async function mount() {if(!filters.from){const t=today();filters.from=t.slice(0,7)+'-01';filters.to=t;}await refresh();}
   async function refresh() {
     const token=++generation,identity=c.identity();
@@ -34,6 +42,11 @@ export function createReportsUI(c) {
     try{
       const next=await api('/api/reports?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)));
       if(token!==generation || identity!==c.identity() || !c.isActive())return;
+      if(!report || ['from','to','scope'].some(key=>report.range[key]!==next.range[key]) || report.paymentStatus!==next.paymentStatus || report.paymentMethod!==next.paymentMethod)selectedSales.clear();
+      else if(selectedSales.size){
+        const available=new Set(next.rows.map(row=>row.eventId));
+        for(const id of selectedSales)if(!available.has(id))selectedSales.delete(id);
+      }
       report=next;filters={...filters,from:next.range.from,to:next.range.to};page=1;draw();
     }catch(error){if(token===generation && c.isActive()){toast(error.message,'error');if(report){filters={from:report.range.from,to:report.range.to,paymentStatus:report.paymentStatus,paymentMethod:report.paymentMethod};draw();}else root.innerHTML='<div class="category-empty"><strong>Laporan tidak dapat dimuat</strong><button class="secondary" data-report-retry>Coba lagi</button></div>';root.querySelector('[data-report-retry]')?.addEventListener('click',refresh);}}
     finally{if(token===generation)root.removeAttribute('aria-busy');}
@@ -46,7 +59,7 @@ export function createReportsUI(c) {
     root.innerHTML=`<div class="report-page report-foundation"><header class="page-toolbar"><h1>Laporan</h1><div class="page-toolbar-filters report-global-filters"><button type="button" class="secondary report-range-trigger" id="report-range" aria-haspopup="dialog">${e(dateLabel)}</button>${cap.money?`<label class="report-filter"><span class="sr-only">Status pembayaran</span><select id="report-payment"><option value="">Semua status</option><option value="BELUM_LUNAS" ${filters.paymentStatus==='BELUM_LUNAS'?'selected':''}>Belum Lunas</option><option value="LUNAS" ${filters.paymentStatus==='LUNAS'?'selected':''}>Lunas</option></select></label><label class="report-filter"><span class="sr-only">Metode pembayaran</span><select id="report-method"><option value="">Semua metode</option>${['TUNAI','QRIS','TRANSFER','DEPOSIT'].map(m=>`<option value="${m}" ${filters.paymentMethod===m?'selected':''}>${method(m)}</option>`).join('')}</select></label>`:''}</div></header><div class="report-body">${scopeNote()?`<p class="report-period-note">${scopeNote()}</p>`:''}
       <div class="report-summary-line">${cap.money?`<div><span>Omzet</span><strong>${money(report.summary.sales)}</strong><small>Invoice dan koreksi dalam periode</small></div><div><span>Uang Masuk Bersih</span><strong>${money(report.summary.paid)}</strong><small>Penerimaan dikurangi refund</small></div><button class="report-summary-link" data-other-report="receivables"><span>Piutang</span><strong>${money(report.summary.outstanding)}</strong><small>Seluruh tagihan s.d. ${e(day(filters.to))}</small></button>`:`<div><span>Invoice</span><strong>${report.summary.orders}</strong></div>`}</div>
       <div class="report-navigation"><div class="report-main-tabs" role="tablist" aria-label="Laporan">${tabs.filter(([id])=>id!=='payments' || cap.money).map(([id,label])=>`<button role="tab" aria-selected="${tab===id}" data-report-tab="${id}" class="${tab===id?'active':''}">${label}</button>`).join('')}</div><div class="report-secondary-actions"><select id="report-other" aria-label="Laporan lainnya"><option value="">Laporan Lain</option>${[...(cap.money?[['receivables','Piutang'],['po','Dokumen PO']]:[]),['returns','Retur Barang'],...(c.canAssets()?[['assets','Aset & Penyusutan']]:[])].map(([id,label])=>`<option value="${id}" ${tab===id?'selected':''}>${label}</option>`).join('')}</select>${cap.export?'<button class="secondary" id="report-export">Download CSV</button>':''}${cap.print?'<button class="secondary" id="report-print">Print / PDF</button>':''}</div></div>
-      <section class="report-data"><div class="report-list-heading"><div><h2>${title()}</h2><span>${count}</span></div>${['categories','products','machines'].includes(tab)?`<select id="report-ranking-sort" aria-label="Urutkan ranking">${cap.money?'<option value="sales" '+(sort.key==='sales'?'selected':'')+'>Penjualan tertinggi</option>':''}<option value="orders" ${sort.key==='orders'?'selected':''}>Invoice terbanyak</option>${tab==='products'?`<option value="quantity" ${sort.key==='quantity'?'selected':''}>Jumlah terjual</option>`:''}<option value="label" ${sort.key==='label'?'selected':''}>Nama A–Z</option></select>`:''}</div>
+      <section class="report-data"><div class="report-list-heading"><div><h2>${title()}</h2><span>${count}</span></div>${tab==='sales'?'<div class="report-selection"><span role="status" data-report-selection-count></span><button type="button" class="report-clear-selection" data-report-clear-selection hidden>Hapus pilihan</button></div>':''}${['categories','products','machines'].includes(tab)?`<select id="report-ranking-sort" aria-label="Urutkan ranking">${cap.money?'<option value="sales" '+(sort.key==='sales'?'selected':'')+'>Penjualan tertinggi</option>':''}<option value="orders" ${sort.key==='orders'?'selected':''}>Invoice terbanyak</option>${tab==='products'?`<option value="quantity" ${sort.key==='quantity'?'selected':''}>Jumlah terjual</option>`:''}<option value="label" ${sort.key==='label'?'selected':''}>Nama A–Z</option></select>`:''}</div>
       <p class="report-table-note">${tab==='payments'?'Setiap penerimaan dan refund adalah satu baris. Penggunaan deposit tidak dihitung sebagai uang masuk baru. Transaksi deposit tanpa invoice hanya tampil pada Semua pembayaran.':tab==='receivables'?'Piutang seluruh invoice sampai akhir periode; pembayaran setelah tanggal akhir belum mengurangi piutang di sini.':tab==='returns'?'Retur penggantian barang memotong stok tanpa menambah omzet atau uang masuk.':tab==='po'?'Dokumen PO adalah persetujuan pembelian; uang masuk dicatat saat pembayaran diterima.':`${tab==='sales'?'Status pembayaran dan piutang mengikuti kondisi akhir periode.':'Penjualan bersih setelah diskon; koreksi mengikuti tanggal pembatalan.'}${filters.paymentMethod?' Filter metode mencakup seluruh nilai invoice yang memakai metode tersebut.':''}`}</p>
       ${tab==='returns'?goodsReturnReportHtml(report,e,money):table(data.slice((page-1)*pageSize,page*pageSize),(page-1)*pageSize)}
       ${tab!=='returns'?`<div class="report-pagination"><span>${total?`${(page-1)*pageSize+1}–${Math.min(page*pageSize,total)}`:'0'} dari ${total} baris</span><div><button class="secondary" id="report-prev" ${page===1?'disabled':''}>Sebelumnya</button><span>${page} / ${pages}</span><button class="secondary" id="report-next" ${page===pages?'disabled':''}>Berikutnya</button></div></div>`:''}</section></div></div>`;
@@ -59,8 +72,33 @@ export function createReportsUI(c) {
     root.querySelector('#report-prev')?.addEventListener('click',()=>{page--;draw();});root.querySelector('#report-next')?.addEventListener('click',()=>{page++;draw();});
     root.querySelectorAll('[data-report-order]').forEach(b=>b.onclick=()=>c.openOrder(b.dataset.reportOrder));
     root.querySelectorAll('[data-report-delete]').forEach(b=>b.onclick=()=>openDelete(b.dataset.reportDelete));
+    if(tab==='sales')bindSalesSelection();
     root.querySelector('#report-export')?.addEventListener('click',exportCsv);root.querySelector('#report-print')?.addEventListener('click',print);
     // Native tab buttons retain their focus after switching views.
+  }
+  function bindSalesSelection(){
+    const body=root.querySelector('.report-table tbody'),count=root.querySelector('[data-report-selection-count]'),clear=root.querySelector('[data-report-clear-selection]');
+    const sync=()=>{
+      body.querySelectorAll('[data-report-sales-row]').forEach(row=>{
+        const selected=selectedSales.has(row.dataset.reportSalesRow);
+        row.toggleAttribute('data-selected',selected);
+        row.querySelector('[data-report-row-toggle]').setAttribute('aria-pressed',String(selected));
+      });
+      count.textContent=selectedSales.size?`${selectedSales.size} baris dipilih`:'';
+      clear.hidden=!selectedSales.size;
+    };
+    body.onclick=event=>{
+      const row=event.target.closest('[data-report-sales-row]');
+      if(!row || event.target.closest('button:not([data-report-row-toggle])'))return;
+      const id=row.dataset.reportSalesRow;
+      if(!selectedSales.delete(id))selectedSales.add(id);
+      sync();
+    };
+    clear.onclick=()=>{
+      const focus=body.querySelector('[data-selected] [data-report-row-toggle], [data-report-row-toggle]');
+      selectedSales.clear();sync();focus?.focus({preventScroll:true});
+    };
+    sync();
   }
   function selectTab(value){tab=value;sort={key:['categories','products','machines'].includes(tab)?report.capabilities.money?'sales':'orders':'date',direction:-1};page=1;draw();root.querySelector(`[data-report-tab="${value}"]`)?.focus({preventScroll:true});}
   function modal(name,body){const d=document.createElement('dialog');d.className='report-dialog';d.innerHTML=`<div class="detail-head"><h2>${e(name)}</h2><button type="button" class="detail-close" aria-label="Tutup">×</button></div><div class="report-dialog-body">${body}</div>`;document.body.append(d);d.querySelector('.detail-close').onclick=()=>d.close();d.onclose=()=>d.remove();d.showModal();return d;}
@@ -93,6 +131,6 @@ export function createReportsUI(c) {
   }
   function exportCsv(){const data=exportData(),cell=value=>{let v=String(value??'');if(typeof value==='string' && /^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replaceAll('"','""')+'"';};const blob=new Blob(['\uFEFF'+[data.headers,...data.data].map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`laporan-${tab}-${filters.from}-${filters.to}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function print(){c.print(`<div class="print-brand">MANNA PRINT</div><h2>Laporan ${e(title())}</h2><p>${e(day(filters.from))} – ${e(day(filters.to))} WITA · ${filters.paymentStatus==='LUNAS'?'Lunas':filters.paymentStatus==='BELUM_LUNAS'?'Belum Lunas':'Semua pembayaran'} · ${e(method(filters.paymentMethod || 'Semua metode'))}</p>${report.capabilities.money?`<p>Omzet ${money(report.summary.sales)} · Uang Masuk Bersih ${money(report.summary.paid)} · Piutang ${money(report.summary.outstanding)}</p>`:''}${tab==='returns'?goodsReturnReportHtml(report,e,money):table(rows(),0,false)}`);}
-  function reset(){generation++;report=null;filters={from:'',to:'',paymentStatus:'',paymentMethod:''};tab='sales';document.querySelectorAll('.report-dialog').forEach(d=>d.close());}
+  function reset(){generation++;report=null;selectedSales.clear();filters={from:'',to:'',paymentStatus:'',paymentMethod:''};tab='sales';document.querySelectorAll('.report-dialog').forEach(d=>d.close());}
   return {mount,reset};
 }
