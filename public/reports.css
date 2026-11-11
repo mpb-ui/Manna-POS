@@ -35,7 +35,7 @@
 .report-delete{border:0;background:none;font-size:20px;line-height:20px;color:#6d7787;padding:0 4px;min-height:24px;white-space:nowrap}
 .report-delete:hover{background:#fff0ef;border-radius:6px}
 .report-foundation .report-table .report-correction,.report-correction-row td:nth-child(5){color:#b43434}
-.report-table tr[data-report-sales-row]{cursor:pointer}
+.report-table tr[data-report-select-row]{cursor:pointer}
 .report-row-toggle{border:0;background:none;padding:0;color:inherit;font:inherit;text-align:left;white-space:nowrap}
 .report-foundation .report-table tbody tr[data-selected]{background:#65a3f6}
 .report-foundation .report-table tr[data-selected] :is(td,button,small,.payment-unpaid){color:#fff}
