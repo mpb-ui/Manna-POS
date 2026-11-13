@@ -162,6 +162,18 @@ export function openProductEditor(ctx, product = null) {
     form.querySelector('[data-variant-definition]').hidden=!isVariants();
     form.querySelector('[data-option-definition]').hidden=!hasOptions();
   }
+  function fillPrintSides(type, items, prefix) {
+    if (type !== 'Sisi Cetak') return;
+    const blank = items.filter(item => !item.label.trim());
+    const blankCount = blank.length, initialCount = items.length;
+    const sides = ['1 Sisi', '2 Sisi'].filter(label => !items.some(item => item.label.trim().toLowerCase() === label.toLowerCase()));
+    if (!blank.length && items.length) return;
+    for (const label of sides) {
+      const row = blank.shift();
+      if (row) row.label = label;
+      else if (blankCount === initialCount) items.push({id:id(prefix),label});
+    }
+  }
   form.addEventListener('input',event=>{
     if(event.target.name==='discountValue' && el('discountType').value==='nominal')event.target.value=event.target.value.trim()===''?'':ctx.parseMoney(event.target.value).toLocaleString('id-ID');
     const v=event.target.dataset.variantName,o=event.target.dataset.optionName;
@@ -173,6 +185,11 @@ export function openProductEditor(ctx, product = null) {
     const name=event.target.name;
     if(name==='saleUnit') { capture();const newMode=saleUnitBasis(el('saleUnit').value);if(newMode!==previousSaleBasis)el('wholesaleBasis').value=defaultWholesaleBasis(newMode);previousSaleBasis=newMode;syncBasics();renderCards(); }
     else if(name==='wholesaleBasis') { capture();basis=el('wholesaleBasis').value;renderCards(); }
+    else if(name==='variantType'||name==='optionType') {
+      capture();
+      fillPrintSides(event.target.value, name==='variantType'?variants:options, name==='variantType'?'v':'o');
+      renderNames();renderCards();
+    }
     else if(name==='productMode'||name==='hasOptions') { syncBasics();renderCards(); }
     else if(name==='category'||name==='a3Kind') { const selected=[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value);form.querySelector('#finishing-options').innerHTML=finishingOptionsHtml(el('category').value,selected,product?.a3Kind===el('a3Kind').value?product:null);syncBasics(); }
     else if(name==='a3Popular')syncBasics();
@@ -250,6 +267,8 @@ export function openProductEditor(ctx, product = null) {
     }catch(error){if(error.code==='A3_QUICK_LIMIT'){showTab('info');el('a3Popular').focus();}form.querySelector('.pe-error').textContent=error.message;form.querySelector('.pe-error').hidden=false;toast(error.message,'error');}finally{delete form.dataset.saving;form.querySelector('[type=submit]').disabled=false;form.querySelector('[data-cancel-editor]').disabled=false;detail.querySelector('.detail-close')?.removeAttribute('disabled');}
   };
   bindDeleteRecord(detail,product,'products','Produk','products');
+  fillPrintSides(el('variantType').value,variants,'v');
+  fillPrintSides(el('optionType').value,options,'o');
   renderNames();syncBasics();renderCards();bindMoney(form);enhanceMaterialSelects(detail,state.materials);
   return detail;
 }

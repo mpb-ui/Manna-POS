@@ -32,8 +32,11 @@ export function dtfProductEditor(product, materials, { e, moneyField, bindMoneyI
       <div id="dtf-panel-prices" role="tabpanel" aria-labelledby="dtf-tab-prices">
         <section class="dtf-editor-section">${heading(1, 'Harga Paket Sablon Kaos', '<button type="button" class="text-button" data-dtf-add-tier>+ Harga Grosir</button>')}<div data-dtf-pricing></div></section>
         <section class="dtf-editor-section">${heading(2, 'Harga Dasar / HPP')}<div class="dtf-editor-card">
-          <p class="product-note">Biaya bahan print dan kaos polos per kaos.</p>
-          ${packs.map(pack => `<label class="dtf-editor-row"><span>${e(pack.label)}</span>${amount('hpp-'+pack.id, pack.baseCost, `data-dtf-hpp="${e(pack.id)}" data-optional-money placeholder="5.000"`)}</label>`).join('')}
+          <div class="dtf-cost-columns">
+            <div><h4>Biaya Cetak</h4>${packs.map(pack => `<label><span>${e(pack.label)}</span>${amount('print-cost-'+pack.id, pack.printCost, 'data-optional-money placeholder="5.000"')}</label>`).join('')}</div>
+            <div><h4>Biaya Kaos</h4>${DTF_SIZES.map(size => `<label><span>${e(size)}</span>${amount('shirt-cost-'+size, product.dtfShirtCosts?.find(row=>row.size===size)?.amount, 'data-optional-money')}</label>`).join('')}</div>
+          </div>
+          ${packs.some(pack => pack.baseCost != null && pack.printCost == null) ? '<p class="product-note dtf-cost-note">HPP lama tetap dipakai untuk paket yang biaya cetaknya belum diisi.</p>' : ''}
         </div></section>
         <section class="dtf-editor-section">${heading(3, 'Tambahan Harga Ukuran')}<div class="dtf-editor-card" data-dtf-fees></div></section>
         ${settings}
@@ -104,7 +107,7 @@ export function dtfProductEditor(product, materials, { e, moneyField, bindMoneyI
       const table = `<div class="dtf-price-scroll"><table class="dtf-price-table ${tiers.length?'has-tiers':''}">
         ${tiers.length ? `<thead><tr><th scope="col">Paket</th><th scope="col">Harga satuan</th>${tiers.map((tier,i)=>`<th scope="col" data-dtf-tier-heading>${tierName(tier,i)}</th>`).join('')}</tr></thead>` : ''}
         <tbody>${packs.map(pack => `<tr><th scope="row">${e(pack.label)}</th><td>${amount('package-'+pack.id,retail[pack.id],`data-dtf-retail="${e(pack.id)}" aria-label="Harga satuan ${e(pack.label)}"`)}</td>${tiers.map((tier,i)=>`<td>${amount('tier-'+i+'-'+pack.id,tier.prices[pack.id],`data-dtf-tier-price="${i}" data-package="${e(pack.id)}" aria-label="Harga grosir ${i+1} ${e(pack.label)}"`)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-      pricing.innerHTML = `<div class="dtf-editor-card">${tiers.length ? `<p class="product-note">Rentang berlaku untuk total kaos dengan paket sablon yang sama dalam satu pesanan. Kosongkan Maks untuk tanpa batas.</p>${ranges}` : ''}${table}</div>`;
+      pricing.innerHTML = `<div class="dtf-editor-card">${ranges}${table}</div>`;
       $('[data-dtf-add-tier]').disabled = tiers.length >= MAX_DTF_TIERS;
       bindMoneyInputs(pricing);
     }
@@ -212,7 +215,7 @@ export function dtfProductEditor(product, materials, { e, moneyField, bindMoneyI
       const packages=packs.map(pack=>({
         id:pack.id,
         price:readMoney(form.elements['package-'+pack.id], {positive:true}),
-        baseCost:readMoney(form.elements['hpp-'+pack.id], {optional:true})
+        printCost:readMoney(form.elements['print-cost-'+pack.id], {optional:true})
       }));
       const ranges=[...pricing.querySelectorAll('[data-dtf-range]')];
       const wholesaleTiers=ranges.map((range,index)=>{
@@ -245,7 +248,8 @@ export function dtfProductEditor(product, materials, { e, moneyField, bindMoneyI
       }
       if(stockVariants.length>MAX_DTF_VARIANTS) fail('stock',`Maksimal ${MAX_DTF_VARIANTS} kombinasi warna dan ukuran`,$('[data-dtf-add-color]'));
       for (const input of feeBox.querySelectorAll('[data-dtf-fee]')) fees.set(input.dataset.dtfFee,readMoney(input));
-      return { packages, wholesaleTiers:wholesaleTiers.map(({min,max,prices})=>({min,max,prices})), stockVariants,
+      const shirtCosts=DTF_SIZES.map(size=>({size,amount:readMoney(form.elements['shirt-cost-'+size], {optional:true})})).filter(row=>row.amount!==null);
+      return { packages, shirtCosts, wholesaleTiers:wholesaleTiers.map(({min,max,prices})=>({min,max,prices})), stockVariants,
         sizeSurcharges:allSizes().map(size=>({size,amount:fees.get(size) ?? dtfSizeSurcharge(product,size)})) };
     };
   }};

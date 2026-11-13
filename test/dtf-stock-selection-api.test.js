@@ -95,6 +95,26 @@ test('endpoint stok kaos ringan, tanpa nominal, permission POS, dan memakai rese
   const report=await ok('/api/reports');
   assert.equal(report.rows.find(row=>row.id===order.id).cost,125000,'complete HPP overrides material cost and stays fixed after catalog changes');
   assert.equal((await ok('/api/order-history/'+order.id)).total,order.total);
+  const printPackages=packages.map(pack=>pack.id==='logo'?{...pack,printCost:6000}:pack);
+  const shirtCosts=[{size:'xxl',amount:42000},{size:'L',amount:0}];
+  for (const costs of [[{size:'3XL',amount:1}],[{size:'L',amount:-1}],[{size:'L',amount:1},{size:' l ',amount:2}]]) {
+    assert.equal((await request(productPath,'PUT',{packages:printPackages,shirtCosts:costs})).status,400);
+  }
+  assert.equal((await request(productPath,'PUT',{packages:printPackages.map(pack=>({...pack,printCost:-1})),shirtCosts})).status,400);
+  await ok(productPath,'PUT',{packages:printPackages,shirtCosts});
+  const mixed={...lines[0],shirtVariants:[{...lines[0].shirtVariants[0],quantity:2},{color:'Navy',size:'L',quantity:3}]};
+  const pricedMixed=(await quote([mixed])).items[0];
+  assert.equal(pricedMixed.baseCostTotal,114000,'print plus shirt cost per size; explicit Rp0 overrides stock cost');
+  assert.equal(pricedMixed.subtotal,505000,'cost does not change the sale price or XXL surcharge');
+  const newOrder=await ok('/api/orders','POST',{...input,items:[mixed]});
+  await ok(productPath,'PUT',{packages:printPackages,shirtCosts:[]});
+  assert.equal((await quote([mixed])).items[0].baseCostTotal,36000,'blank shirt cost falls back to the mapped material cost');
+  const safeSplit=(await ok('/api/bootstrap?view=pos','GET',undefined,cashierCookie)).products.find(p=>p.dtfShirt);
+  assert(!Object.hasOwn(safeSplit,'dtfShirtCosts'));
+  assert(safeSplit.dtfPackages.every(pack=>!Object.hasOwn(pack,'printCost')));
+  const updatedReport=await ok('/api/reports');
+  assert.equal(updatedReport.rows.find(row=>row.id===newOrder.id).cost,114000,'new HPP stays fixed and does not add material cost again');
+  assert.equal(updatedReport.rows.find(row=>row.id===order.id).cost,125000,'previous complete HPP remains unchanged');
   const job=`/api/orders/${oldOrder.id}/items/${oldOrder.items[0].itemId}`;
   await ok(job+'/design-pic','PATCH',{designPic:'Gema'});
   await ok(job+'/project-status','PATCH',{status:'CETAK',expectedStatus:'DESAIN'});
