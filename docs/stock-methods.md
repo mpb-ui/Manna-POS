@@ -29,14 +29,19 @@ Basis audit: `defe7f230131f51de2854f79571866b4334a866c` (main/production saat pe
 
 ## Master Data dan migrasi
 
-Tambah/Edit Bahan memiliki Metode Pencatatan Stok, Satuan kalkulasi/HPP, Satuan stok fisik dan Lebar roll. ROLL memakai stokUnit=roll, sedangkan material.unit dan cost tetap satuan konsumsi/HPP. UNIT memakai satuan konsumsi yang sama (alias lbr/lembar dikenali).
+**Tambah Bahan** mencatat saldo awal secara langsung. ROLL memakai satuan
+fisik roll; UNIT memakai satuan kalkulasi (alias lbr/lembar dikenali).
+Stok Minimum opsional di Tambah dan Edit Bahan. Edit Bahan menampilkan metode,
+satuan kalkulasi, dan lebar roll sebagai informasi; menyimpan data bahan
+atau ambang stok minimum tidak mengubah saldo.
 
-Untuk saldo roll lama dalam m²/m lari:
+Untuk menghitung ulang saldo, termasuk saldo roll lama dalam m²/m lari:
 
-1. Buka Master Data → Bahan → Edit atau Stok Bahan → Tetapkan Saldo Roll.
-2. Tetapkan lebar SKU yang benar dan hitung jumlah roll fisik.
-3. Centang konfirmasi stok opname, isi saldo awal roll dan alasan. Review juga stok minimum sebagai ambang fisik baru.
-4. Simpan. Ledger METHOD_OPENING mencatat saldo/unit lama, saldo/unit baru, actor dan alasan. Tidak ada konversi menggunakan ukuran roll.
+1. Buka **Stok Bahan → Stok Opname** (atau **Tetapkan Saldo Roll** untuk saldo lama).
+2. Periksa metode, satuan, lebar roll jika berlaku, dan ambang stok minimum.
+3. Masukkan hasil hitung fisik dan alasan. Tidak ada konversi saldo otomatis.
+4. Simpan. Mutasi `METHOD_OPENING` mencatat saldo/satuan lama dan baru, petugas,
+   dan alasan. Jika saldo berubah saat dialog terbuka, muat ulang sebelum menyimpan.
 
 Jika SKU lama generik menggabungkan beberapa lebar, administrator harus menetapkan SKU tersendiri per lebar berdasarkan hitung fisik yang nyata; sistem tidak memecah/membagi saldo atau hubungan historis dengan asumsi. Nama/SKU lama dan snapshot order tetap dipertahankan.
 

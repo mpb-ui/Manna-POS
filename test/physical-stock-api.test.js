@@ -15,8 +15,24 @@ test("API stok: roll/opname, ATK, DP/PO, produksi, retry, retur dan izin",async(
       if(r.body?.code==='CUSTOMER_MATCH_REQUIRED'&&args[1]==='POST')r=await req(args[0],args[1],{...args[2],newCustomerConfirmedIds:r.body.matches.map(c=>c.id)},args[3]);assert(r.status>=200&&r.status<300,JSON.stringify(r));return r.body};
   let state=await ok('/api/bootstrap'),roll=state.materials.find(m=>m.id==='mat-flexi-280');const oldStock=state.inventory.find(r=>r.materialId===roll.id),oldBalance=oldStock.quantity;
   assert.equal(roll.stockMethod,'ROLL');assert.equal(oldStock.stockNeedsCount,true);assert.equal(oldStock.unit,'m²');assert.equal((await req('/api/inventory/'+roll.sku,'PATCH',{change:-1,reason:'bad'})).status,400);
-  roll=await ok('/api/materials/'+roll.id,'PUT',{...roll,stockMethod:'ROLL',rollWidthCm:110,confirmStockCount:true,stockOpeningBalance:10,stockCountReason:'Hitung 10 roll gudang',minStock:1});assert.equal(roll.unit,'m²');assert.equal(roll.stockUnit,'roll');
-  await ok('/api/inventory/'+roll.sku,'PATCH',{change:-1,reason:'Buka roll',requestId:'roll-out'});await ok('/api/inventory/'+roll.sku,'PATCH',{change:-1,reason:'Buka roll',requestId:'roll-out'});await ok('/api/inventory/'+roll.sku,'PATCH',{change:5,reason:'Masuk 5 roll',requestId:'roll-in'});state=await ok('/api/bootstrap');assert.equal(state.inventory.find(r=>r.materialId===roll.id).quantity,14);assert.equal(state.stockMovements.find(m=>m.type==='METHOD_OPENING').previousBalance,oldBalance);
+  const countPath='/api/inventory/'+roll.sku+'/count';
+  const expected=stock=>({expectedQuantity:stock.quantity,expectedUnit:stock.unit,expectedMethod:stock.stockMethod,expectedUpdatedAt:stock.updatedAt});
+  const count={...expected(oldStock),unit:'m²',stockMethod:'ROLL',rollWidthCm:110,stockOpeningBalance:10,stockCountReason:'Hitung 10 roll gudang',minStock:1};
+  assert.equal((await req('/api/materials/'+roll.id,'PUT',{...roll,confirmStockCount:true,stockOpeningBalance:10})).status,400);
+  assert.equal((await req(countPath,'POST',{...count,stockOpeningBalance:''})).status,400);
+  assert.equal((await req(countPath,'POST',{...count,stockOpeningBalance:2.5})).status,400);
+  const counted=await ok(countPath,'POST',count);
+  assert.equal(counted.stock.unit,'roll');assert.equal(counted.movement.previousUnit,'m²');
+  assert.equal((await req(countPath,'POST',count)).status,409);
+  const created=await ok('/api/materials','POST',{name:'Kertas stok uji',sku:'STOK-OPNAME-UJI',unit:'lbr',stockMethod:'UNIT',stock:3000});
+  const createdStock=(await ok('/api/bootstrap?view=stock')).inventory.find(row=>row.materialId===created.id);
+  assert.equal(createdStock.quantity,3000);assert.equal(createdStock.unit,'lbr');assert.equal(createdStock.minStock,0);
+  await ok('/api/materials/'+created.id,'PUT',{name:created.name,sku:created.sku,category:created.category,minStock:1000,stock:9999});
+  const afterEdit=(await ok('/api/bootstrap?view=stock')).inventory.find(row=>row.materialId===created.id);
+  assert.equal(afterEdit.quantity,3000);assert.equal(afterEdit.minStock,1000);
+  const recounted=await ok('/api/inventory/'+created.sku+'/count','POST',{...expected(afterEdit),unit:'lbr',stockMethod:'UNIT',stockOpeningBalance:2500,stockCountReason:'Hitung kertas'});
+  assert.equal(recounted.stock.quantity,2500);assert.equal(recounted.stock.minStock,1000);assert.equal(recounted.movement.previousBalance,3000);
+  await ok('/api/inventory/'+roll.sku,'PATCH',{change:-1,reason:'Buka roll',requestId:'roll-out'});await ok('/api/inventory/'+roll.sku,'PATCH',{change:-1,reason:'Buka roll',requestId:'roll-out'});await ok('/api/inventory/'+roll.sku,'PATCH',{change:5,reason:'Masuk 5 roll',requestId:'roll-in'});state=await ok('/api/bootstrap');assert.equal(state.inventory.find(r=>r.materialId===roll.id).quantity,14);assert.equal(state.stockMovements.find(m=>m.type==='METHOD_OPENING'&&m.materialId===roll.id).previousBalance,oldBalance);
   assert.equal((await req('/api/materials/'+roll.id,'PUT',{...roll,stockMethod:'UNIT',stockUnit:'m²'})).status,400);
   const pen=state.products.find(p=>p.retailAtK&&p.saleUnit==='pcs'),paper=state.products.find(p=>p.a3Variant==='AP 260'&&p.a3Side==='1S');assert(pen);assert(paper);
   const penSku=pen.retailStockSku,paperStock=state.inventory.find(r=>r.materialId===paper.materialSources[0].materialId);
@@ -36,5 +52,6 @@ test("API stok: roll/opname, ATK, DP/PO, produksi, retry, retur dan izin",async(
   const pos=await ok('/api/bootstrap?view=pos');assert(!pos.orders.some(o=>o.id===draft.id));assert.equal(pos.allProducts.length,0);assert.equal(pos.inventory.length,0);assert.equal(pos.auditLogs.length,0);assert.equal((await ok(`/api/order-history/${draft.id}`)).payments.length,1);
   const master=await ok('/api/bootstrap?view=master');assert(master.allProducts.length);assert(master.inventory.length);const history=await ok('/api/stock-movements?offset=0&limit=3');assert.equal(history.movements.length,3);assert.equal(history.hasMore,true);
   await ok('/api/users','POST',{name:'Operator',username:'op-stock',pin:'5678',role:'PRINT'});const auth=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'op-stock',pin:'5678'})});const restricted=auth.headers.get('set-cookie').split(';')[0];assert.equal((await req('/api/inventory/'+penSku,'PATCH',{change:1,reason:'no'},restricted)).status,403);assert.equal((await req('/api/stock-movements','GET',undefined,restricted)).status,403);
+  assert.equal((await req(countPath,'POST',count,restricted)).status,403);
  }finally{child.kill();await new Promise(r=>child.once('exit',r));}
 });

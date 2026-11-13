@@ -234,3 +234,20 @@
 .dtf-cost-columns label{display:grid;gap:4px;margin:0 0 8px;font-size:13px;font-weight:600}
 .dtf-cost-columns label:last-child{margin-bottom:0}
 .dtf-editor-card .dtf-cost-note{margin:12px 0 0}
+
+/* Compact material editor: fixed label column and the physical unit beside stock amounts. */
+.master-dialog:has(#material-form) .detail-head .eyebrow{display:none}
+.master-dialog:has(#material-form) .detail-head h2{margin:0!important}
+.material-fields,.material-balances{display:grid;gap:8px;min-width:0}
+.material-field{display:grid;grid-template-columns:minmax(0,155px) minmax(0,1fr);align-items:center;gap:12px;font-size:13px;font-weight:700}
+.material-field input,.material-field select{width:100%;min-width:0;min-height:38px;padding:8px 11px;border:1px solid #d7dfe9;border-radius:8px;background:#fff;color:#17263c;font-size:14px;font-weight:600}
+.material-field input[readonly]{background:#f7f9fc}
+.material-field .input-with-unit input{padding-right:68px}
+.material-field .input-with-unit>b{font-size:11px;font-weight:600}
+.material-cost{position:relative}
+.material-cost input{padding-left:34px}
+.material-cost b{position:absolute;top:50%;left:11px;transform:translateY(-50%);color:#52627a;font-size:11px;pointer-events:none}
+.material-balances{padding-top:14px;margin-top:6px;border-top:1px solid #d7dfe9}
+.material-footer{flex-wrap:wrap}
+.material-footer>.delete-trigger{margin-right:0}
+@media(max-width:480px){.material-field{grid-template-columns:minmax(0,1fr);gap:4px}}
