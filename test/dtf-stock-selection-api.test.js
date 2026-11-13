@@ -27,7 +27,7 @@ test('endpoint stok kaos ringan, tanpa nominal, permission POS, dan memakai rese
   const getProduct=async()=>(await ok('/api/bootstrap?view=master')).allProducts.find(product=>product.dtfShirt);
   const product=await getProduct();
   const makeShirt=(size,stock)=>ok('/api/materials','POST',{name:`Kaos Polos Navy ${size}`,sku:`QA-NAVY-${size}`,category:'Kaos Polos DTF',unit:'pcs',stockMethod:'UNIT',stockUnit:'pcs',stock});
-  const navyM=await makeShirt('M',4),navyL=await makeShirt('L',6),navy3XL=await makeShirt('3XL',3);
+  const navyM=await makeShirt('M',4),navyL=await makeShirt('L',6),navy3XL=await makeShirt('3XL',3),navyS=await makeShirt('S',3);
   const variants=[...product.dtfStockVariants,{color:' Navy ',size:'m',materialId:navyM.id},{color:'navy',size:'L',materialId:navyL.id}];
   const body={packages:product.dtfPackages,stockVariants:variants};
   assert.equal((await request(productPath,'PUT',body,warehouseCookie)).status,403);
@@ -35,6 +35,7 @@ test('endpoint stok kaos ringan, tanpa nominal, permission POS, dan memakai rese
     {...body,stockVariants:[...variants,{color:'NAVY',size:' m ',materialId:navy3XL.id}]},
     {...body,stockVariants:[...variants,{color:'Navy',size:'3XL',materialId:navyL.id}]},
     {...body,stockVariants:[...variants,{color:'Navy',size:'3XL',materialId:'mat-not-found'}]},
+    {...body,stockVariants:[...variants,{color:'Navy',size:'3XL',materialId:navy3XL.id}]},
     {...body,stockVariants:[]},
     {...body,sizeSurcharges:[{size:'M',amount:-100}]},
     {...body,sizeSurcharges:[{size:'3XL',amount:20000}]}
@@ -51,12 +52,49 @@ test('endpoint stok kaos ringan, tanpa nominal, permission POS, dan memakai rese
   await ok(`/api/orders/${oldOrder.id}/payments`,'POST',{method:'TUNAI',amount:1});
   assert.equal((await stock()).find(row=>row.materialId===navyM.id).available,2);
   // Changing the catalogue leaves confirmed orders bound to their original SKU.
-  await ok(productPath,'PUT',{...body,stockVariants:[...variants.filter(row=>row.materialId!==navyM.id),{color:'Navy',size:'3XL',materialId:navy3XL.id}],sizeSurcharges:[{size:'3xl',amount:20000}]});
+  await ok(productPath,'PUT',{...body,stockVariants:[...variants.filter(row=>row.materialId!==navyM.id),{color:'Navy',size:'S',materialId:navyS.id}],sizeSurcharges:[{size:'s',amount:20000}]});
   assert.equal((await stock()).some(row=>row.materialId===navyM.id),false);
-  const priced=await ok('/api/orders','POST',navyInput('3XL',2));
+  const priced=await ok('/api/orders','POST',navyInput('S',2));
   assert.equal(priced.total,230000);
-  assert.equal(priced.items[0].materials[0].materialId,navy3XL.id);
+  assert.equal(priced.items[0].materials[0].materialId,navyS.id);
   assert.equal((await ok('/api/orders','POST',{...navyInput('XXL'),items:[{...input.items[0],shirtVariants:[{color:'Putih',size:'XXL',quantity:1}]}]})).total,110000);
+  // Package totals cross line/color boundaries, while complete HPP overrides material cost.
+  await ok('/api/inventory/KAOS-HIT-XXL','PATCH',{change:30,reason:'QA grosir'});
+  await ok('/api/inventory/KAOS-PUT-M','PATCH',{change:30,reason:'QA grosir'});
+  await ok('/api/materials/'+navyL.id,'PUT',{...navyL,cost:2000});
+  const current=await getProduct();
+  const packages=current.dtfPackages.map(pack=>pack.id==='logo'?{...pack,baseCost:5000}:pack);
+  const prices=Object.fromEntries(packages.map(pack=>[pack.id,pack.price-5000]));
+  const wholesaleTiers=[{min:25,max:null,prices}];
+  for(const update of [
+    {wholesaleTiers:[{min:10,max:25,prices},...wholesaleTiers]},
+    {wholesaleTiers:[{min:25,max:null,prices:{logo:90000}}]},
+    {packages:packages.map(pack=>({...pack,baseCost:-1}))}
+  ])assert.equal((await request(productPath,'PUT',{packages,wholesaleTiers,...update})).status,400);
+  await ok(productPath,'PUT',{packages,wholesaleTiers});
+  const lines=[
+    {...input.items[0],shirtVariants:[{color:'Hitam',size:'XXL',quantity:20}]},
+    {...navyInput('L',5).items[0]},
+    {...input.items[0],dtfPackageId:'logo-a4',shirtVariants:[{color:'Putih',size:'M',quantity:5}]}
+  ];
+  const quote=items=>ok('/api/orders/check','POST',{items,includeItems:true});
+  assert.deepEqual((await quote(lines)).items.map(item=>[item.unitPrice,item.subtotal,item.baseCostTotal]),[
+    [90000,2100000,100000],[90000,450000,25000],[120000,600000,undefined]
+  ]);
+  assert.equal((await quote([lines[0],navyInput('L',4).items[0]])).items[0].unitPrice,95000);
+  const order=await ok('/api/orders','POST',{...input,items:lines});
+  const cashier=await ok('/api/users','POST',{name:'Kasir QA',username:'shirt-kasir',pin:'7890',role:'CASHIER'});
+  assert.equal(cashier.role,'CASHIER');
+  const cashierLogin=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'shirt-kasir',pin:'7890'})});
+  const cashierCookie=cashierLogin.headers.get('set-cookie').split(';')[0];
+  const cashierProduct=(await ok('/api/bootstrap?view=pos','GET',undefined,cashierCookie)).products.find(p=>p.dtfShirt);
+  assert(cashierProduct.dtfPackages.every(pack=>!Object.hasOwn(pack,'baseCost')));
+  assert((await ok('/api/orders/check','POST',{items:lines,includeItems:true},cashierCookie)).items.every(item=>!Object.hasOwn(item,'baseCostTotal')));
+  await ok(productPath,'PUT',{packages:packages.map(pack=>({...pack,baseCost:null})),wholesaleTiers:[]});
+  assert.equal((await quote(lines)).items[0].unitPrice,95000);
+  const report=await ok('/api/reports');
+  assert.equal(report.rows.find(row=>row.id===order.id).cost,125000,'complete HPP overrides material cost and stays fixed after catalog changes');
+  assert.equal((await ok('/api/order-history/'+order.id)).total,order.total);
   const job=`/api/orders/${oldOrder.id}/items/${oldOrder.items[0].itemId}`;
   await ok(job+'/design-pic','PATCH',{designPic:'Gema'});
   await ok(job+'/project-status','PATCH',{status:'CETAK',expectedStatus:'DESAIN'});

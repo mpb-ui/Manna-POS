@@ -1,17 +1,25 @@
 # Stok pada pemilihan Sablon Kaos
 
-Di **Master Data → Produk → Edit Sablon Kaos**, tombol **+ Tambah Varian Kaos**
-menambahkan satu kombinasi warna dan ukuran. Hubungkan ke bahan aktif di
-kategori **Kaos Polos DTF** dengan stok **Per Satuan (pcs)**. Setiap kombinasi
-harus memakai bahan stok yang berbeda. Tambah bahan baru melalui Master Data
-→ Bahan, lalu buka kembali editor produk untuk memilihnya.
+Di **Master Data → Produk → Edit Sablon Kaos**, **Warna & Sumber Bahan**
+menampilkan satu baris per warna. Pilih ukuran S, M, L, XL, atau XXL untuk
+warna tersebut, lalu hubungkan setiap kombinasi ke bahan berbeda yang aktif
+di kategori **Kaos Polos DTF**, dengan stok **Per Satuan (pcs)**.
+Varian ukuran lama tetap bisa dibaca dan disimpan tanpa menambah ukuran baru.
 
-POS menampilkan ukuran yang dipetakan untuk warna yang dipilih. Contoh: bila
-varian Navy hanya M dan L, ukuran S, XL, dan XXL tidak ditampilkan untuk Navy.
-Stok nol tetap tampil dengan keterangan habis; bahan nonaktif tidak ditawarkan.
-Tambahan harga berlaku per ukuran untuk semua warna, dengan default Rp15.000
-untuk XXL dan Rp0 untuk ukuran lain. Perubahan pengaturan tidak mengubah harga,
-pilihan, dan bahan stok yang tersimpan pada pesanan terkonfirmasi.
+Di **Harga & Pengaturan**, harga satuan menjadi acuan jika tidak ada rentang
+grosir yang cocok. Grosir dihitung dari total kaos untuk paket sablon yang
+sama dalam satu invoice, termasuk warna, ukuran, atau baris berbeda.
+Tambahan harga ukuran berlaku per kaos dan sama untuk semua warna
+(default XXL Rp15.000). HPP per paket dapat diisi dengan biaya lengkap
+bahan print dan kaos polos per kaos. Jika kosong, sistem memakai dasar
+biaya yang sebelumnya berlaku. Jika diisi, HPP disalin ke item pesanan
+dan laporan menggunakannya tanpa menghitung kaos polos dua kali.
+
+POS menampilkan ukuran yang dipetakan untuk warna yang dipilih. Jika Navy
+hanya punya M dan L, ukuran lain tidak ditampilkan untuk Navy. Stok nol
+tetap tampil dengan keterangan habis; bahan nonaktif tidak ditawarkan.
+Pengaturan tidak mengubah harga, HPP yang sudah tercatat, atau bahan stok
+pada pesanan terkonfirmasi.
 
 Pembaruan 27 Oktober 2026: Sablon Kaos sekarang berada di Merchandise; dropdown ukuran hanya S/M/L/XL/XXL. Ketersediaan tetap pada bodytext bawah Jumlah, dengan validasi stok dan keranjang yang sama. Lihat [material-selection-merchandise.md](material-selection-merchandise.md). Bagian di bawah merekam implementasi awal.
 
