@@ -33,8 +33,8 @@ import { supportsRollPlacement, supportsOutdoorPlacement, selectRollPlacement, r
 import { rollConfigurationHtml, syncRollConfigurator } from "./roll-configurator.js";
 import { configurationSection, configurationFinishing, configurationDesign, configurationNotes, configurationActions, bindConfigurationNotes } from "./product-configurator.js";
 import { bindShirtStockSelection } from "./dtf-stock-selection.js";
-import { MAX_DTF_VARIANTS, dtfSizeSurcharge } from "./dtf-variants.js";
-import { dtfVariantEditor } from "./dtf-product-editor.js";
+import { MAX_DTF_VARIANTS, dtfSizeSurcharge, dtfLinePrice, dtfWholesaleTier } from "./dtf-variants.js";
+import { dtfProductEditor } from "./dtf-product-editor.js";
 import { createOrderHistory } from "./order-history-ui.js";
 import { paymentReceipts } from "./order-history.js";
 import { paymentReceiptHtml } from "./payment-documents.js";
@@ -154,7 +154,7 @@ function escapeHtml(value) {
 
 function parseMoney(value) { return Number(String(value ?? "").replace(/[^0-9-]/g, "")) || 0; }
 function formatMoneyValue(value) { return parseMoney(value).toLocaleString("id-ID"); }
-function moneyField(name, value, attributes = "") { return `<span class="money-input"><b>Rp</b><input name="${name}" type="text" inputmode="numeric" value="${formatMoneyValue(value)}" ${attributes}></span>`; }
+function moneyField(name, value, attributes = "") { return `<span class="money-input"><b>Rp</b><input name="${name}" type="text" inputmode="numeric" value="${value === "" && attributes.includes("data-optional-money") ? "" : formatMoneyValue(value)}" ${attributes}></span>`; }
 function bindMoneyInputs(container = document) {
   container.querySelectorAll(".money-input input").forEach((input) => {
     input.addEventListener("input", () => { const cursorAtEnd = input.selectionStart === input.value.length; input.value = input.dataset.optionalMoney !== undefined && !input.value.trim() ? "" : formatMoneyValue(input.value); if (cursorAtEnd) input.setSelectionRange(input.value.length, input.value.length); input.dispatchEvent(new CustomEvent("moneychange", { bubbles: true })); });
@@ -625,9 +625,11 @@ function readCurrentLine() {
       quantity: Number(row.querySelector("[data-shirt-quantity]").value)
     }));
     const quantity = shirtVariants.reduce((sum, item) => sum + (Number.isFinite(item.quantity) ? item.quantity : 0), 0);
-    const previewTotal = shirtVariants.reduce((sum, item) => sum + item.quantity * (pack.price + dtfSizeSurcharge(product,item.size)), 0);
+    const packageQuantity = state.cart.reduce((sum, line) => line.productId === product.id && line.dtfPackageId === pack.id && line.cartId !== configurationEditingLine?.cartId ? sum + line.quantity : sum, quantity);
+    const { unitPrice, subtotal: previewTotal } = dtfLinePrice(product, pack, shirtVariants, packageQuantity);
+    const tier = dtfWholesaleTier(product, packageQuantity);
     return { productId: product.id, productName: product.name, dtfPackageId: pack.id, shirtVariants,
-      quantity, previewTotal, baseTotal: previewTotal, fileServiceId: "READY", fileServiceName: "File Siap Cetak", fileServicePrice: 0,
+      quantity, unitPrice, packageQuantity, dtfTierApplied: Boolean(tier), previewTotal, baseTotal: previewTotal, fileServiceId: "READY", fileServiceName: "File Siap Cetak", fileServicePrice: 0,
       displaySize: `${pack.label} · ${shirtVariants.map((item) => `${item.color} ${item.size} × ${item.quantity}`).join(", ")}`,
       productionNote: document.querySelector("#production-note")?.value.trim() || "" };
   }
@@ -716,7 +718,7 @@ function updatePreview() {
   if (product?.dtfShirt) {
     document.querySelector("#item-price").textContent = rupiah.format(Number.isFinite(line.previewTotal) ? line.previewTotal : 0);
     const surcharge = line.shirtVariants.reduce((sum,item)=>sum+(Number.isFinite(item.quantity)?item.quantity:0)*dtfSizeSurcharge(product,item.size),0);
-    document.querySelector("#formula-text").textContent = `${line.quantity} kaos${surcharge>0?` · Tambahan ukuran ${rupiah.format(surcharge)}`:''}`;
+    document.querySelector("#formula-text").textContent = `${line.quantity} kaos${line.dtfTierApplied ? ` · Grosir ${rupiah.format(line.unitPrice)}/kaos (total paket ${line.packageQuantity} kaos)` : ""}${surcharge>0?` · Tambahan ukuran ${rupiah.format(surcharge)}`:''}`;
     shirtStockController?.sync();
     return;
   }
@@ -1946,11 +1948,13 @@ function openProductForm(product = null) {
 
 function openDtfProductForm(product) {
   const shirtMaterials = state.materials.filter(item=>categoryId(item.category,"materials")==="kaos-polos-dtf");
-  const editor=dtfVariantEditor(product,shirtMaterials,escapeHtml);
-  const detail = showMasterDialog("Edit Sablon Kaos", `<form id="dtf-master-form" class="master-form"><p class="product-note">Kelola stok fisik kaos polos melalui Stok Bahan → Kaos Polos DTF.</p><p class="section-label">Harga paket sablon / kaos</p><div class="form-grid">${product.dtfPackages.map(pack=>`<label class="field"><span>${escapeHtml(pack.label)}</span>${moneyField(`package-${pack.id}`,pack.price,"required")}</label>`).join("")}</div>${editor.html}<div class="toggle-group">${switchHtml("active",product.active!==false)}${switchHtml("featured",Boolean(product.featured),"Tampilkan di Home")}</div>${minimumSettingsHtml(product)}<div class="form-footer sticky-form-footer">${deleteButtonHtml(product,"Produk")}<button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan Produk</button></div></form>`);
+  const setting = (name, label, checked) => `<div class="pe-setting"><div class="pe-setting-head"><strong>${label}</strong>${switchHtml(name,checked,label)}</div></div>`;
+  const settings = `<div class="pe-info-settings">${minimumSettingsHtml(product)}${setting("featured","Tampilkan di Home",Boolean(product.featured))}${setting("active","Produk Aktif",product.active!==false)}</div>`;
+  const footer = `<div class="pe-footer">${deleteButtonHtml(product,"Produk")}<div class="pe-footer-actions"><button type="button" class="secondary" id="cancel-master">Batal</button><button class="primary" type="submit">Simpan Produk</button></div></div>`;
+  const editor = dtfProductEditor(product, shirtMaterials, { e:escapeHtml, moneyField, bindMoneyInputs, parseMoney, settings, footer });
+  const detail = showMasterDialog("Edit Sablon Kaos", editor.html);
   const form=detail.querySelector("#dtf-master-form");
-  bindMoneyInputs(form);
-  const readVariants=editor.bind(form,{moneyField,bindMoneyInputs,parseMoney});
+  const readEditor = editor.bind(form);
   bindDeleteRecord(detail,product,"products","Produk","products");
   form.querySelector("#cancel-master").onclick=()=>dialog.close();
   bindMinimumSettings(form);
@@ -1959,10 +1963,9 @@ function openDtfProductForm(product) {
     const button=form.querySelector('button[type="submit"]');
     if(button.disabled)return;
     try {
-      const variants=readVariants();
-      const packages=product.dtfPackages.map(pack=>({id:pack.id,price:parseMoney(form.elements[`package-${pack.id}`].value)}));
+      const updates=readEditor();
       button.disabled=true;
-      await api(`/api/products/${product.id}/dtf-packages`,{method:"PUT",body:JSON.stringify({packages,...variants,minimumEnabled:form.elements.minimumEnabled.checked,minimumQuantity:Number(form.elements.minimumQuantity.value),active:form.elements.active.checked,featured:form.elements.featured.checked})});
+      await api(`/api/products/${product.id}/dtf-packages`,{method:"PUT",body:JSON.stringify({...updates,minimumEnabled:form.elements.minimumEnabled.checked,minimumQuantity:Number(form.elements.minimumQuantity.value),active:form.elements.active.checked,featured:form.elements.featured.checked})});
       dialog.close();await load();state.view="master";state.masterTab="products";render();toast("Sablon Kaos berhasil disimpan");
     } catch(error){toast(error.message,"error");}
     finally{button.disabled=false;}

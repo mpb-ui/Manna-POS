@@ -40,7 +40,7 @@ import { addCategory, renameCategory, deleteCategory, reorderCategories, categor
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
-import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges } from "./lib/dtf-variants.js";
+import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges, normalizeDtfWholesaleTiers } from "./lib/dtf-variants.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
 import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRole, canRequestStatus, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
@@ -98,6 +98,7 @@ function sanitizeProduct(product, user) {
   const copy = structuredClone(product);
   if (!hasPermission(user, "reports.cost") && !hasPermission(user, "master.products")) {
     delete copy.baseCost;
+    for (const pack of copy.dtfPackages || []) delete pack.baseCost;
     for (const variant of copy.materialVariants || []) { delete variant.baseCost; for (const combination of variant.combinations || []) delete combination.baseCost; }
   }
   if (!hasPermission(user, "stock.value") && !hasPermission(user, "master.materials")) {
@@ -605,12 +606,22 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
       if (!product) throw new Error("Produk Sablon Kaos tidak ditemukan");
       const submitted = req.body.packages;
       if (!Array.isArray(submitted) || submitted.length !== product.dtfPackages.length) throw new Error("Semua paket sablon wajib diisi");
-      const byId = new Map(submitted.map((item) => [item.id, Number(item.price)]));
-      if (byId.size !== product.dtfPackages.length || product.dtfPackages.some((item) => !Number.isSafeInteger(byId.get(item.id)) || byId.get(item.id) <= 0)) throw new Error("Harga paket sablon tidak valid");
+      const byId = new Map(submitted.map(item => [item?.id, item]));
+      if (byId.size !== product.dtfPackages.length || product.dtfPackages.some(({id}) => !Number.isSafeInteger(byId.get(id)?.price) || byId.get(id).price <= 0)) throw new Error("Harga paket sablon tidak valid");
       if (req.body.stockVariants !== undefined) product.dtfStockVariants = normalizeDtfStockVariants(state,product,req.body.stockVariants);
       if (req.body.sizeSurcharges !== undefined) product.dtfSizeSurcharges = normalizeDtfSizeSurcharges(req.body.sizeSurcharges,product.dtfStockVariants);
       Object.assign(product, normalizeMinimum(req.body,product));
-      product.dtfPackages = product.dtfPackages.map((item) => ({ ...item, price: byId.get(item.id) }));
+      product.dtfPackages = product.dtfPackages.map(pack => {
+        const next = byId.get(pack.id), saved = { ...pack, price: next.price };
+        if (Object.hasOwn(next, "baseCost")) {
+          if (next.baseCost == null) delete saved.baseCost;
+          else if (!Number.isSafeInteger(next.baseCost) || next.baseCost < 0) throw new Error("HPP paket harus Rp0 atau lebih");
+          else saved.baseCost = next.baseCost;
+        }
+        return saved;
+      });
+      if (req.body.wholesaleTiers !== undefined) product.dtfWholesaleTiers = normalizeDtfWholesaleTiers(req.body.wholesaleTiers, product.dtfPackages);
+      product.wholesaleEnabled = Boolean(product.dtfWholesaleTiers?.length);
       product.price = Math.min(...product.dtfPackages.map((item) => item.price));
       product.active = req.body.active !== false;
       product.featured = Boolean(req.body.featured);
