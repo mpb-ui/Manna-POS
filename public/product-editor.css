@@ -1,5 +1,9 @@
 /* Shared width for compact Master Data forms and the product editor. */
-.product-editor-dialog,.master-dialog:has([data-compact-master-form],#dtf-master-form){width:min(570px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
+.product-editor-dialog,.master-dialog:has([data-compact-master-form],#dtf-master-form),.customer-dialog:has([data-compact-master-form]){width:min(570px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
+.user-form[data-compact-master-form]{width:100%;min-width:0}
+.user-form[data-compact-master-form] .permission-heading{flex-wrap:wrap;gap:8px}
+.user-form[data-compact-master-form] .permission-group label span{min-width:0;overflow-wrap:anywhere}
+.user-form[data-compact-master-form] .form-footer{flex-wrap:wrap}
 .product-editor-dialog,.master-dialog:has(#dtf-master-form){max-height:94dvh;border:1px solid #d7dfe9;border-radius:12px;color:#17263c;overflow:hidden}
 .product-editor-dialog #order-detail,.master-dialog:has(#dtf-master-form) #order-detail{width:100%;display:flex;flex-direction:column;max-height:94dvh;min-height:0}
 .product-editor-dialog .detail-head,.master-dialog:has(#dtf-master-form) .detail-head{padding:16px 24px;align-items:center;flex:none;min-height:64px;border-color:#d7dfe9}
@@ -132,7 +136,7 @@
 .pe-error{padding:10px 12px;margin:16px 0 0;color:#b42332;background:#fff2f3;border:1px solid #f0cbd0;border-radius:8px;font-size:13px}
 [data-wholesale-basis-field]:not([hidden]){margin-bottom:12px}
 @media(max-width:560px){
- .product-editor-dialog,.master-dialog:has([data-compact-master-form],#dtf-master-form){width:calc(100vw - 16px);max-width:calc(100vw - 16px)}
+ .product-editor-dialog,.master-dialog:has([data-compact-master-form],#dtf-master-form),.customer-dialog:has([data-compact-master-form]){width:calc(100vw - 16px);max-width:calc(100vw - 16px)}
  .product-editor-dialog,.master-dialog:has(#dtf-master-form){max-height:96dvh}
  .product-editor-dialog #order-detail,.master-dialog:has(#dtf-master-form) #order-detail{max-height:96dvh}
  .product-editor-dialog .detail-head,.master-dialog:has(#dtf-master-form) .detail-head{padding:14px 16px}

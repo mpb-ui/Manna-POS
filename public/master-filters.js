@@ -1,3 +1,6 @@
+const masterNames = new Intl.Collator('id-ID', { numeric: true, sensitivity: 'base' });
+export const compareMasterNames = masterNames.compare;
+
 /** Per-account list preferences. Only filter controls are stored, never editor drafts. */
 export function createMasterFilters({identity,storage=()=>globalThis.sessionStorage}){
   const memory=new Map(),key=id=>'manna-master-filters-v1:'+id;
