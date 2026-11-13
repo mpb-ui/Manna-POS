@@ -30,11 +30,11 @@ test("invoice campuran: ATK saat penjualan, kertas 50 saat seluruh produksi sele
 test("roll lama tidak dikonversi; metode baru perlu hitung fisik, unit HPP tetap",()=>{
  const state={products:[],orders:[],stockMovements:[],materials:[{id:'m',sku:'roll',name:'FL 280',category:'Roll Outdoor',unit:'m²',cost:123,stock:770,minStock:10}],inventory:[{materialId:'m',...row('roll',770,'m²')}]};
  delete state.inventory[0].stockMethod;delete state.inventory[0].stockUnit;initializeStockState(state);const m=state.materials[0],stock=state.inventory[0];assert.equal(m.stockMethod,'ROLL');assert.equal(stock.quantity,770);assert.equal(stock.unit,'m²');assert.equal(stock.stockNeedsCount,true);assert.equal(m.cost,123);
- assert.throws(()=>adjustPhysicalStock(state,stock,{change:-1,reason:'Out'},actor),/stok opname/);
+ assert.throws(()=>adjustPhysicalStock(state,stock,{change:-1,reason:'Out'},actor),/stok opname/i);
  assert.throws(()=>updateStockMethod(state,m,{stockMethod:'ROLL',confirmStockCount:true,stockOpeningBalance:10,stockCountReason:'Count'},actor),/lebar roll/);
  updateStockMethod(state,m,{stockMethod:'ROLL',rollWidthCm:110,confirmStockCount:true,stockOpeningBalance:10,stockCountReason:'Count gudang'},actor,timestamp);
  assert.equal(stock.quantity,10);assert.equal(stock.unit,'roll');assert.equal(m.unit,'m²');assert.equal(m.cost,123);assert.equal(state.stockMovements[0].previousBalance,770);assert.equal(state.stockMovements[0].previousUnit,'m²');
- assert.throws(()=>updateStockMethod(state,m,{stockMethod:'UNIT'},actor),/stok opname/);
+ assert.throws(()=>updateStockMethod(state,m,{stockMethod:'UNIT'},actor),/stok opname/i);
 });
 
 test("cancel tidak otomatis mengembalikan stok; retur fisik berreferensi dibatasi dan diaudit",()=>{
