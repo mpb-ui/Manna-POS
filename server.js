@@ -40,7 +40,7 @@ import { addCategory, renameCategory, deleteCategory, reorderCategories, categor
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
-import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges, normalizeDtfWholesaleTiers } from "./lib/dtf-variants.js";
+import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges, normalizeDtfWholesaleTiers, normalizeDtfShirtCosts } from "./lib/dtf-variants.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
 import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRole, canRequestStatus, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
@@ -98,7 +98,11 @@ function sanitizeProduct(product, user) {
   const copy = structuredClone(product);
   if (!hasPermission(user, "reports.cost") && !hasPermission(user, "master.products")) {
     delete copy.baseCost;
-    for (const pack of copy.dtfPackages || []) delete pack.baseCost;
+    delete copy.dtfShirtCosts;
+    for (const pack of copy.dtfPackages || []) {
+      delete pack.baseCost;
+      delete pack.printCost;
+    }
     for (const variant of copy.materialVariants || []) { delete variant.baseCost; for (const combination of variant.combinations || []) delete combination.baseCost; }
   }
   if (!hasPermission(user, "stock.value") && !hasPermission(user, "master.materials")) {
@@ -611,12 +615,18 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
       if (req.body.stockVariants !== undefined) product.dtfStockVariants = normalizeDtfStockVariants(state,product,req.body.stockVariants);
       if (req.body.sizeSurcharges !== undefined) product.dtfSizeSurcharges = normalizeDtfSizeSurcharges(req.body.sizeSurcharges,product.dtfStockVariants);
       Object.assign(product, normalizeMinimum(req.body,product));
+      if (req.body.shirtCosts !== undefined) product.dtfShirtCosts = normalizeDtfShirtCosts(req.body.shirtCosts);
       product.dtfPackages = product.dtfPackages.map(pack => {
         const next = byId.get(pack.id), saved = { ...pack, price: next.price };
         if (Object.hasOwn(next, "baseCost")) {
           if (next.baseCost == null) delete saved.baseCost;
           else if (!Number.isSafeInteger(next.baseCost) || next.baseCost < 0) throw new Error("HPP paket harus Rp0 atau lebih");
           else saved.baseCost = next.baseCost;
+        }
+        if (Object.hasOwn(next, "printCost")) {
+          if (next.printCost == null) delete saved.printCost;
+          else if (!Number.isSafeInteger(next.printCost) || next.printCost < 0) throw new Error("Biaya cetak harus Rp0 atau lebih");
+          else saved.printCost = next.printCost;
         }
         return saved;
       });

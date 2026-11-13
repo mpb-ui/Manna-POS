@@ -224,3 +224,9 @@
   .dtf-price-table th[scope=row]{width:84px}
   .dtf-editor-card{padding:8px}
 }
+
+.dtf-cost-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.dtf-cost-columns h4{margin:0 0 12px;font-size:14px}
+.dtf-cost-columns label{display:grid;gap:4px;margin:0 0 8px;font-size:13px;font-weight:600}
+.dtf-cost-columns label:last-child{margin-bottom:0}
+.dtf-editor-card .dtf-cost-note{margin:12px 0 0}

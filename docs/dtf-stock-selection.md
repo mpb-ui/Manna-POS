@@ -10,10 +10,10 @@ Di **Harga & Pengaturan**, harga satuan menjadi acuan jika tidak ada rentang
 grosir yang cocok. Grosir dihitung dari total kaos untuk paket sablon yang
 sama dalam satu invoice, termasuk warna, ukuran, atau baris berbeda.
 Tambahan harga ukuran berlaku per kaos dan sama untuk semua warna
-(default XXL Rp15.000). HPP per paket dapat diisi dengan biaya lengkap
-bahan print dan kaos polos per kaos. Jika kosong, sistem memakai dasar
-biaya yang sebelumnya berlaku. Jika diisi, HPP disalin ke item pesanan
-dan laporan menggunakannya tanpa menghitung kaos polos dua kali.
+(default XXL Rp15.000). HPP dihitung dari biaya cetak per paket ditambah biaya kaos per ukuran.
+Biaya kaos yang kosong memakai biaya bahan stok yang terhubung. HPP lengkap
+lama tetap berlaku untuk paket yang belum diisi biaya cetaknya. HPP disalin
+ke item pesanan agar perubahan harga dasar tidak mengubah transaksi lama.
 
 POS menampilkan ukuran yang dipetakan untuk warna yang dipilih. Jika Navy
 hanya punya M dan L, ukuran lain tidak ditampilkan untuk Navy. Stok nol
