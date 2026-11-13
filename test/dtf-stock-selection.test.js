@@ -43,3 +43,18 @@ test('perubahan warna menggunakan saldo warna baru, dan data stok hilang tidak m
  assert.equal(validateShirtSelection(variants(),[]).valid,false);
  assert.equal(validateShirtSelection(variants(),[{...stock[0],available:Infinity}]).valid,false);
 });
+
+test('baris tambahan belum lengkap tidak menampilkan error atau dihitung sebagai duplikat',()=>{
+ for (const draft of [
+   {color:'',size:'',quantity:null},
+   {color:'Hitam',size:'',quantity:null},
+   {color:'Hitam',size:'M',quantity:null}
+ ]) {
+   const selection=validateShirtSelection([...variants(),draft],stock);
+   assert.equal(selection.valid,false);
+   assert.equal(selection.message,'');
+   assert.equal(selection.rows[0].kind,'');
+   assert.equal(selection.rows[1].kind,'pending');
+ }
+ assert.equal(validateShirtSelection([...variants(),...variants()],stock).rows[1].kind,'duplicate');
+});
