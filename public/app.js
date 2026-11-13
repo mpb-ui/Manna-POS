@@ -499,7 +499,8 @@ function dtfShirtSizes(product,color) {
   return (product.dtfStockVariants || []).filter(row=>!row.unavailable && row.color===color).map(row=>row.size);
 }
 function dtfSizeOptions(sizes,selected) {
-  return sizes.map(size=>`<option value="${escapeHtml(size)}" ${size===selected?'selected':''}>${escapeHtml(size)}</option>`).join('');
+  const placeholder = selected ? '' : '<option value="" disabled selected>Pilih ukuran</option>';
+  return placeholder + sizes.map(size=>`<option value="${escapeHtml(size)}" ${size===selected?'selected':''}>${escapeHtml(size)}</option>`).join('');
 }
 function dtfShirtRowHtml(product,index,saved) {
   const colors = [...new Set((product.dtfStockVariants || []).filter(row=>!row.unavailable).map(row=>row.color))];
@@ -508,8 +509,8 @@ function dtfShirtRowHtml(product,index,saved) {
   const size = saved ? sizes.includes(saved.size)?saved.size:'' : sizes.includes('M')?'M':sizes[0];
   return `<div class="dtf-shirt-row" data-shirt-row>
     <label class="field"><span>Warna</span><select data-shirt-color ${colors.length?'':'disabled'}>${!color?'<option value="" disabled selected>Pilih warna</option>':''}${colors.map(value=>`<option value="${escapeHtml(value)}" ${value===color?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label>
-    <label class="field"><span>Ukuran</span><select data-shirt-size ${color?'':'disabled'}>${!size?'<option value="" disabled selected>Pilih ukuran</option>':''}${dtfSizeOptions(sizes,size)}</select></label>
-    <label class="field"><span>Jumlah</span><input data-shirt-quantity type="number" min="1" step="1" value="${escapeHtml(saved?.quantity ?? 1)}" inputmode="numeric"></label>
+    <label class="field"><span>Ukuran</span><select data-shirt-size ${color?'':'disabled'}>${dtfSizeOptions(sizes,size)}</select></label>
+    <label class="field"><span>Jumlah</span><input data-shirt-quantity type="number" min="1" step="1" value="${escapeHtml(saved ? saved.quantity ?? "" : 1)}" inputmode="numeric"></label>
     <button type="button" class="secondary" data-remove-shirt aria-label="Hapus varian ${index + 1}" ${index ? "" : "disabled"}>×</button>
     <small class="dtf-stock-note" data-shirt-stock></small>
   </div>`;
@@ -622,7 +623,7 @@ function readCurrentLine() {
     const pack = product.dtfPackages.find((item) => item.id === document.querySelector('input[name="dtf-package"]:checked')?.value) || product.dtfPackages[0];
     const shirtVariants = [...document.querySelectorAll("[data-shirt-row]")].map((row) => ({
       color: row.querySelector("[data-shirt-color]").value, size: row.querySelector("[data-shirt-size]").value,
-      quantity: Number(row.querySelector("[data-shirt-quantity]").value)
+      quantity: row.querySelector("[data-shirt-quantity]").value === "" ? null : Number(row.querySelector("[data-shirt-quantity]").value)
     }));
     const quantity = shirtVariants.reduce((sum, item) => sum + (Number.isFinite(item.quantity) ? item.quantity : 0), 0);
     const packageQuantity = state.cart.reduce((sum, line) => line.productId === product.id && line.dtfPackageId === pack.id && line.cartId !== configurationEditingLine?.cartId ? sum + line.quantity : sum, quantity);
@@ -846,7 +847,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
       if(event.target.matches('[data-shirt-color]')){
         const size=event.target.closest('[data-shirt-row]').querySelector('[data-shirt-size]');
         const sizes=dtfShirtSizes(product,event.target.value);
-        size.innerHTML=dtfSizeOptions(sizes,sizes.includes(size.value)?size.value:sizes.includes('M')?'M':sizes[0]);
+        size.innerHTML=dtfSizeOptions(sizes,!size.value || sizes.includes(size.value) ? size.value : sizes.includes('M') ? 'M' : sizes[0]);
         size.disabled=!sizes.length;
       }
       updatePreview();
@@ -856,9 +857,10 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     document.querySelectorAll('input[name="dtf-package"]').forEach((input) => input.addEventListener("change", updatePreview));
     document.querySelector("#add-shirt-row").onclick = () => {
       if (rows.querySelectorAll("[data-shirt-row]").length >= MAX_DTF_VARIANTS) return toast(`Maksimal ${MAX_DTF_VARIANTS} kombinasi kaos`, "error");
-      rows.insertAdjacentHTML("beforeend", dtfShirtRowHtml(product,rows.querySelectorAll("[data-shirt-row]").length));
+      rows.insertAdjacentHTML("beforeend", dtfShirtRowHtml(product,rows.querySelectorAll("[data-shirt-row]").length,{color:"",size:"",quantity:""}));
       rows.querySelector("[data-shirt-row] button:disabled")?.removeAttribute("disabled");
       updatePreview();
+      rows.lastElementChild.querySelector("[data-shirt-color]").focus();
     };
     rows.addEventListener("click", (event) => {
       const button = event.target.closest("[data-remove-shirt]");

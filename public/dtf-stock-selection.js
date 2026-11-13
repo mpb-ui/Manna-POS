@@ -19,12 +19,14 @@ export function remainingShirtStock(stock, cart, productId) {
 
 export function validateShirtSelection(variants, stock) {
   const byVariant = new Map(stock.map(row => [key(row.color, row.size), row]));
-  const ids = variants.map(v => identity(byVariant.get(key(v.color, v.size)) || v));
-  const counts = new Map(); ids.forEach(id => counts.set(id, (counts.get(id) || 0) + 1));
+  const pending = v => !v.color || !v.size || v.quantity === null || v.quantity === '';
+  const ids = variants.map(v => pending(v) ? null : identity(byVariant.get(key(v.color, v.size)) || v));
+  const counts = new Map(); ids.forEach(id => { if (id !== null) counts.set(id, (counts.get(id) || 0) + 1); });
   const rows = variants.map((variant, index) => {
     const available = amount(byVariant.get(key(variant.color, variant.size))?.available);
     const label = `${variant.color} ${variant.size}`;
     let error = '', kind = '';
+    if (pending(variant)) return { available, error: '', kind: 'pending' };
     if (!Number.isSafeInteger(variant.quantity) || variant.quantity < 1) { error = 'Jumlah kaos harus bilangan bulat positif.'; kind = 'quantity'; }
     else if (!byVariant.has(key(variant.color,variant.size))) { error = 'Varian ini tidak tersedia. Pilih warna dan ukuran lain.'; kind = 'empty'; }
     else if (!available) { error = `Stok ${label} habis (0 pcs). Pilih warna atau ukuran lain.`; kind = 'empty'; }
@@ -33,7 +35,7 @@ export function validateShirtSelection(variants, stock) {
     return { available, error, kind };
   });
   const message = !variants.length ? 'Isi minimal satu kombinasi kaos.' : rows.find(row => row.error)?.error || '';
-  return { valid: !message, message, rows };
+  return { valid: !message && !rows.some(row => row.kind === 'pending'), message, rows };
 }
 
 export function bindShirtStockSelection({ scope, productId, getStock, setStock, getCart, readLine, api, onAdd, toast, minimum = 1 }) {
@@ -50,21 +52,20 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
     if (!active()) return;
     const stock = remaining(), variants = readLine().shirtVariants;
     const result = validateShirtSelection(variants, stock);
-    if(!result.message && variants.reduce((sum,v)=>sum+v.quantity,0)<minimum){result.valid=false;result.message=`Minimum pembelian ${minimum} pcs`;}
+    if(result.valid && variants.reduce((sum,v)=>sum+v.quantity,0)<minimum){result.valid=false;result.message=`Minimum pembelian ${minimum} pcs`;}
     rowsElement.querySelectorAll('[data-shirt-row]').forEach((row, index) => {
       const color = row.querySelector('[data-shirt-color]');
       const size = row.querySelector('[data-shirt-size]');
       const quantity = row.querySelector('[data-shirt-quantity]');
       const note = row.querySelector('[data-shirt-stock]');
       if (!note.id) note.id = `dtf-stock-note-${crypto.randomUUID()}`;
-      for (const option of size.options) {
-        option.textContent = option.value;
-      }
       const validation = result.rows[index];
-      note.textContent = validation.error || `Tersedia ${validation.available} pcs`;
+      const stockSelected = Boolean(color.value && size.value);
+      note.textContent = validation.error || (stockSelected ? `Tersedia ${validation.available} pcs` : '');
       note.classList.toggle('stock-error', Boolean(validation.error));
       row.classList.toggle('dtf-stock-error', Boolean(validation.error));
-      quantity.max = String(validation.available);
+      if (stockSelected) quantity.max = String(validation.available);
+      else quantity.removeAttribute('max');
       for (const input of [color, size, quantity]) input.setAttribute('aria-describedby', note.id);
       quantity.setAttribute('aria-invalid', String(validation.kind === 'quantity'));
       size.setAttribute('aria-invalid', String(['empty','duplicate'].includes(validation.kind)));
@@ -75,7 +76,7 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
     feedback.hidden = !loading && !error;
     feedback.classList.toggle('stock-error', Boolean(error) && !loading);
     retry.hidden = !error || loading;
-    button.disabled = loading || saving || Boolean(error);
+    button.disabled = loading || saving || Boolean(failed) || !result.valid;
     button.setAttribute('aria-busy', String(loading || saving));
     button.setAttribute('aria-describedby', 'dtf-stock-feedback-message');
     return result;
@@ -105,7 +106,7 @@ export function bindShirtStockSelection({ scope, productId, getStock, setStock, 
     try {
       if (!await refresh() || !active()) return;
       const result = sync();
-      if (!result.valid) return toast(result.message, 'error');
+      if (!result.valid) { if (result.message) toast(result.message, 'error'); return; }
       await onAdd(readLine());
     } finally { saving = false; sync(); }
   };
