@@ -40,7 +40,7 @@ import { addCategory, renameCategory, deleteCategory, reorderCategories, categor
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
-import { DTF_COLORS, DTF_SIZES, DTF_SHIRT_MATERIALS } from "./lib/dtf-catalog.js";
+import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges } from "./lib/dtf-variants.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
 import { PERMISSIONS, ROLE_PRESETS, normalizeBriefingProfile, allowedStatusForRole, canRequestStatus, effectivePermissions, hasPermission, orderVisibleToUser, publicUser } from "./lib/access.js";
 
@@ -101,7 +101,7 @@ function sanitizeProduct(product, user) {
     for (const variant of copy.materialVariants || []) { delete variant.baseCost; for (const combination of variant.combinations || []) delete combination.baseCost; }
   }
   if (!hasPermission(user, "stock.value") && !hasPermission(user, "master.materials")) {
-    const sources = [copy.materialSources, ...(copy.materialVariants || []).flatMap(v => [v.materialSources, ...(v.combinations || []).map(c => c.materialSources)])];
+    const sources = [copy.materialSources, copy.dtfStockVariants, ...(copy.materialVariants || []).flatMap(v => [v.materialSources, ...(v.combinations || []).map(c => c.materialSources)])];
     sources.flat().filter(Boolean).forEach(item => delete item.cost);
   }
   return copy;
@@ -607,22 +607,14 @@ app.put("/api/products/:id/dtf-packages", requirePermission("master.products"), 
       if (!Array.isArray(submitted) || submitted.length !== product.dtfPackages.length) throw new Error("Semua paket sablon wajib diisi");
       const byId = new Map(submitted.map((item) => [item.id, Number(item.price)]));
       if (byId.size !== product.dtfPackages.length || product.dtfPackages.some((item) => !Number.isSafeInteger(byId.get(item.id)) || byId.get(item.id) <= 0)) throw new Error("Harga paket sablon tidak valid");
-      if (req.body.stockVariants !== undefined) {
-        const variants = req.body.stockVariants;
-        const combinations = DTF_COLORS.flatMap((color) => DTF_SIZES.map((size) => `${color}:${size}`));
-        if (!Array.isArray(variants) || variants.length !== combinations.length) throw new Error("Semua varian kaos wajib dihubungkan ke bahan");
-        const byCombination = new Map(variants.map((variant) => [`${variant.color}:${variant.size}`, variant.materialId]));
-        if (byCombination.size !== combinations.length || combinations.some((key) => !byCombination.has(key))) throw new Error("Pilihan warna dan ukuran tidak valid");
-        const selectedMaterials = [...byCombination.values()];
-        if (new Set(selectedMaterials).size !== selectedMaterials.length || selectedMaterials.some((id) => !DTF_SHIRT_MATERIALS.some((material) => material.id === id && state.materials.some((item) => item.id === id && item.active !== false)))) throw new Error("Pilih satu bahan kaos aktif yang berbeda untuk setiap varian");
-        product.dtfStockVariants = variants.map(({ color, size, materialId }) => ({ color, size, materialId }));
-      }
+      if (req.body.stockVariants !== undefined) product.dtfStockVariants = normalizeDtfStockVariants(state,product,req.body.stockVariants);
+      if (req.body.sizeSurcharges !== undefined) product.dtfSizeSurcharges = normalizeDtfSizeSurcharges(req.body.sizeSurcharges,product.dtfStockVariants);
       Object.assign(product, normalizeMinimum(req.body,product));
       product.dtfPackages = product.dtfPackages.map((item) => ({ ...item, price: byId.get(item.id) }));
       product.price = Math.min(...product.dtfPackages.map((item) => item.price));
       product.active = req.body.active !== false;
       product.featured = Boolean(req.body.featured);
-      audit(state, req.user, "PRODUCT_UPDATE", "Memperbarui harga paket Sablon Kaos", { productId: product.id });
+      audit(state, req.user, "PRODUCT_UPDATE", "Memperbarui paket dan varian Sablon Kaos", { productId: product.id });
       return product;
     });
     res.json(result);
