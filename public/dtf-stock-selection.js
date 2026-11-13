@@ -1,4 +1,4 @@
-const key = (color, size) => `${color}:${size}`;
+import { dtfVariantKey as key } from './dtf-variants.js';
 const amount = value => Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
 const identity = row => row?.materialId || key(row?.color, row?.size);
 
@@ -26,6 +26,7 @@ export function validateShirtSelection(variants, stock) {
     const label = `${variant.color} ${variant.size}`;
     let error = '', kind = '';
     if (!Number.isSafeInteger(variant.quantity) || variant.quantity < 1) { error = 'Jumlah kaos harus bilangan bulat positif.'; kind = 'quantity'; }
+    else if (!byVariant.has(key(variant.color,variant.size))) { error = 'Varian ini tidak tersedia. Pilih warna dan ukuran lain.'; kind = 'empty'; }
     else if (!available) { error = `Stok ${label} habis (0 pcs). Pilih warna atau ukuran lain.`; kind = 'empty'; }
     else if (counts.get(ids[index]) > 1) { error = `Kombinasi ${label} memakai stok yang sama dengan baris lain. Gabungkan jumlahnya.`; kind = 'duplicate'; }
     else if (variant.quantity > available) { error = `Stok ${label} tidak cukup: tersedia ${available} pcs, diminta ${variant.quantity} pcs.`; kind = 'quantity'; }

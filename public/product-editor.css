@@ -2,6 +2,12 @@
 .product-editor-dialog,.master-dialog:has([data-compact-master-form],#dtf-master-form){width:min(570px,calc(100vw - 24px));max-width:calc(100vw - 24px)}
 #dtf-master-form .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 #dtf-master-form .sticky-form-footer{bottom:0}
+.dtf-variant-card{display:grid;align-content:start;gap:8px;min-width:0;padding:10px;border:1px solid #d7dfe9;border-radius:8px}
+.dtf-variant-fields{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px}
+#dtf-master-form .dtf-variant-fields input{padding-inline:8px}
+.dtf-variant-card [data-dtf-remove]{justify-self:start;text-align:left}
+#dtf-master-form [data-dtf-add]{margin-top:12px}
+@media(max-width:430px){#dtf-master-form [data-dtf-variants]{grid-template-columns:minmax(0,1fr)}}
 .product-editor-dialog{max-height:94dvh;border:1px solid #d7dfe9;border-radius:12px;color:#17263c;overflow:hidden}
 .product-editor-dialog #order-detail{width:100%;display:flex;flex-direction:column;max-height:94dvh;min-height:0}
 .product-editor-dialog .detail-head{padding:16px 24px;align-items:center;flex:none;min-height:64px;border-color:#d7dfe9}

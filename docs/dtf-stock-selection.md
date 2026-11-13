@@ -1,5 +1,18 @@
 # Stok pada pemilihan Sablon Kaos
 
+Di **Master Data → Produk → Edit Sablon Kaos**, tombol **+ Tambah Varian Kaos**
+menambahkan satu kombinasi warna dan ukuran. Hubungkan ke bahan aktif di
+kategori **Kaos Polos DTF** dengan stok **Per Satuan (pcs)**. Setiap kombinasi
+harus memakai bahan stok yang berbeda. Tambah bahan baru melalui Master Data
+→ Bahan, lalu buka kembali editor produk untuk memilihnya.
+
+POS menampilkan ukuran yang dipetakan untuk warna yang dipilih. Contoh: bila
+varian Navy hanya M dan L, ukuran S, XL, dan XXL tidak ditampilkan untuk Navy.
+Stok nol tetap tampil dengan keterangan habis; bahan nonaktif tidak ditawarkan.
+Tambahan harga berlaku per ukuran untuk semua warna, dengan default Rp15.000
+untuk XXL dan Rp0 untuk ukuran lain. Perubahan pengaturan tidak mengubah harga,
+pilihan, dan bahan stok yang tersimpan pada pesanan terkonfirmasi.
+
 Pembaruan 27 Oktober 2026: Sablon Kaos sekarang berada di Merchandise; dropdown ukuran hanya S/M/L/XL/XXL. Ketersediaan tetap pada bodytext bawah Jumlah, dengan validasi stok dan keranjang yang sama. Lihat [material-selection-merchandise.md](material-selection-merchandise.md). Bagian di bawah merekam implementasi awal.
 
 Scope: Sablon Kaos saja. Basis production sebelum batch ini: ececea1d69fcfb1329720739d78e4f1ff039166c. Tidak ada migrasi, perubahan saldo, harga paket/XXL, permission baru, atau perluasan validasi ke produk lain.
