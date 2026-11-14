@@ -24,8 +24,8 @@ import { registerSheetProfileRoutes, validateProductCalculator } from "./lib/she
 import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
-import { normalizedStockUnit } from "./public/stock-methods.js";
-import { PRINT_STOCK_VERSION, initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
+import { normalizedStockUnit, stockSetupNeedsCount } from "./public/stock-methods.js";
+import { PRINT_STOCK_VERSION, initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, stockSources, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
 import { LF_ROLL_VERSION } from "./lib/lf-rolls.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
@@ -333,6 +333,28 @@ function materialMinimum(value) {
   return minimum;
 }
 
+function recordMaterialCount(state, material, stock, setup, user, timestamp) {
+  const { stockMethod, unit, stockOpeningBalance, stockCountReason, rollWidthCm, expectedQuantity, expectedUnit, expectedMethod, expectedUpdatedAt } = setup;
+  if (expectedQuantity !== Number(stock.quantity) || expectedUnit !== stock.unit ||
+      expectedMethod !== stock.stockMethod || expectedUpdatedAt !== stock.updatedAt) {
+    throw Object.assign(new Error("Stok telah berubah. Muat ulang lalu buka kembali form."), { status: 409 });
+  }
+  const stockUnit = stockMethod === "ROLL" ? "roll" : unit;
+  const reserved = shirtReservations(state).get(material.id) || 0;
+  if (reserved && (stockMethod !== "UNIT" || normalizedStockUnit(unit) !== "pcs" || Number(stockOpeningBalance) < reserved)) {
+    throw new Error(`Pertahankan satuan pcs dan minimal ${reserved} pcs untuk pesanan kaos aktif`);
+  }
+  if (stockSetupNeedsCount(material, stockMethod, unit) && state.orders.some(order =>
+    !cancelled(order) && ![STATUS.DONE, STATUS.PICKED_UP].includes(order.status) && order.items.some(item =>
+      !item.stockCommitted && stockSources(item).some(source =>
+        (source.materialId === material.id || !source.materialId && source.sku === stock.sku) && Number(source.units || 0) > 0)))) {
+    throw new Error("Bahan masih dibutuhkan pesanan yang belum memotong stok. Selesaikan pemakaian bahan pada pesanan tersebut sebelum mengubah metode atau satuan stok fisik.");
+  }
+  material.unit = unit;
+  updateStockMethod(state, material, { stockMethod, stockUnit, rollWidthCm, stockOpeningBalance, stockCountReason, confirmStockCount: true }, user.name, timestamp, { recordCount: true });
+  audit(state, user, "STOCK_COUNT", `Menetapkan saldo fisik ${material.name}`, { materialId: material.id, sku: stock.sku, movementId: state.stockMovements[0].id });
+}
+
 app.post("/api/materials", requirePermission("master.materials"), async (req, res, next) => {
   try {
     const result = await store.mutate((state) => {
@@ -359,23 +381,38 @@ app.put("/api/materials/:id", requirePermission("master.materials"), async (req,
     const result = await store.mutate((state) => {
       const material = state.materials.find((item) => item.id === req.params.id && !item.deletedAt);
       if (!material) throw new Error("Bahan tidak ditemukan");
-      const { stockMethod, stockUnit, rollWidthCm, confirmStockCount, stockOpeningBalance } = req.body;
-      if (confirmStockCount === true || stockOpeningBalance != null ||
-          stockMethod != null && stockMethod !== material.stockMethod ||
-          stockUnit != null && normalizedStockUnit(stockUnit) !== normalizedStockUnit(material.stockUnit) ||
-          rollWidthCm != null && Number(rollWidthCm) !== Number(material.rollWidthCm) ||
-          req.body.unit != null && normalizedStockUnit(req.body.unit) !== normalizedStockUnit(material.unit)) {
-        throw new Error("Ubah metode, satuan, lebar roll, atau saldo melalui Stok Bahan → Stok Opname");
-      }
+      const stockMethod = req.body.stockMethod ?? material.stockMethod;
+      const unit = text(req.body.unit ?? material.unit);
+      if (!unit || unit.length > 40 || !["ROLL", "UNIT"].includes(stockMethod)) throw new Error("Pilih metode dan satuan kalkulasi yang valid");
+      const widthInput = req.body.rollWidthCm;
+      const rollWidthCm = stockMethod !== "ROLL" ? null : widthInput == null
+        ? material.rollWidthCm ?? null : String(widthInput).trim() === "" ? null : Number(widthInput);
+      if (rollWidthCm !== null && (!Number.isFinite(rollWidthCm) || rollWidthCm <= 0)) throw new Error("Lebar roll harus lebih dari 0 cm");
+      const needsCount = stockSetupNeedsCount(material, stockMethod, unit);
       const name = text(req.body.name); const sku = text(req.body.sku).toUpperCase();
       if (!name || !sku) throw new Error("Nama dan SKU bahan wajib diisi");
       if (!state.catalogOptions.materialCategories.includes(text(req.body.category) || "Lainnya")) throw new Error("Pilih kategori bahan yang tersedia");
       unique(state, "materials", "sku", sku, material.id); unique(state, "materials", "name", name, material.id);
       if (state.inventory.some(row => row.sku === sku && row.materialId !== material.id)) throw new Error("SKU stok sudah digunakan");
       const stock = state.inventory.find((item) => item.materialId === material.id);
-      Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", minStock: materialMinimum(req.body.minStock ?? material.minStock), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false });
-      if (stock) Object.assign(stock, { sku, productName: name, category: material.category, minStock: material.minStock, updatedAt: now() });
-      audit(state, req.user, "MATERIAL_UPDATE", `Memperbarui bahan ${name}`, { materialId: material.id, sku });
+      const timestamp = now();
+      const previous = { unit:material.unit, stockMethod:material.stockMethod, rollWidthCm:material.rollWidthCm ?? null, cost:material.cost };
+      const cost = Number(req.body.cost ?? material.cost ?? 0);
+      if (!Number.isFinite(cost) || cost < 0) throw new Error("Harga dasar bahan tidak valid");
+      const minStock = materialMinimum(req.body.minStock ?? (needsCount ? 0 : material.minStock));
+      if (needsCount) {
+        if (!hasPermission(req.user, "stock.view") || !hasPermission(req.user, "stock.adjust")) {
+          throw Object.assign(new Error("Perubahan metode atau satuan stok fisik memerlukan akses penyesuaian stok."), { status: 403 });
+        }
+        if (!stock || req.body.confirmStockCount !== true) throw new Error("Isi hasil hitung fisik dan alasan untuk mengubah metode atau satuan stok fisik.");
+        recordMaterialCount(state, material, stock, { ...req.body, unit, stockMethod, rollWidthCm }, req.user, timestamp);
+      } else {
+        if (req.body.confirmStockCount === true || req.body.stockOpeningBalance != null) throw new Error("Untuk menghitung ulang saldo, gunakan Stok Bahan → Stok Opname.");
+        material.unit = unit;
+      }
+      Object.assign(material, { sku, name, category: text(req.body.category) || "Lainnya", minStock, cost, unit, rollWidthCm, supplier: text(req.body.supplier ?? material.supplier), active: req.body.active ?? material.active ?? true });
+      if (stock) Object.assign(stock, { sku, productName: name, category: material.category, minStock, rollWidthCm, updatedAt: timestamp });
+      audit(state, req.user, "MATERIAL_UPDATE", `Memperbarui bahan ${name}`, { materialId: material.id, sku, previous, next: { unit, stockMethod, rollWidthCm, cost } });
       return material;
     });
     res.json(result);
@@ -937,29 +974,12 @@ app.post("/api/inventory/:sku/count", requirePermission("stock.view"), requirePe
       const stock = state.inventory.find(item => item.sku === req.params.sku && item.materialId);
       const material = state.materials.find(item => item.id === stock?.materialId && !item.deletedAt);
       if (!stock || !material) throw new Error("Stok bahan tidak ditemukan");
-      const { stockMethod, stockOpeningBalance, stockCountReason, rollWidthCm, expectedQuantity, expectedUnit, expectedMethod, expectedUpdatedAt } = req.body;
-      if (expectedQuantity !== Number(stock.quantity) || expectedUnit !== stock.unit ||
-          expectedMethod !== stock.stockMethod || expectedUpdatedAt !== stock.updatedAt) {
-        throw Object.assign(new Error("Stok telah berubah. Muat ulang lalu buka kembali Stok Opname."), { status: 409 });
-      }
+      const { stockMethod } = req.body;
       const unit = text(req.body.unit);
       if (!unit || unit.length > 40 || !["ROLL", "UNIT"].includes(stockMethod)) throw new Error("Pilih metode dan satuan kalkulasi yang valid");
-      const stockUnit = stockMethod === "ROLL" ? "roll" : unit;
-      const reserved = shirtReservations(state).get(material.id) || 0;
-      if (reserved && (stockMethod !== "UNIT" || normalizedStockUnit(unit) !== "pcs" || Number(stockOpeningBalance) < reserved)) {
-        throw new Error(`Pertahankan satuan pcs dan minimal ${reserved} pcs untuk pesanan kaos aktif`);
-      }
-      if (stockMethod === "UNIT" && normalizedStockUnit(stockUnit) !== normalizedStockUnit(stock.unit) &&
-          state.orders.some(order => order.paymentConfirmed && !cancelled(order) && order.items.some(item =>
-            !item.stockCommitted && item.materials?.some(source => source.materialId === material.id &&
-              source.unit && normalizedStockUnit(source.unit) !== normalizedStockUnit(stockUnit))))) {
-        throw new Error("Satuan baru tidak cocok dengan kebutuhan bahan pada pesanan aktif");
-      }
-      const minStock = materialMinimum(req.body.minStock ?? material.minStock);
-      material.unit = unit;
-      updateStockMethod(state, material, { stockMethod, stockUnit, rollWidthCm, stockOpeningBalance, stockCountReason, confirmStockCount: true }, req.user.name, now(), { recordCount: true });
+      const minStock = materialMinimum(req.body.minStock ?? (stockSetupNeedsCount(material, stockMethod, unit) ? 0 : material.minStock));
+      recordMaterialCount(state, material, stock, { ...req.body, unit, stockMethod }, req.user, now());
       material.minStock = stock.minStock = minStock;
-      audit(state, req.user, "STOCK_COUNT", `Menetapkan saldo fisik ${material.name}`, { materialId: material.id, sku: stock.sku, movementId: state.stockMovements[0].id });
       return { stock, movement: state.stockMovements[0] };
     });
     res.json(result);
