@@ -248,6 +248,8 @@
 .material-cost input{padding-left:34px}
 .material-cost b{position:absolute;top:50%;left:11px;transform:translateY(-50%);color:#52627a;font-size:11px;pointer-events:none}
 .material-balances{padding-top:14px;margin-top:6px;border-top:1px solid #d7dfe9}
+.material-fields [hidden]{display:none}
+.material-fields .material-edit-note{margin:0;font-size:12px;line-height:1.45}
 .material-footer{flex-wrap:wrap}
 .material-footer>.delete-trigger{margin-right:0}
 @media(max-width:480px){.material-field{grid-template-columns:minmax(0,1fr);gap:4px}}

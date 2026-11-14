@@ -31,11 +31,19 @@ Basis audit: `defe7f230131f51de2854f79571866b4334a866c` (main/production saat pe
 
 **Tambah Bahan** mencatat saldo awal secara langsung. ROLL memakai satuan
 fisik roll; UNIT memakai satuan kalkulasi (alias lbr/lembar dikenali).
-Stok Minimum opsional di Tambah dan Edit Bahan. Edit Bahan menampilkan metode,
-satuan kalkulasi, dan lebar roll sebagai informasi; menyimpan data bahan
-atau ambang stok minimum tidak mengubah saldo.
+Stok Minimum opsional di Tambah dan Edit Bahan. Satuan kalkulasi, metode stok,
+dan lebar roll bisa diedit. Mengoreksi lebar roll atau satuan kalkulasi untuk
+bahan Per Roll tidak mengubah saldo maupun satuan fisik. Lebar fisik terpisah
+dari pilihan lebar pada produk POS. Bila satuan kalkulasi berubah, periksa HPP
+per satuan dan takaran sumber bahan untuk pesanan berikutnya: angka tidak
+dikonversi otomatis. Snapshot pemakaian/HPP pesanan dan mutasi lama tidak
+ditulis ulang.
 
-Untuk menghitung ulang saldo, termasuk saldo roll lama dalam m²/m lari:
+Perubahan metode atau satuan fisik dari Edit Bahan membutuhkan akses
+penyesuaian stok, hasil hitung fisik, dan alasan. Perubahan ini tidak dapat
+dilakukan selama bahan masih dibutuhkan pesanan yang belum memotong stok.
+Untuk menghitung ulang saldo tanpa mengedit data bahan, termasuk saldo roll
+lama dalam m²/m lari:
 
 1. Buka **Stok Bahan → Stok Opname** (atau **Tetapkan Saldo Roll** untuk saldo lama).
 2. Periksa metode, satuan, lebar roll jika berlaku, dan ambang stok minimum.

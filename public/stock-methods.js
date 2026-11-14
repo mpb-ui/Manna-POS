@@ -4,6 +4,10 @@ export function normalizedStockUnit(value) {
   const unit = String(value || "").trim().toLowerCase();
   return ({ lbr: "lembar", lembar: "lembar", pcs: "pcs", buah: "pcs", unit: "pcs", roll: "roll", "m2": "m²", "m²": "m²", "m lari": "m", "meter": "m" })[unit] || unit;
 }
+export function stockSetupNeedsCount(material, method, unit) {
+  return method !== material.stockMethod || method === "UNIT" &&
+    normalizedStockUnit(unit) !== normalizedStockUnit(material.stockUnit || material.unit);
+}
 export function defaultStockMethod(material) {
   if (["ROLL", "UNIT"].includes(material.stockMethod)) return material.stockMethod;
   return /roll/i.test(material.category || "") || normalizedStockUnit(material.unit) === "roll"
