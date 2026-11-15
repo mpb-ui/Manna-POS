@@ -1,3 +1,4 @@
+import { taxAdjustment, taxWithheld } from './order-tax.js';
 import { historyDraft, paymentReceipts } from './order-history.js';
 import { historyProductRows } from './order-history-detail.js';
 import { itemQuantityLabel } from './item-workflow.js';
@@ -57,11 +58,13 @@ export function receiptView(order, payment = null, latestPayment = null) {
   const total = Number(historical ? payment.orderTotal : order.total || 0);
   const discount = Number(historical ? payment.invoiceDiscountAmount || 0 : invoiceDiscount(order));
   const gross = Number(historical ? payment.orderGrossTotal ?? total + discount : invoiceGross(order));
+  const adjustment = historical ? Number(payment.taxAdjustment || 0) : taxAdjustment(order);
+  const withheld = historical ? Number(payment.taxWithheld || 0) : taxWithheld(order);
   const paid = Number(historical ? payment.paidAfter : order.paidAmount || 0);
   const balance = Number(historical ? payment.balanceAfter : Math.max(0,total - paid));
   const isCancelled = cancelled(order), draft = !isCancelled && !historical && historyDraft(order);
   const settled = !isCancelled && (historical ? balance === 0 : settledOrder(order));
-  return {total,discount,gross,paid,balance,isCancelled,draft,settled,latest,historical,
+  return {total,discount,gross,adjustment,withheld,paid,balance,isCancelled,draft,settled,latest,historical,
     cashier:latest ? latest.actor || 'Tidak tercatat' : order.createdByName || 'Tidak tercatat',
     status:isCancelled ? 'Dibatalkan' : settled ? 'Lunas' : 'Belum Lunas'};
 }
@@ -71,6 +74,7 @@ export function invoiceReceiptHtml(order, payment = null, latestPayment = null) 
   const warning = v.isCancelled ? 'PESANAN DIBATALKAN' : v.draft ? 'DRAFT · BELUM DIKONFIRMASI' : '';
   const paymentRows = p ? totalRow('Sudah Bayar (sebelumnya)',p.paidBefore)
     + totalRow('Bayar (pembayaran ini)',p.amount)
+    + (v.historical && p.taxWithheld ? totalRow('Potongan pajak',p.taxWithheld) : '')
     + (p.depositUsed ? totalRow('Termasuk deposit',p.depositUsed) : '')
     + (p.tenderKnown ? totalRow('Uang diterima',p.amountReceived) + totalRow('Kembali',p.changeAmount || 0) : '')
     + (p.depositAmount ? totalRow('Disimpan ke deposit',p.depositAmount) : '')
@@ -81,9 +85,11 @@ export function invoiceReceiptHtml(order, payment = null, latestPayment = null) 
     <div class="thermal-rule"></div><div class="thermal-meta">${meta('Nota',order.code)}${meta('Tanggal',thermalDate(order.createdAt)+' WITA')}${meta('Telp',order.phone)}${meta('Customer',order.customerName)}</div><div class="thermal-rule"></div>
     <div class="thermal-items">${(order.items || []).map(item=>thermalItem(item)).join('')}</div>
     <div class="thermal-rule dashed"></div><section class="thermal-summary">
-    ${v.discount ? totalRow('Total Pesanan',v.gross)+totalRow('Diskon pesanan',-v.discount) : ''}
+    ${v.discount || v.adjustment ? totalRow('Total Pesanan',v.gross) : ''}
+    ${v.discount ? totalRow('Diskon pesanan',-v.discount) : ''}
+    ${v.adjustment ? totalRow('Penyesuaian Harga',v.adjustment) : ''}
     ${totalRow('Grand Total',v.total,'thermal-grand-total')}
-    ${paymentRows}${totalRow(v.historical ? 'Total dibayar saat transaksi' : 'Total dibayar',v.paid)}
+    ${paymentRows}${!v.historical && v.withheld && !v.isCancelled ? totalRow('Total potongan pajak',v.withheld) : ''}${totalRow(v.historical ? 'Total dibayar saat transaksi' : v.withheld ? 'Total pelunasan' : 'Total dibayar',v.paid)}
     ${v.historical || !v.isCancelled ? totalRow(v.historical ? 'Sisa saat transaksi' : 'Sisa Tagihan',v.balance) : ''}
     ${v.isCancelled ? '<p>Tagihan dibatalkan; penyelesaian dana mengikuti bukti refund / deposit.</p>' : ''}
     ${!p && v.total === 0 && v.settled && v.discount ? '<p>Lunas melalui diskon penuh. Tidak ada uang masuk.</p>' : ''}

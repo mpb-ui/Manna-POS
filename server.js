@@ -1,3 +1,4 @@
+import { applyDraftTax } from './lib/order-tax.js';
 import { productWidthSettings } from './public/product-widths.js';
 import { initializeOwnerPinPolicy, validOwnerPin } from './lib/owner-pins.js';
 import {productA3Settings} from './lib/a3-presentation.js';
@@ -119,7 +120,7 @@ function sanitizeOrder(order, user) {
   if (!hasPermission(user, "reports.cost")) copy.items.forEach(item => delete item.baseCostTotal);
   if (!paymentHistoryVisible(user.role)) { delete copy.payments; delete copy.cashReceipts; }
   if (!canSeeMoney) {
-    delete copy.grossTotal; delete copy.invoiceDiscount; delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
+    delete copy.grossTotal; delete copy.invoiceDiscount; delete copy.taxGrossUp; delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
     copy.items.forEach((item) => {
       ["unitPrice", "originalUnitPrice", "baseTotal", "finishingTotal", "fileServiceTotal", "templateDesignTotal", "subtotal"].forEach((key) => delete item[key]);
       (item.finishing || []).forEach((finish) => { delete finish.unitPrice; delete finish.subtotal; });
@@ -729,6 +730,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         updatedAt: now(),
         timeline: []
       };
+      applyDraftTax(order, priced.total, req.body.taxRateBps);
       registerOrderCustomer(state,order,req.body,req.user);
       initializeOrderItems(order);
       activity(state, order, "Pesanan dibuat di POS", req.user.name);
@@ -770,7 +772,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
       });
       initializeOrderItems(order);
       order.productionChecks = {};
-      order.total = priced.total;
+      applyDraftTax(order, priced.total, req.body.taxRateBps);
       order.updatedAt = now();
       activity(state, order, "Draft pesanan diperbarui", req.user.name);
       audit(state, req.user, "ORDER_UPDATE", `Memperbarui draft ${order.code}`, { orderId: order.id });
@@ -791,13 +793,18 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       const type = req.body.type === "PO" ? "PO" : "PAYMENT";
       const method = type === "PO" ? "PO / TEMPO" : String(req.body.method || "").trim();
       const amount = type === "PO" ? 0 : Number(req.body.amount || 0);
+      const withholding = req.body.taxWithheld === undefined ? 0 : req.body.taxWithheld;
+      if (!Number.isSafeInteger(withholding) || withholding < 0) throw new Error("Potongan pajak harus berupa rupiah bulat yang tidak negatif");
+      if (type === "PO" && withholding) throw new Error("Catat potongan pajak saat pembayaran, setelah PO diterbitkan");
+      if (withholding && !req.body.requestId) throw new Error("Identitas transaksi potongan pajak wajib diisi");
       initializeCustomers(state);
       if(String(req.body.note || "").length>1000||String(req.body.reference || "").length>150)throw new Error("Catatan atau referensi pembayaran terlalu panjang");
       const fingerprintPayload=['payment',order.id,type,method,amount,req.body.depositAmount ?? 0,req.body.customerId || '',req.body.excessAction || '',req.body.confirmDeposit===true,String(req.body.reference || ''),String(req.body.note || ''),String(req.body.poNumber || '')];
       if (Object.hasOwn(req.body,'invoiceDiscountAmount')) fingerprintPayload.push(['invoiceDiscountAmount',req.body.invoiceDiscountAmount]);
+      if (withholding) fingerprintPayload.push(['taxWithheld',withholding]);
       const operation=req.body.requestId?checkOperation(state,req.body.requestId,fingerprintPayload,req.user):null;
       if(operation?.old)return order;
-      if(req.body.requestId){const previous=order.payments.find(p=>p.requestId===req.body.requestId);if(previous){if(previous.amount!==amount||previous.type!==type||previous.method!==method)throw new Error('Permintaan pembayaran sudah dipakai untuk data berbeda');return order;}}
+      if(req.body.requestId){const previous=order.payments.find(p=>p.requestId===req.body.requestId);if(previous){if(previous.amount!==amount||previous.type!==type||previous.method!==method||Number(previous.taxWithheld || 0)!==withholding)throw new Error('Permintaan pembayaran sudah dipakai untuk data berbeda');return order;}}
       const discountChanged = applyInvoiceDiscount(order, req.body.invoiceDiscountAmount, req.user);
       if (discountChanged) audit(state, req.user, 'ORDER_DISCOUNT', `Diskon pesanan ${order.code}`, {orderId:order.id, grossTotal:order.grossTotal, discountAmount:invoiceDiscount(order), total:order.total});
       if(!order.confirmed && !order.paymentConfirmed)for(const item of order.items){
@@ -806,11 +813,12 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       }
       if (!Number.isFinite(amount) || amount < 0) throw new Error("Nominal pembayaran tidak valid");
       const outstanding = Math.max(0, order.total - order.paidAmount);
+      if (withholding > outstanding) throw new Error("Potongan pajak melebihi sisa tagihan");
       const poNumber = String(req.body.poNumber || "").trim();
       const poAttachment = preparedAttachment;
       if (type === "PAYMENT" && amount>0 && !method) throw new Error("Metode pembayaran wajib dipilih");
-      if (type === "PAYMENT" && amount <= 0 && !Number(req.body.depositAmount) && !(order.total === 0 && invoiceDiscount(order) > 0 && !order.paymentConfirmed)) throw new Error("Nominal pembayaran wajib diisi");
-      if (amount > outstanding && !req.body.excessAction) throw new Error("Nominal diterima melebihi sisa tagihan");
+      if (type === "PAYMENT" && amount <= 0 && !withholding && !Number(req.body.depositAmount) && !(order.total === 0 && invoiceDiscount(order) > 0 && !order.paymentConfirmed)) throw new Error("Nominal pembayaran wajib diisi");
+      if (amount > outstanding - withholding && !req.body.excessAction) throw new Error("Nominal diterima melebihi sisa tagihan");
       if(type === "PO" && Number(req.body.depositAmount))throw new Error("Pencatatan PO tidak dapat memakai deposit; catat pembayaran secara terpisah");
       if (type === "PO" && !poNumber) throw new Error("Nomor PO wajib diisi");
       if (!order.paymentConfirmed) ensureShirtStock(state, order);
@@ -821,7 +829,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       }
       let allocation;
       if(type==='PO')order.payments.push({id:crypto.randomUUID(),requestId:req.body.requestId || null,method,type,amount:0,poNumber,poAttachment,createdAt:now(),actor:req.user.name,actorId:req.user.id,note:text(req.body.note)});
-      else if (!(order.total === 0 && invoiceDiscount(order) > 0 && amount === 0 && !Number(req.body.depositAmount))) allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
+      else if (!(order.total === 0 && invoiceDiscount(order) > 0 && amount === 0 && !withholding && !Number(req.body.depositAmount))) allocation=allocateCustomerPayment(state,order,req.body,req.user,{canUse:hasPermission(req.user,'deposit.use')});
       order.paymentConfirmedAt ||= now();
       order.paymentConfirmed = true;
       order.confirmed = true; order.confirmedAt ||= now();
@@ -835,7 +843,8 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       for (const item of retailItems) activity(state, order, `Penjualan ${item.productName}: stok satuan dicatat; ${item.status === "DIAMBIL" ? "pesanan diambil" : "barang siap diserahkan"}`, req.user.name, { itemId: item.itemId, productName: item.productName });
       order.updatedAt = now();
       activity(state, order, order.total === 0 && invoiceDiscount(order) > 0 ? "Tagihan lunas melalui diskon penuh; tidak ada uang masuk" : `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
-      audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount, depositUsed:allocation?.used || 0,depositCredit:allocation?.credit || 0 });
+      audit(state, req.user, "PAYMENT_CREATE", `Mencatat pembayaran ${order.code}`, { orderId: order.id, type, method, amount, ...(withholding ? {taxWithheld:withholding} : {}), depositUsed:allocation?.used || 0,depositCredit:allocation?.credit || 0 });
+      if(withholding)activity(state,order,"Potongan pajak dicatat",req.user.name,{category:"PAYMENT"});
       if(allocation?.credit)activity(state,order,"Kelebihan pembayaran disimpan sebagai deposit pelanggan",req.user.name);
       if(allocation?.used)activity(state,order,"Pembayaran melalui deposit dicatat",req.user.name);
       if(operation)finishOperation(state,req.body.requestId,operation.fingerprint,req.user,{orderId:order.id});

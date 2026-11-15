@@ -1,3 +1,4 @@
+import { grossUpQuote } from './order-tax.js';
 import { invoiceDiscount, invoiceGross, discountLocked } from './order-discount.js';
 
 export function paymentDiscountHtml(order, { moneyField, money }) {
@@ -16,7 +17,8 @@ export function bindPaymentDiscount(form, original, { parseMoney, money }) {
     section.querySelector('#invoice-discount-field').hidden = !toggle.checked;
     section.querySelector('.payment-discount-dash').hidden = toggle.checked;
     field.disabled = locked || !toggle.checked;
-    order.total = gross - Math.max(0, Math.min(gross, amount || 0));
+    const net = gross - Math.max(0, Math.min(gross, amount || 0));
+    order.total = original.taxGrossUp ? grossUpQuote(net, original.taxGrossUp.rateBps).total : net;
     section.querySelector('[data-invoice-total]').textContent = money(order.total);
     form.dispatchEvent(new CustomEvent('payment:totalchange'));
   }

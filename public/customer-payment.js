@@ -1,10 +1,11 @@
 import { customerPhone, customerNameKey } from './customer-identity.js';
 
-export function paymentDepositAmounts({ total, paid = 0, balance = 0, use = true, planned, received = 0, po = false }) {
+export function paymentDepositAmounts({ total, paid = 0, balance = 0, use = true, planned, received = 0, withholding = 0, po = false }) {
   const outstanding = Math.max(0, total - paid);
-  const available = Math.max(0, Math.min(balance, outstanding, planned ?? balance));
+  const netOutstanding = outstanding - (po ? 0 : Math.max(0, Math.min(outstanding, withholding)));
+  const available = Math.max(0, Math.min(balance, netOutstanding, planned ?? balance));
   const used = !po && use ? available : 0;
-  const due = outstanding - used;
+  const due = netOutstanding - used;
   return { outstanding, available, used, due, remaining: Math.max(0, due - (po ? 0 : received)), excess: po ? 0 : Math.max(0, received - due) };
 }
 
@@ -19,7 +20,7 @@ export async function mountCustomerPayment({ form, order, initial, api, can, uid
   let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false, halfAmount = false;
   const valid = () => uid() === identity && form.isConnected && (!ownerDialog || ownerDialog.open);
   const isPo = () => form.querySelector('[name=type]:checked')?.value === 'PO';
-  const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: can('deposit.use') ? customer?.depositBalance || 0 : 0, use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), po: isPo() });
+  const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: can('deposit.use') ? customer?.depositBalance || 0 : 0, use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), withholding: parseMoney(form.elements.taxWithheld?.value), po: isPo() });
   const setAmount = value => { amount.value = String(value).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
   const slot = document.createElement('section');
   slot.className = 'payment-deposit-summary';
