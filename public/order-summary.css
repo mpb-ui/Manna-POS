@@ -65,6 +65,7 @@
 .pos-layout .sticky-summary .checkout-footer .summary-row.total{min-height:37px;padding:0 0 8px;margin:0;background:transparent;border:0;font-size:18px;line-height:22px}
 .pos-layout .sticky-summary .checkout-footer .summary-row.total span:last-child{font-size:24px;line-height:29px}
 .pos-layout .sticky-summary .checkout-footer .checkout-tax-total[hidden]{display:none}
+.pos-layout .sticky-summary .checkout-footer [data-tax-add]{color:#0A68F4}
 .pos-layout .sticky-summary .checkout-footer .checkout-actions{position:static;display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:10px;margin:0;padding:0;background:transparent;border:0;box-shadow:none}
 .pos-layout .sticky-summary .checkout-actions #cancel-edit{grid-column:1/-1}
 .pos-layout .sticky-summary .checkout-actions .secondary{color:#52627a}
