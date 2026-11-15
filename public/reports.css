@@ -69,3 +69,4 @@
 @media print{.report-print .report-table{width:100%;border-collapse:collapse;font-size:10px}.report-print .report-table th,.report-print .report-table td{padding:6px;border-bottom:1px solid #ccc;text-align:left}.report-print .report-table small{display:block}.report-print .table-wrap{overflow:visible}.report-print .report-delete{display:none}}
 
 #app-shell .report-global-filters .report-range-trigger{background:#fff;border:1px solid #dfe5ed;color:#182136;font-weight:400;padding:8px 12px}
+.report-tax-badge{display:inline-block;vertical-align:middle;margin-inline-start:6px;border-radius:999px;padding:2px 7px;background:#ffefc5;color:#6a4805;font-size:11px;font-weight:750;line-height:1.4}

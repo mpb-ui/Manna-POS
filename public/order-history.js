@@ -69,11 +69,11 @@ export function filterOrderHistory(orders, filters = {}, { money = true } = {}) 
 // Receipts use immutable snapshots for new payments; reconstruct old ledgers
 // without rewriting historical records or using today's balance for an old DP.
 export function paymentReceipts(order, cashReceipts = []) {
-  const entries = (order.payments || []).map((payment, index) => ({ payment, index })).filter(({ payment }) => payment.type !== "PO" && Number(payment.amount) > 0);
-  let cumulative = Math.max(0, Number(order.paidAmount || 0) - entries.reduce((sum, { payment }) => sum + Number(payment.amount), 0));
+  const entries = (order.payments || []).map((payment, index) => ({ payment, index })).filter(({ payment }) => payment.type !== "PO" && payment.type !== "REVERSAL" && (Number(payment.amount) > 0 || Number(payment.taxWithheld) > 0));
+  let cumulative = Math.max(0, Number(order.paidAmount || 0) - entries.reduce((sum, { payment }) => sum + Number(payment.amount) + Number(payment.taxWithheld || 0), 0));
   const snapshots = entries.map(({ payment, index }) => {
     const before = Number(payment.paidBefore ?? cumulative);
-    cumulative = Number(payment.paidAfter ?? before + Number(payment.amount));
+    cumulative = Number(payment.paidAfter ?? before + Number(payment.amount) + Number(payment.taxWithheld || 0));
     const total = Number(payment.orderTotal ?? order.total);
     return { ...payment, id: payment.id || `${order.id}-payment-${index + 1}`, orderTotal: total, paidBefore: before, paidAfter: cumulative, balanceAfter: Number(payment.balanceAfter ?? Math.max(0, total - cumulative)), reconstructed: payment.balanceAfter == null };
   });
@@ -92,6 +92,7 @@ export function paymentReceipts(order, cashReceipts = []) {
     const tender = cash || incoming;
     return { ...first, sequence:index + 1, memberIds:parts.map(p => p.id),
       amount:parts.reduce((sum,p) => sum + Number(p.amount),0),
+      ...(parts.some(p=>p.taxWithheld)?{taxWithheld:parts.reduce((sum,p) => sum + Number(p.taxWithheld || 0),0)}:{}),
       method:[...new Set(parts.map(p => p.method).filter(Boolean))].join(' + '),
       paidAfter:last.paidAfter, balanceAfter:last.balanceAfter,
       reconstructed:parts.some(p => p.reconstructed),

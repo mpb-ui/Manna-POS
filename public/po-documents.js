@@ -1,3 +1,4 @@
+import { taxAdjustment } from './order-tax.js';
 import { invoiceDiscount, invoiceGross } from './order-discount.js';
 import { rollPlacementNote } from './roll-placement.js';
 const money = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
@@ -85,9 +86,12 @@ export async function buildPurchaseOrderPdf(lib, row, imageData) {
     line(money.format(item.subtotal), { font: bold }); rule();
   }
   const remaining = Math.max(0, Number(order.total) - Number(order.paidAmount));
-  if (invoiceDiscount(order)) { line(`Total Pesanan: ${money.format(invoiceGross(order))}`); line(`Diskon Pesanan: - ${money.format(invoiceDiscount(order))}`); }
+  if (invoiceDiscount(order) || taxAdjustment(order)) line(`Total Pesanan: ${money.format(invoiceGross(order))}`);
+  if (invoiceDiscount(order)) line(`Diskon Pesanan: - ${money.format(invoiceDiscount(order))}`);
+  if (taxAdjustment(order)) line(`Penyesuaian Harga: + ${money.format(taxAdjustment(order))}`);
   line(`Total Tagihan: ${money.format(order.total)}`, { font: bold, size: 13, color: blue });
-  line(`Dibayar: ${money.format(order.paidAmount)}`); line(`Sisa: ${money.format(remaining)}`, { font: bold });
+  if (order.taxWithheld && !order.isCancelled) line(`Potongan Pajak: ${money.format(order.taxWithheld)}`);
+  line(`${order.taxWithheld ? 'Total Pelunasan' : 'Dibayar'}: ${money.format(order.paidAmount)}`); line(`Sisa: ${money.format(remaining)}`, { font: bold });
   line(`Status Pembayaran: ${remaining > 0 ? "Belum Lunas" : "Lunas"}`, { font: bold });
   line("Manna Print - Labuan Bajo | Terima kasih", { color: muted, size: 10 });
   if (imageData) {
