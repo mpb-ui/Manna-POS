@@ -29,7 +29,7 @@
 .pos-layout .sticky-summary .cart-price-parts{font-size:12px;line-height:15px;gap:6px}
 .pos-layout .sticky-summary .cart-price-parts span{flex-wrap:wrap;overflow-wrap:anywhere}
 .pos-layout .sticky-summary .summary-row.total{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:10px 24px;margin:0 -20px;background:#E9F1FE;border:1px solid #D7DFE9;border-left:0;border-right:0;border-radius:0;font-size:18px;font-weight:700;line-height:22px;color:#17263C}
-.pos-layout .sticky-summary .summary-row.total span:last-child{min-width:0;font-size:24px;line-height:29px;color:#0A68F4;text-align:right;overflow-wrap:anywhere}
+.pos-layout .sticky-summary .summary-row.total>:is(span:last-child,[data-tax-total]){min-width:0;font-size:24px;font-weight:inherit;line-height:29px;color:#0A68F4;text-align:right;overflow-wrap:anywhere}
 /* Keep the original form and its handlers; its boxes share the panel's scroll area. */
 .pos-layout .sticky-summary .order-form{display:contents}
 .pos-layout .sticky-summary .order-form .form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -63,9 +63,16 @@
 .pos-layout .sticky-summary .checkout-customer{padding:20px;margin:0 -20px;background:#fff;border-block:1px solid #d7dfe9}
 .pos-layout .sticky-summary .checkout-footer{position:sticky;bottom:-20px;z-index:2;display:flex;flex-direction:column;gap:12px;flex-shrink:0;margin:-20px -20px -20px;padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));background:#fff;border-top:1px solid #d7dfe9;box-shadow:0 -3px 8px #0000001a;border-radius:0 0 11px 11px}
 .pos-layout .sticky-summary .checkout-footer .summary-row.total{min-height:37px;padding:0 0 8px;margin:0;background:transparent;border:0;font-size:18px;line-height:22px}
-.pos-layout .sticky-summary .checkout-footer .summary-row.total span:last-child{font-size:24px;line-height:29px}
+.pos-layout .sticky-summary .checkout-footer .summary-row.total>:is(span:last-child,[data-tax-total]){font-size:24px;line-height:29px}
 .pos-layout .sticky-summary .checkout-footer .checkout-tax-total[hidden]{display:none}
 .pos-layout .sticky-summary .checkout-footer [data-tax-add]{color:#0A68F4;font-size:12px;font-weight:650}
+.pos-layout .sticky-summary .checkout-tax{gap:8px;padding:10px 12px;background:#fff;border-color:#d6e4ff;color:#17263c;font-size:12px}
+.pos-layout .sticky-summary .checkout-tax [data-tax-remove]{padding:0;color:#bc3038;font-size:12px;font-weight:650}
+.pos-layout .sticky-summary .checkout-tax .checkout-tax-rate{grid-template-columns:minmax(0,1fr) minmax(0,112px);align-items:center;gap:10px;max-width:none}
+.pos-layout .sticky-summary .checkout-tax-rate input{height:34px;padding:0 30px 0 11px;font-weight:700}
+.pos-layout .sticky-summary .checkout-tax-rate .input-with-unit>b{right:11px;color:#17263c}
+.pos-layout .sticky-summary .checkout-tax .summary-row{align-items:baseline;gap:10px;padding:0;color:#17263c;font-weight:600}
+.pos-layout .sticky-summary .checkout-tax [data-tax-adjustment]{font-size:15px;text-align:right;overflow-wrap:anywhere}
 .pos-layout .sticky-summary .checkout-footer .checkout-actions{position:static;display:grid;grid-template-columns:minmax(0,.72fr) minmax(0,1.28fr);gap:10px;margin:0;padding:0;background:transparent;border:0;box-shadow:none}
 .pos-layout .sticky-summary .checkout-actions #cancel-edit{grid-column:1/-1}
 .pos-layout .sticky-summary .checkout-actions .secondary{color:#52627a}
@@ -75,7 +82,7 @@
 @media(max-width:480px){
   .pos-layout .sticky-summary .checkout-customer{margin-inline:-16px;padding:16px}
   .pos-layout .sticky-summary .checkout-footer{bottom:-16px;margin:-20px -16px -16px}
-  .pos-layout .sticky-summary .checkout-footer .summary-row.total span:last-child{font-size:clamp(20px,6vw,24px);line-height:1.25}
+  .pos-layout .sticky-summary .checkout-footer .summary-row.total>:is(span:last-child,[data-tax-total]){font-size:clamp(20px,6vw,24px);line-height:1.25}
   .pos-layout .sticky-summary .checkout-actions>button{font-size:14px;padding:8px}
 }
 
