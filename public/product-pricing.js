@@ -1,3 +1,5 @@
+import { isPaperProductCategory } from './paper-product-tabs.js';
+
 // Shared POS/server rules. Existing catalogs without a basis retain quantity tiers.
 export const wholesaleBasis = product => ['area','length'].includes(product.wholesaleBasis) ? product.wholesaleBasis : 'quantity';
 export const purchaseUnit = product => product?.priceBasis && product.priceBasis !== 'unit' ? 'lembar' : product?.unitName || product?.saleUnit || 'pcs';
@@ -13,7 +15,7 @@ export function normalizeMinimum(body, current = {}) {
   if (enabled && (!Number.isSafeInteger(quantity) || quantity < 1)) throw new Error('Jumlah minimum pembelian harus bilangan bulat minimal 1');
   return {minimumEnabled:enabled, minimumQuantity:enabled ? quantity : 1};
 }
-export const supportsPurchaseMultiple = category => String(category || '').trim().toLowerCase() === 'produk kertas';
+export const supportsPurchaseMultiple = isPaperProductCategory;
 export function normalizePurchaseMultiple(category, value = 1) {
   if (!supportsPurchaseMultiple(category)) return 1;
   const multiple = Number(value);
