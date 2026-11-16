@@ -79,6 +79,7 @@
 .pos-layout .sticky-summary .checkout-actions #cancel-edit{grid-column:1/-1}
 .pos-layout .sticky-summary .checkout-actions .secondary{color:#52627a}
 .pos-layout .sticky-summary .checkout-actions>button{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.pos-layout .sticky-summary .checkout-actions>.checkout-save-draft{padding-inline:8px;white-space:nowrap}
 .pos-layout .sticky-summary .cart-item-footer>button:disabled{opacity:.5;cursor:wait}
 .template-design-quantity{margin-top:12px;max-width:180px}
 @media(max-width:480px){
