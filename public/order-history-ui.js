@@ -21,8 +21,8 @@ export function createOrderHistory({ state, root, api, escapeHtml: e, rupiah, op
       <form class="history-filters" id="history-filters">
         <label class="history-search"><span>Cari pesanan</span><input name="q" type="search" autocomplete="off" placeholder="${money ? "Invoice, pelanggan, nomor WA, nominal…" : "Invoice, pelanggan, nomor WA…"}" value="${e(filters.q)}"></label>
         <div class="history-date-filters">
-          <label class="history-date ${filters.from ? "has-value" : ""}"><span>Dari tanggal (WITA)</span><input type="date" name="from" value="${e(filters.from)}"><span class="history-date-placeholder" aria-hidden="true">Dari tanggal</span></label>
-          <label class="history-date ${filters.to ? "has-value" : ""}"><span>Sampai tanggal (WITA)</span><input type="date" name="to" value="${e(filters.to)}"><span class="history-date-placeholder" aria-hidden="true">Sampai tanggal</span></label>
+          <label class="history-date"><span>Dari tanggal <span class="visually-hidden">(WITA)</span></span><input type="date" name="from" value="${e(filters.from)}"></label>
+          <label class="history-date"><span>Sampai tanggal <span class="visually-hidden">(WITA)</span></span><input type="date" name="to" value="${e(filters.to)}"></label>
         </div>
         <div class="history-filter-options ${money ? "" : "without-money"}">
           <label><span>Status pesanan / produk</span><select name="status"><option value="">Semua status</option><option value="DRAFT">Draft</option>${Object.entries(state.statusLabels).map(([value, label]) => `<option value="${e(value)}">${e(label)}</option>`).join("")}</select></label>
@@ -39,7 +39,6 @@ export function createOrderHistory({ state, root, api, escapeHtml: e, rupiah, op
     root.querySelectorAll("[data-history-action]").forEach(button=>button.onclick=()=>runAction(button.dataset.historyAction));
     form.onsubmit = event => event.preventDefault();
     form.oninput = event => {
-      if (event.target.type === "date") event.target.closest("label").classList.toggle("has-value", Boolean(event.target.value));
       Object.assign(filters, Object.fromEntries(new FormData(form)), { page: 1 });
       clearSelection(); generation++; clearTimeout(timer);
       root.querySelector("#history-results").setAttribute("aria-busy", "true");

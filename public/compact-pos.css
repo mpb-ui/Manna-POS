@@ -43,7 +43,7 @@
 .image-measurements .input-with-unit>b{right:11px;font-size:12px}
 .top-navigation .top-brand img.top-brand-logo{width:160px;height:auto;display:block;object-fit:contain;filter:none}
 /* One icon shape and centered hit area for dropdown and disclosure arrows. */
-select:not([multiple]):not([size]){appearance:none;background-image:url('/chevron-down.svg');background-repeat:no-repeat;background-position:right 12px center;background-size:14px 14px;padding-right:38px!important}
+select:not([multiple]):not([size]):where(:not([data-project-status-order])){appearance:none;background-image:url('/chevron-down.svg');background-repeat:no-repeat;background-position:right 12px center;background-size:14px 14px;padding-right:38px!important}
 .ui-chevron{display:inline-block;width:20px;height:20px;flex:0 0 20px;vertical-align:middle;background:currentColor;mask:url('/chevron-down.svg') center/14px 14px no-repeat;-webkit-mask:url('/chevron-down.svg') center/14px 14px no-repeat;line-height:1}
 .project-group-row button>.ui-chevron{width:20px;height:20px;flex-basis:20px;margin:0;align-self:center}
 .project-group-row button[aria-expanded="false"]>.ui-chevron{transform:rotate(-90deg)}
