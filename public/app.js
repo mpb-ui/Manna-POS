@@ -17,7 +17,7 @@ import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from 
 import { paymentDiscountHtml, bindPaymentDiscount } from './payment-discount-ui.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
 import { enhanceMaterialSelects } from './material-picker.js';
-import { minimumQuantity, minimumError, purchaseUnit, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
+import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
 import { openGoodsReturn, mountGoodsReturnHistory, closeGoodsReturns, goodsReturnReportHtml } from "./goods-returns-ui.js";
 import { checkoutDeadlineHtml, bindCheckoutDeadline } from "./checkout-deadline.js";
@@ -296,8 +296,9 @@ function suggestedFinishUnits(finish, width, length) {
 
 function quantitySelectorHtml(unit = "Lembar") {
   if (/^lbr$/i.test(unit)) unit = "lembar";
-  const min=minimumQuantity(selectedProduct());
-  return `<div class="quantity-field"><span>Jumlah produk</span><div class="quantity-control"><div class="qty-stepper"><button type="button" data-product-minus aria-label="Kurangi jumlah produk">−</button><input id="quantity" type="number" min="${min}" step="1" value="${min}" aria-label="Jumlah produk"><button type="button" data-product-plus aria-label="Tambah jumlah produk">+</button></div><b>${escapeHtml(unit)}</b></div>${min>1?`<small class="minimum-help">Minimum pembelian ${min} ${escapeHtml(unit)}</small>`:""}<p class="minimum-error hidden" data-minimum-error role="status"></p></div>`;
+  const product = selectedProduct();
+  const min = minimumQuantity(product), first = firstPurchaseQuantity(product), multiple = purchaseMultiple(product);
+  return `<div class="quantity-field"><span>Jumlah produk</span><div class="quantity-control"><div class="qty-stepper"><button type="button" data-product-minus aria-label="Kurangi jumlah produk">−</button><input id="quantity" type="number" min="${min}" step="1" value="${first}" aria-label="Jumlah produk"><button type="button" data-product-plus aria-label="Tambah jumlah produk">+</button></div><b>${escapeHtml(unit)}</b></div>${min>1?`<small class="minimum-help">Minimum pembelian ${min} ${escapeHtml(unit)}</small>`:""}${multiple>1?`<small class="minimum-help">Kelipatan pembelian ${multiple} ${escapeHtml(unit)}</small><p class="minimum-help hidden" data-purchase-adjustment role="status"></p>`:""}<p class="minimum-error hidden" data-minimum-error role="status"></p></div>`;
 }
 
 function imageMeasurementHtml(product, includeQuantity = true) {
@@ -714,6 +715,13 @@ function readCurrentLine() {
   };
 }
 
+function configuratorQuantityError(product, quantity, line) {
+  const previous = configurationEditingLine;
+  const previousQuantity = previous?.itemId && previous.productId === product.id && (previous.materialVariantId || '') === line.materialVariantId
+    ? Number(previous.quantity) : undefined;
+  return minimumError(product, quantity) || purchaseMultipleError(product, quantity, previousQuantity);
+}
+
 function updatePreview() {
   sheetController?.sync();
   const line = readCurrentLine();
@@ -727,12 +735,22 @@ function updatePreview() {
   }
   const fixedVariant = product.fixedSizeVariants?.find(item => item.id === line.sizeVariantId);
   if (supportsRollPlacement(product)) syncRollConfigurator(document.querySelector('#order-detail'),product,line);
-  const quantityInput=document.querySelector('#quantity'), minimumMessage=minimumError(product,quantityInput?.value ?? line.quantity);
-  const minimumTarget=document.querySelector('[data-minimum-error]');
-  if(minimumTarget){minimumTarget.textContent=minimumMessage;minimumTarget.classList.toggle('hidden',!minimumMessage);}
-  if(quantityInput){quantityInput.setCustomValidity(minimumMessage);document.querySelector('[data-product-minus]')?.toggleAttribute('disabled',Number(quantityInput.value)<=minimumQuantity(product));}
-  if(!supportsRollPlacement(product))document.querySelector('#add-item').disabled=Boolean(minimumMessage);
-  else if(minimumMessage)document.querySelector('#add-item').disabled=true;
+  const quantityInput = document.querySelector('#quantity');
+  const rawQuantity = quantityInput?.value ?? line.quantity;
+  const multiple = purchaseMultiple(product);
+  const message = configuratorQuantityError(product, rawQuantity, line);
+  const blockingMessage = multiple > 1 && Number.isSafeInteger(roundPurchaseQuantity(product, rawQuantity)) ? '' : message;
+  const minimumTarget = document.querySelector('[data-minimum-error]');
+  if (minimumTarget) {
+    minimumTarget.textContent = blockingMessage;
+    minimumTarget.classList.toggle('hidden', !blockingMessage);
+  }
+  if (quantityInput) {
+    quantityInput.setCustomValidity(blockingMessage);
+    document.querySelector('[data-product-minus]')?.toggleAttribute('disabled', Number(rawQuantity) <= firstPurchaseQuantity(product));
+  }
+  if (!supportsRollPlacement(product)) document.querySelector('#add-item').disabled = Boolean(blockingMessage);
+  else if (blockingMessage) document.querySelector('#add-item').disabled = true;
   const materialVariant = product.materialVariants?.find(item => item.id === line.materialVariantId);
   const combination = materialVariant?.combinations?.find(item => item.subVariantId === line.subVariantId);
   updateWholesalePrices({ scope: document.querySelector('#order-detail'), product, line, fixedVariant, materialVariant, combination });
@@ -882,11 +900,48 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     const radio = document.querySelector(`input[name="width"][value="${width}"]`); if (radio) radio.checked = true;
     updatePreview();
   }));
-  document.querySelectorAll('#image-width,#image-length,#allowance,#quantity,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],#template-design-quantity,[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll('#image-width,#image-length,#allowance,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],#template-design-quantity,[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   bindFinishingDropdown(selectedProduct());
-  document.querySelectorAll("[data-product-minus],[data-product-plus]").forEach(button => button.onclick = () => { const input = document.querySelector("#quantity"); input.value = Math.max(minimumQuantity(selectedProduct()), Math.floor(Number(input.value) || minimumQuantity(selectedProduct())) + (button.hasAttribute("data-product-plus") ? 1 : -1)); updatePreview(); });
+  const product = selectedProduct();
+  const quantityInput = document.querySelector('#quantity');
+  const adjustment = document.querySelector('[data-purchase-adjustment]');
+  const multiple = purchaseMultiple(product), first = firstPurchaseQuantity(product);
+  const commitQuantity = () => {
+    if (multiple > 1) {
+      const raw = Number(quantityInput.value), adjusted = roundPurchaseQuantity(product, raw);
+      if (Number.isSafeInteger(adjusted) && raw !== adjusted) {
+        quantityInput.value = adjusted;
+        const unit = purchaseUnit(product);
+        adjustment.textContent = `Jumlah disesuaikan menjadi ${adjusted} ${unit}. Produk ini memiliki kelipatan pembelian ${multiple} ${unit}.`;
+        adjustment.classList.remove('hidden');
+      }
+    }
+    updatePreview();
+  };
+  const stepQuantity = direction => {
+    const current = Math.floor(Number(quantityInput.value) || first);
+    const rounded = roundPurchaseQuantity(product, current);
+    const next = direction > 0
+      ? rounded + (rounded === current ? multiple : 0) : Math.max(first, rounded - multiple);
+    if (!Number.isSafeInteger(next)) return;
+    quantityInput.value = next;
+    adjustment?.classList.add('hidden');
+    updatePreview();
+  };
+  quantityInput?.addEventListener('input', () => { adjustment?.classList.add('hidden'); updatePreview(); });
+  quantityInput?.addEventListener('change', commitQuantity);
+  if (multiple > 1) quantityInput.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); commitQuantity(); }
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      stepQuantity(event.key === 'ArrowUp' ? 1 : -1);
+    }
+  });
+  document.querySelectorAll('[data-product-minus],[data-product-plus]').forEach(button => {
+    button.onclick = () => stepQuantity(button.hasAttribute('data-product-plus') ? 1 : -1);
+  });
   document.querySelectorAll('input[name="size-variant"]').forEach((input) => input.addEventListener("change", syncFixedSizeUi));
   document.querySelectorAll('input[name="material-variant"]').forEach((input) => input.addEventListener("change", syncMaterialVariantUi));
   syncFixedSizeUi();
@@ -924,14 +979,21 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     if (submitting) return;
     const calculationError = sheetController?.validate();
     if (calculationError) return toast(calculationError, "error");
-    const line = readCurrentLine();
+    let line = readCurrentLine();
+    let quantityIssue = configuratorQuantityError(product, quantityInput?.value ?? line.quantity, line);
+    if (quantityIssue && multiple > 1) {
+      commitQuantity();
+      line = readCurrentLine();
+      quantityIssue = configuratorQuantityError(product, quantityInput?.value ?? line.quantity, line);
+    }
     if (line.placementError) return toast(line.placementError,"error");
-    const minIssue=minimumError(selectedProduct(),document.querySelector("#quantity")?.value ?? line.quantity);if(minIssue)return toast(minIssue,"error");
+    if (quantityIssue) return toast(quantityIssue,"error");
     const controls = [...document.querySelectorAll(".configurator-body input:not([hidden])")].filter(input => !input.closest(".hidden"));
     if (controls.some(input => !input.reportValidity())) return;
     if (!Number.isSafeInteger(line.quantity) || line.quantity < 1 || !Number.isFinite(line.previewTotal)) return toast("Jumlah produk atau ukuran tidak valid", "error");
     submitting=true; const addButton=event.currentTarget;addButton.disabled=true;
-    try { await onAdd(line); } finally { submitting=false; if(dialog.open && addButton.isConnected) {addButton.disabled=false;updatePreview();} }
+    const quantityNotice = adjustment && !adjustment.classList.contains('hidden') ? adjustment.textContent : '';
+    try { await onAdd(line, quantityNotice); } finally { submitting=false; if(dialog.open && addButton.isConnected) {addButton.disabled=false;updatePreview();} }
   });
 }
 
@@ -996,14 +1058,14 @@ function openProductConfigurator(productId, carryDraft = null, editCartId = null
   dialog.onclose = () => { if (dialog.open) return; configurationNotesCleanup?.(); configurationNotesCleanup = null; sheetController = null; shirtStockController = null; configurationEditingLine = null; dialog.classList.remove("configurator-dialog","automatic-roll-dialog","outdoor-roll-dialog","product-config-dialog"); dialog.onclose = dialog.oncancel = dialog.onclick = dialog.onpointerdown = null; };
   if(product.dtfShirt && !saved)detail.querySelector('[data-shirt-quantity]').value=minimumQuantity(product);
   if (!dialog.open) dialog.showModal();
-  bindProductConfiguration(async line => {
+  bindProductConfiguration(async (line, quantityNotice) => {
     const body=detail.querySelector('.configurator-body');body.inert=true;
     try {
       const changed = await mutateCart(cart => editCartId ? editCartLine(cart,editCartId,line) : addCartLine(cart,line,product), {
         guard:()=>token.active && dialog.open && detail.contains(body),
         afterCommit:()=>{token.active=false;configurationDrafts.delete(product.id);if(product.a3Family)state.products.filter(p=>p.a3Family===product.a3Family&&p.a3Kind===product.a3Kind).forEach(p=>configurationDrafts.delete(p.id));if(needsFile(line,product))state.draft.fileReadiness='UNCONFIRMED';dialog.close();detail.replaceChildren();}
       });
-      if(changed){toast(editCartId?'Perubahan produk disimpan':'Produk ditambahkan');if(editCartId)root.querySelector(`[data-cart-row="${CSS.escape(editCartId)}"] .cart-edit-button`)?.focus({preventScroll:true});}
+      if(changed){toast(quantityNotice || (editCartId?'Perubahan produk disimpan':'Produk ditambahkan'));if(editCartId)root.querySelector(`[data-cart-row="${CSS.escape(editCartId)}"] .cart-edit-button`)?.focus({preventScroll:true});}
     } catch(error) { if(token.active)toast(error.message,'error'); }
     finally { if(body.isConnected)body.inert=false; }
   }, saved?.sheetDraft);

@@ -3,6 +3,7 @@ import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSale
 import { DEFAULT_VARIANT_TYPES, DEFAULT_OPTION_TYPES, variantCardName, copyTierRanges, mergeMaterialSources, promoDate } from './product-variants.js';
 import { enhanceMaterialSelects } from './material-picker.js';
 import {categoryWidthChoices,normalizeProductWidths} from './product-widths.js';
+import { purchaseMultiple, supportsPurchaseMultiple } from './product-pricing.js';
 
 export function openProductEditor(ctx, product = null) {
   const {state,dialog,api,e,toast,showDialog,finishingOptionsHtml,materialRowHtml,readMaterialRows,variantSourcesHtml,deleteButtonHtml,bindDeleteRecord} = ctx;
@@ -29,6 +30,7 @@ export function openProductEditor(ctx, product = null) {
     }
   }
   const discount = product?.discount || {};
+  const multiple = purchaseMultiple(product);
   const attrs = (name,value,extra='') => `name="${name}" id="pe-${name}" value="${e(value ?? '')}" ${extra}`;
   const input = (name,value,extra='') => `<input ${attrs(name,value,extra)}>`;
   const select = (name,values,selected,placeholder='') => `<select name="${name}" id="pe-${name}">${placeholder ? `<option value="">${e(placeholder)}</option>` : ''}${values.map(v=>`<option value="${e(typeof v==='string'?v:v.value)}" ${(typeof v==='string'?v:v.value)===selected?'selected':''}>${e(typeof v==='string'?v:v.label)}</option>`).join('')}</select>`;
@@ -58,6 +60,7 @@ export function openProductEditor(ctx, product = null) {
       <textarea name="note" aria-label="Informasi produk (opsional)" placeholder="Informasi produk (opsional)" rows="1" maxlength="2000">${e(product?.note || '')}</textarea>
       </div><div class="pe-info-settings">
       ${setting('Minimum Pembelian','minimumEnabled',product?.minimumEnabled,`<div data-minimum-fields ${product?.minimumEnabled?'':'hidden'}><div class="pe-minimum-stepper"><button type="button" data-minimum-step="-1" aria-label="Kurangi minimum pembelian"><img src="/product-editor-assets/minus.svg" alt=""></button>${input('minimumQuantity',product?.minimumQuantity || 1,'type="number" min="1" step="1" aria-label="Jumlah minimum pembelian"')}<button type="button" data-minimum-step="1" aria-label="Tambah minimum pembelian"><img src="/product-editor-assets/plus.svg" alt=""></button></div></div>`)}
+      <div data-purchase-multiple-setting hidden>${setting('Kelipatan Pembelian','purchaseMultipleEnabled',multiple>1,`<div data-purchase-multiple-fields hidden>${field('Jumlah kelipatan',input('purchaseMultiple',multiple>1?multiple:2,'type="number" min="2" step="1"'),'purchaseMultiple')}</div>`)}</div>
       ${setting('Kalkulator Jumlah Lembar','sheetCalculatorEnabled',product?.sheetCalculatorEnabled,`<div class="pe-profile-options" data-profile-options ${product?.sheetCalculatorEnabled?'':'hidden'}>${profileChoices.map(p=>`<label class="pe-radio"><input type="radio" name="sheetProfileId" value="${e(p.id)}" ${(product?.sheetProfileId || 'a3-plus')===p.id?'checked':''}><span>${e(p.id==='a3-plus'?'A3+':p.id==='a3'?'A3':p.name || p.label || p.id)}</span></label>`).join('')}</div>`)}
       ${setting('Tampilkan di Home','featured',product?.featured)}
       <div data-a3-quick-setting>${setting('Tampilkan di Sering Dipilih','a3Popular',product?.a3Popular,'<p class="pe-a3-help" data-a3-quick-help></p>')}</div>
@@ -153,6 +156,10 @@ export function openProductEditor(ctx, product = null) {
     for(const option of el('wholesaleBasis').options)option.disabled=option.value==='area'&&mode!=='sqm'||option.value==='length'&&mode!=='linear_m';
     if(mode==='unit')el('wholesaleBasis').value='quantity';
     form.querySelector('[data-minimum-fields]').hidden=!el('minimumEnabled').checked;
+    const allowsMultiple=supportsPurchaseMultiple(el('category').value);
+    form.querySelector('[data-purchase-multiple-setting]').hidden=!allowsMultiple;
+    el('purchaseMultipleEnabled').disabled=!allowsMultiple;
+    form.querySelector('[data-purchase-multiple-fields]').hidden=!allowsMultiple||!el('purchaseMultipleEnabled').checked;
     form.querySelector('[data-promo-fields]').hidden=!el('discountEnabled').checked;
     const nominal=el('discountType').value==='nominal',discountInput=el('discountValue');
     const prior=discountInput.type;
@@ -193,7 +200,7 @@ export function openProductEditor(ctx, product = null) {
     else if(name==='productMode'||name==='hasOptions') { syncBasics();renderCards(); }
     else if(name==='category'||name==='a3Kind') { const selected=[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value);form.querySelector('#finishing-options').innerHTML=finishingOptionsHtml(el('category').value,selected,product?.a3Kind===el('a3Kind').value?product:null);syncBasics(); }
     else if(name==='a3Popular')syncBasics();
-    else if(['minimumEnabled','sheetCalculatorEnabled','discountEnabled','discountType'].includes(name)) syncBasics();
+    else if(['minimumEnabled','purchaseMultipleEnabled','sheetCalculatorEnabled','discountEnabled','discountType'].includes(name)) syncBasics();
   });
   form.addEventListener('click',async event=>{
     const b=event.target.closest('button');if(!b)return;
@@ -237,6 +244,9 @@ export function openProductEditor(ctx, product = null) {
       if(!el('widths').disabled&&!readWidths().length)fail('Pilih minimal satu lebar bahan',form.querySelector('#pe-width-chips button')||el('widths'),'info');
       if(ctx.categoryId(el('category').value)==='print-a3'&&!el('a3Kind').value)fail('Pilih tab Print A3+',el('a3Kind'),'info');
       if(el('minimumEnabled').checked && (!Number.isSafeInteger(Number(el('minimumQuantity').value)) || Number(el('minimumQuantity').value)<1))fail('Minimum pembelian harus bilangan bulat minimal 1',el('minimumQuantity'),'info');
+      const multipleActive = supportsPurchaseMultiple(el('category').value) && el('purchaseMultipleEnabled').checked;
+      const multipleValue = Number(el('purchaseMultiple').value);
+      if(multipleActive && (!Number.isSafeInteger(multipleValue) || multipleValue<2))fail('Kelipatan pembelian harus bilangan bulat minimal 2',el('purchaseMultiple'),'info');
       if(isVariants()) {
         if(!el('variantType').value)fail('Pilih tipe varian',el('variantType'));
         if(hasOptions()&&!el('optionType').value)fail('Pilih tipe opsi',el('optionType'));
@@ -251,7 +261,7 @@ export function openProductEditor(ctx, product = null) {
       const normalizedCard=c=>({...c,baseCost:Number(c.baseCost || 0),price:c.price===''?null:Number(c.price),priceTiers:c.priceTiers.map(t=>({...t,price:Number(t.price)}))});
       const materialVariants=variantMode?variants.map(v=>{const c=normalizedCard(cardState(v.id));const combinations=hasOptions()?options.map(o=>({subVariantId:o.id,...normalizedCard(cardState(v.id+'|'+o.id))})):[];return {id:v.id,label:v.label.trim(),...c,price:c.price || combinations[0]?.price || Number(first.price),sheetProfileId:v.sheetProfileId || '',combinations};}):[];
       const payload={productEditorVersion:1,sku:el('sku').value.trim(),name:el('name').value.trim(),category:el('category').value,a3Kind:el('a3Kind').disabled?null:el('a3Kind').value,a3Popular:ctx.categoryId(el('category').value)==='print-a3'&&el('a3Popular').checked,saleUnit:normalizeSaleUnit(el('saleUnit').value),widths:el('widths').disabled?[]:readWidths(),machineIds:el('machineId').value?[el('machineId').value]:[],note:el('note').value,
-        active:el('active').checked,featured:el('featured').checked,minimumEnabled:el('minimumEnabled').checked,minimumQuantity:Number(el('minimumQuantity').value),sheetCalculatorEnabled:el('sheetCalculatorEnabled').checked,sheetProfileId:el('sheetProfileId')?.value || '',retailAtK:el('retailAtK').value==='true',atkGroup:el('atkGroup').value,barcode:el('barcode').value,
+        active:el('active').checked,featured:el('featured').checked,minimumEnabled:el('minimumEnabled').checked,minimumQuantity:Number(el('minimumQuantity').value),purchaseMultiple:multipleActive?multipleValue:1,sheetCalculatorEnabled:el('sheetCalculatorEnabled').checked,sheetProfileId:el('sheetProfileId')?.value || '',retailAtK:el('retailAtK').value==='true',atkGroup:el('atkGroup').value,barcode:el('barcode').value,
         price:Number(first.price),baseCost:Number(first.baseCost || 0),materialSources:variantMode?[]:first.materialSources,wholesaleEnabled:!variantMode && first.priceTiers.length>0,wholesaleBasis:el('wholesaleBasis').value,priceTiers:variantMode?[]:normalizedCard(first).priceTiers,
         hasMaterialVariants:variantMode,variantType:el('variantType').value,optionType:hasOptions()?el('optionType').value:'',subVariantLabel:hasOptions()?el('optionType').value:'',materialVariants,subVariants:hasOptions()?options.map(o=>({id:o.id,label:o.label.trim()})):[],finishingIds:[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value),
         discount:{enabled:el('discountEnabled').checked,type:el('discountType').value,value:el('discountType').value==='nominal'?ctx.parseMoney(el('discountValue').value):Number(el('discountValue').value),startDate:el('startDate').value,endDate:el('endDate').value}};
