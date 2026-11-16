@@ -14,7 +14,7 @@
 #app-shell .page-toolbar .field>span{margin:0;white-space:nowrap}
 #app-shell .page-toolbar .deposit-check{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap}
 .master-page>:not(.page-toolbar){margin-left:24px;margin-right:24px}
-.master-page>.master-summary,.master-page>.master-tabs{margin-top:16px}
+.master-page>.master-summary{margin-top:16px}
 .master-page>#employees-content>:first-child{margin-top:16px}
 .stock-page>.stock-grid{padding:16px 24px 28px}
 .page-toolbar input:focus-visible,.page-toolbar button:focus-visible,.page-toolbar select:focus-visible{outline:2px solid #0a68f4;outline-offset:2px}
@@ -25,9 +25,21 @@
 .stock-page .table-wrap{overflow-x:auto}.stock-page .table-wrap table{min-width:900px}
 @media(max-width:700px){#app-shell .stock-page .page-toolbar .stock-filters select{flex:1 1 100%;width:100%;max-width:none}}
 
-/* Master Data: choose a tab, then work with that panel's controls. */
-.master-data-page>.master-tabs{margin-top:0;overflow-x:auto;scrollbar-width:thin}
-.master-data-page>.master-tabs button{flex:0 0 auto;white-space:nowrap;min-height:40px;font-size:14px}
+/* Keep the title, tabs and active toolbar together as the toolbar wraps. */
+.master-data-page>.master-sticky-header{
+  --master-header-gutter:24px;
+  position:sticky;
+  top:var(--top-navigation-height);
+  z-index:20;
+  margin-inline:0;
+  max-height:calc(100dvh - var(--top-navigation-height) - 80px);
+  overflow:auto;
+  background:var(--bg);
+}
+.master-sticky-header>:is(.master-tabs,.master-panel-head){margin-inline:var(--master-header-gutter)}
+.master-sticky-header>.master-tabs button{flex:0 0 auto;white-space:nowrap;min-height:40px;font-size:14px}
+.master-sticky-header>.master-panel-head{background:#fff;border:1px solid var(--line);border-radius:14px 14px 0 0}
+.master-sticky-header:has(>.master-panel-head)+.panel{border-top:0;border-top-left-radius:0;border-top-right-radius:0}
 .master-readable-list tbody td:not(:last-child){font-size:14px}
 .master-readable-list tbody :is(small,.badge,.role-badge,.mini-chip){font-size:11px}
 .master-readable-list tbody tr:nth-child(even of :where(:not(.hidden))){background:#f8f8f8}
@@ -49,6 +61,7 @@
 .master-data-page .campaign-settings-panel form{padding:16px}
 .master-data-page .campaign-settings-panel form>.product-note{margin:0}
 @media(max-width:700px){
+  .master-data-page>.master-sticky-header{--master-header-gutter:12px}
   .master-panel-head{padding:12px}
   .master-panel-controls{width:100%;justify-content:flex-start;gap:8px}
   .master-panel-filters{display:contents}
@@ -59,4 +72,4 @@
   .master-panel-context{margin:12px}
   .master-data-page .campaign-settings-panel form{padding:12px}
 }
-@media(pointer:coarse){.master-panel-head :is(button,.search,select),.master-data-page>.master-tabs button{min-height:44px}}
+@media(pointer:coarse){.master-panel-head :is(button,.search,select),.master-sticky-header>.master-tabs button{min-height:44px}}

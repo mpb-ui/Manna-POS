@@ -38,6 +38,11 @@ export function openProductEditor(ctx, product = null) {
   const toggle = (name,checked,label,extra='') => `<label class="pe-switch"><input type="checkbox" role="switch" name="${name}" ${checked?'checked':''} ${extra}><span aria-hidden="true"></span><b>${label}</b></label>`;
   const reference = (label,name,values,selected,kind,placeholder) => field(label,`<div class="pe-reference">${select(name,values,selected,placeholder)}<button type="button" class="pe-add-reference" data-reference-kind="${kind}" aria-label="Tambah ${label}"><img src="/product-editor-assets/add.svg" alt=""></button></div><div class="pe-reference-editor" data-reference-editor="${kind}" hidden><input data-reference-label maxlength="${kind==='saleUnits'?40:80}" placeholder="Nama pilihan"><button type="button" class="primary" data-save-reference>Simpan</button><button type="button" class="secondary" data-cancel-reference aria-label="Batal menambah pilihan">×</button></div>`,name);
   const setting = (label,name,checked,content='') => `<section class="pe-setting"><div class="pe-setting-head"><strong>${label}</strong>${toggle(name,checked,label)}</div>${content}</section>`;
+  const quantitySelector = (name, value, min, label) => `<div class="pe-minimum-stepper">
+    <button type="button" data-quantity-step="-1" aria-label="Kurangi ${label}"><img src="/product-editor-assets/minus.svg" alt=""></button>
+    ${input(name,value,`type="number" min="${min}" step="1" aria-label="Jumlah ${label}"`)}
+    <button type="button" data-quantity-step="1" aria-label="Tambah ${label}"><img src="/product-editor-assets/plus.svg" alt=""></button>
+  </div>`;
   const profiles = state.catalogOptions.sheetCalculatorProfiles || [];
   const profileChoices = profiles.filter(p=>['a3-plus','a3'].includes(p.id) || p.id===product?.sheetProfileId);
   const machineOptions = state.machines.filter(m=>m.active!==false || product?.machineIds?.includes(m.id)).map(m=>({value:m.id,label:m.name}));
@@ -59,8 +64,8 @@ export function openProductEditor(ctx, product = null) {
       ${field('Barcode (opsional)',input('barcode',product?.barcode,'maxlength="128"'),'barcode','data-atk-field')}
       <textarea name="note" aria-label="Informasi produk (opsional)" placeholder="Informasi produk (opsional)" rows="1" maxlength="2000">${e(product?.note || '')}</textarea>
       </div><div class="pe-info-settings">
-      ${setting('Minimum Pembelian','minimumEnabled',product?.minimumEnabled,`<div data-minimum-fields ${product?.minimumEnabled?'':'hidden'}><div class="pe-minimum-stepper"><button type="button" data-minimum-step="-1" aria-label="Kurangi minimum pembelian"><img src="/product-editor-assets/minus.svg" alt=""></button>${input('minimumQuantity',product?.minimumQuantity || 1,'type="number" min="1" step="1" aria-label="Jumlah minimum pembelian"')}<button type="button" data-minimum-step="1" aria-label="Tambah minimum pembelian"><img src="/product-editor-assets/plus.svg" alt=""></button></div></div>`)}
-      <div data-purchase-multiple-setting hidden>${setting('Kelipatan Pembelian','purchaseMultipleEnabled',multiple>1,`<div data-purchase-multiple-fields hidden>${field('Jumlah kelipatan',input('purchaseMultiple',multiple>1?multiple:2,'type="number" min="2" step="1"'),'purchaseMultiple')}</div>`)}</div>
+      ${setting('Minimum Pembelian','minimumEnabled',product?.minimumEnabled,`<div data-minimum-fields ${product?.minimumEnabled?'':'hidden'}>${quantitySelector('minimumQuantity',product?.minimumQuantity || 1,1,'minimum pembelian')}</div>`)}
+      <div data-purchase-multiple-setting hidden>${setting('Kelipatan Pembelian','purchaseMultipleEnabled',multiple>1,`<div data-purchase-multiple-fields hidden>${quantitySelector('purchaseMultiple',multiple>1?multiple:2,2,'kelipatan pembelian')}</div>`)}</div>
       ${setting('Kalkulator Jumlah Lembar','sheetCalculatorEnabled',product?.sheetCalculatorEnabled,`<div class="pe-profile-options" data-profile-options ${product?.sheetCalculatorEnabled?'':'hidden'}>${profileChoices.map(p=>`<label class="pe-radio"><input type="radio" name="sheetProfileId" value="${e(p.id)}" ${(product?.sheetProfileId || 'a3-plus')===p.id?'checked':''}><span>${e(p.id==='a3-plus'?'A3+':p.id==='a3'?'A3':p.name || p.label || p.id)}</span></label>`).join('')}</div>`)}
       ${setting('Tampilkan di Home','featured',product?.featured)}
       <div data-a3-quick-setting>${setting('Tampilkan di Sering Dipilih','a3Popular',product?.a3Popular,'<p class="pe-a3-help" data-a3-quick-help></p>')}</div>
@@ -207,7 +212,11 @@ export function openProductEditor(ctx, product = null) {
     if(b.hasAttribute('data-roll-width')){const width=Number(b.dataset.rollWidth),selected=readWidths(),checked=!selected.includes(width);el('widths').value=(checked?[...selected,width]:selected.filter(v=>v!==width)).join(', ');widthDrafts.set(widthCategory,el('widths').value);b.setAttribute('aria-pressed',String(checked));}
     if(b.dataset.editorTab)showTab(b.dataset.editorTab);
     if(b.hasAttribute('data-cancel-editor'))dialog.close();
-    if(b.hasAttribute('data-minimum-step'))el('minimumQuantity').value=Math.max(1,(Number(el('minimumQuantity').value)||1)+Number(b.dataset.minimumStep));
+    if (b.hasAttribute('data-quantity-step')) {
+      const control = b.closest('.pe-minimum-stepper').querySelector('input');
+      const minimum = Number(control.min);
+      control.value = Math.max(minimum, (Number(control.value) || minimum) + Number(b.dataset.quantityStep));
+    }
     const card=b.closest('[data-price-card]');
     if(b.hasAttribute('data-add-tier')) {const rows=card.querySelector('.pe-tier-list');if(rows.children.length>=10)return toast('Maksimal 10 tingkat harga','error');const last=rows.lastElementChild;rows.insertAdjacentHTML('beforeend',tierHtml({min:last?Number(last.querySelector('[data-tier-max]').value || last.querySelector('[data-tier-min]').value)+1:1}));bindMoney(rows.lastElementChild);syncCopies();}
     if(b.hasAttribute('data-remove-tier')){b.closest('[data-tier]').remove();syncCopies();}
