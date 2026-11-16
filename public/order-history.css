@@ -4,21 +4,19 @@
 .order-history .history-toolbar{display:flex;align-items:center;gap:32px;min-height:68px;padding:15px 24px;background:#fff;border-bottom:1px solid #dce1e7}
 .order-history .history-heading{display:block;flex:none;margin:0}
 .order-history .history-heading h2{margin:0;color:#020203;font-size:22px;line-height:27px;font-weight:700;white-space:nowrap}
-.order-history #history-count,.order-history .history-filters label>span:not(.history-date-placeholder){position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.order-history #history-count,.order-history .history-filters label:not(.history-date)>span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .order-history .history-filters{display:flex;justify-content:flex-end;align-items:center;gap:16px;flex:1;min-width:0;margin:0}
 .order-history .history-filters label{display:block;position:relative;min-width:0;margin:0;flex:none}
 .order-history .history-filters .history-search{width:300px;flex:0 1 300px}
 .order-history .history-date-filters{display:flex;gap:8px;padding-left:16px;border-left:1px solid var(--history-line);flex:none}
-.order-history .history-date-filters label{width:140px}
+.order-history .history-date-filters label{display:grid;gap:4px;width:140px}
+.order-history .history-date>span{color:var(--history-muted);font-size:11px;font-weight:600;line-height:14px}
 .order-history .history-filter-options{display:flex;gap:8px;padding-left:16px;border-left:1px solid var(--history-line);min-width:0;flex:none}
 .order-history .history-filter-options label{width:156px}
 .order-history .history-filters input,.order-history .history-filters select{box-sizing:border-box;width:100%;min-width:0;height:36px;border:1px solid var(--history-line);border-radius:9px;background:#fff;padding:0 12px;font:inherit;font-size:12px;font-weight:400;color:var(--history-ink)}
 .order-history .history-filters select{appearance:none;padding-left:8px;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23929396' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
 .order-history .history-filters input::placeholder,.order-history .history-filters select:has(option[value=""]:checked){color:#737373}
 .order-history .history-filters input:focus-visible,.order-history .history-filters select:focus-visible{outline:2px solid #3069f5;outline-offset:2px}
-.order-history .history-date-placeholder{position:absolute;left:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:#737373;font-size:12px;line-height:16px}
-.order-history .history-date.has-value .history-date-placeholder,.order-history .history-date:focus-within .history-date-placeholder{display:none}
-.order-history .history-date:not(.has-value):not(:focus-within) input::-webkit-datetime-edit{color:transparent}
 input[type=date],input[type=datetime-local],input[type=month],input[type=week]{cursor:pointer}
 .order-history .history-content{padding:16px 24px}
 .order-history .history-table-wrap{overflow-x:auto;background:#fff;border:1px solid #dce1e7;border-radius:12px}
