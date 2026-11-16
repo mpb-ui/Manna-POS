@@ -1,4 +1,5 @@
 import { manualAreaFinishing } from './finishing-pricing.js';
+import { purchaseMultipleError } from './product-pricing.js';
 
 const number = value => Number(value || 0);
 const text = value => String(value || '').trim();
@@ -55,7 +56,9 @@ export function mergeCartLines(previous, added, product) {
 
 export function addCartLine(cart, line, product) {
   validQuantity(number(line.quantity));
-  const key = cartMergeKey(line, product), index = cart.findIndex(item => item.productId === product.id && cartMergeKey(item, product) === key);
+  const key = cartMergeKey(line, product);
+  const index = cart.findIndex(item => item.productId === product.id && cartMergeKey(item, product) === key
+    && !purchaseMultipleError(product, number(item.quantity) + number(line.quantity)));
   if (index < 0) return [...cart, { ...line, cartId: crypto.randomUUID() }];
   return cart.map((item,i) => i === index ? mergeCartLines(item,line,product) : item);
 }

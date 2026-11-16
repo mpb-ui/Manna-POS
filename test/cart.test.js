@@ -19,6 +19,18 @@ test('repeated additions merge across normalized/raw shapes, preserve identity a
   assert.equal(ensureCartIds(cart),cart);assert.equal(new Set(ensureCartIds([request(),request()]).map(l=>l.cartId)).size,2);
 });
 
+test('cart preserves entered quantities when adding eligible batches that cannot be merged',()=>{
+  const p = {...product('direct-akrilik-display-7x4'),category:'Produk Kertas',minimumEnabled:true,minimumQuantity:5,purchaseMultiple:2};
+  const batch = request({quantity:5});
+  const first = addCartLine([],batch,p);
+  const repeated = addCartLine(first,batch,p);
+  assert.deepEqual(repeated.map(item=>item.quantity),[5,5]);
+  assert.notEqual(repeated[0].cartId,repeated[1].cartId);
+  const evenMinimum = {...p,minimumQuantity:4};
+  const evenBatch = request({quantity:4});
+  assert.deepEqual(addCartLine(addCartLine([],evenBatch,evenMinimum),evenBatch,evenMinimum).map(item=>item.quantity),[8]);
+});
+
 test('original dimensions, allowance, variants, sides, choices, notes, calculators and finishing ratios distinguish production rows',()=>{
   const p=product('fl-280-glossy'),base=request({productId:p.id,imageWidthCm:100,imageLengthCm:200,allowanceCm:5,width:1,length:2});
   for(const patch of [{imageWidthCm:200,imageLengthCm:100},{allowanceCm:6},{materialVariantId:'x'},{subVariantId:'2S'},{sizeVariantId:'A1'},{productionNote:'File berbeda'},{fileServiceId:'DESIGN_A'},{choices:[{groupId:'g',optionId:'a'}]},{sheetCalculation:{mode:'capacity',widthCm:10,lengthCm:8}},{finishing:[{id:'fin-out-eyelet',units:4,note:'Kiri'}]}])assert.equal(addCartLine(addCartLine([],base,p),{...base,...patch},p).length,2,JSON.stringify(patch));

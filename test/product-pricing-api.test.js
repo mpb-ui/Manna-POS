@@ -44,5 +44,34 @@ test('master settings persist, measured quotes reprice all rows, and minimum rul
     assert.equal((await req('/api/products/'+mug.id,'PUT',{...body,wholesaleBasis:'area'})).status,400);
     assert.equal((await ok('/api/bootstrap?view=master')).products.find(i=>i.id===p.id).priceTiers.length,2);
     const physical=(await ok('/api/bootstrap?view=stock')).inventory.find(i=>i.sku==='QA-MUG');assert.equal(physical.quantity,96);
+
+    await ok('/api/categories/products','POST',{name:'Produk Kertas'});
+    const tentCard = {productEditorVersion:1,name:'Tent Card QA',sku:'QA-TENT',category:'Produk Kertas',saleUnit:'pcs',price:12500,
+      minimumEnabled:true,minimumQuantity:4,machineIds:['mach-digital'],materialSources:[{materialId:'mat-art260',quantity:1}]};
+    const tent = await ok('/api/products','POST',tentCard);
+    const tentOrder = (quantity, itemId) => ({customerName:'Tent Card QA',phone:'8888',items:[{productId:tent.id,quantity,itemId}]});
+    const existing = await ok('/api/orders','POST',tentOrder(5));
+    const tentPath = '/api/products/'+tent.id;
+    assert.equal((await ok(tentPath,'PUT',{...tentCard,purchaseMultiple:2})).purchaseMultiple,2);
+    assert.equal((await ok('/api/bootstrap?view=pos')).products.find(item=>item.id===tent.id).purchaseMultiple,2);
+    for (const quantity of [4,6,8,10]) {
+      const quote = await ok('/api/orders/check','POST',tentOrder(quantity));
+      assert.equal(quote.total,quantity*12500);
+    }
+    assert.equal((await req('/api/orders/check','POST',tentOrder(5))).status,400);
+    const invalid = await req('/api/orders','POST',tentOrder(5));
+    assert.equal(invalid.status,400);
+    assert.match(invalid.body.error,/kelipatan pembelian 2 pcs/);
+    assert.equal((await ok('/api/orders/'+existing.id,'PUT',tentOrder(5,existing.items[0].itemId))).total,62500);
+    assert.equal((await req('/api/orders/'+existing.id,'PUT',tentOrder(7,existing.items[0].itemId))).status,400);
+    assert.equal((await req(tentPath,'PUT',{...tentCard,purchaseMultiple:1.5})).status,400);
+    await ok(tentPath,'PUT',{...tentCard,minimumQuantity:5});
+    for (const quantity of [5,7,9]) assert.equal((await ok('/api/orders/check','POST',tentOrder(quantity))).total,quantity*12500);
+    assert.equal((await req('/api/orders/check','POST',tentOrder(6))).status,400);
+    await ok(tentPath,'PUT',{...tentCard,minimumEnabled:false});
+    assert.equal((await req('/api/orders/check','POST',tentOrder(1))).status,400);
+    assert.equal((await ok('/api/orders/check','POST',tentOrder(2))).total,25000);
+    assert.equal((await ok(tentPath,'PUT',{...tentCard,category:'Merchandise',minimumEnabled:false,purchaseMultiple:2})).purchaseMultiple,1);
+    assert.equal((await ok('/api/orders/check','POST',tentOrder(3))).total,37500);
   } finally {child.kill();await new Promise(r=>child.once('exit',r));}
 });

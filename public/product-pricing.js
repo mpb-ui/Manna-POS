@@ -13,6 +13,29 @@ export function normalizeMinimum(body, current = {}) {
   if (enabled && (!Number.isSafeInteger(quantity) || quantity < 1)) throw new Error('Jumlah minimum pembelian harus bilangan bulat minimal 1');
   return {minimumEnabled:enabled, minimumQuantity:enabled ? quantity : 1};
 }
+export const supportsPurchaseMultiple = category => String(category || '').trim().toLowerCase() === 'produk kertas';
+export function normalizePurchaseMultiple(category, value = 1) {
+  if (!supportsPurchaseMultiple(category)) return 1;
+  const multiple = Number(value);
+  if (!Number.isSafeInteger(multiple) || multiple < 1) throw new Error('Kelipatan pembelian harus bilangan bulat minimal 1');
+  return multiple;
+}
+export function purchaseMultiple(product) {
+  const multiple = Number(product?.purchaseMultiple);
+  return supportsPurchaseMultiple(product?.category) && Number.isSafeInteger(multiple) && multiple > 1 ? multiple : 1;
+}
+export const firstPurchaseQuantity = product => product?.minimumEnabled === true ? minimumQuantity(product) : purchaseMultiple(product);
+export function roundPurchaseQuantity(product, quantity) {
+  const first = firstPurchaseQuantity(product), multiple = purchaseMultiple(product);
+  return first + Math.max(0, Math.ceil((Number(quantity) - first) / multiple)) * multiple;
+}
+export function purchaseMultipleError(product, quantity, previousQuantity) {
+  const multiple = purchaseMultiple(product), amount = Number(quantity);
+  if (multiple === 1 || amount === previousQuantity) return '';
+  const first = firstPurchaseQuantity(product);
+  if (Number.isSafeInteger(amount) && amount >= first && (amount - first) % multiple === 0) return '';
+  return `${product.name} memiliki kelipatan pembelian ${multiple} ${purchaseUnit(product)}, mulai dari ${first} ${purchaseUnit(product)}`;
+}
 export function normalizeWholesaleBasis(value, priceBasis, fallback = 'quantity') {
   const basis = value ?? fallback;
   if (!['quantity','area','length'].includes(basis) || basis === 'area' && priceBasis !== 'sqm' || basis === 'length' && priceBasis !== 'linear_m') throw new Error('Dasar harga grosir tidak sesuai perhitungan produk');
