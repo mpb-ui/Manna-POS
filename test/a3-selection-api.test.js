@@ -12,18 +12,33 @@ test('new and edited A3 products persist tabs; concurrent fifth quick pick is re
   const request=async(path,method='GET',body)=>{const r=await fetch(base+path,{method,headers:{cookie,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
   const ok=async(...args)=>{const r=await request(...args);assert(r.status<300,JSON.stringify(r));return r.body;};
   const before=await ok('/api/bootstrap?view=master');
-  const config=i=>({productEditorVersion:1,sku:'A3-TAB-QA-'+i,name:'A3 Tab QA '+i,category:'Print A3+',a3Kind:'ready',a3Popular:true,price:10000,saleUnit:'pcs',materialSources:[],machineIds:['mach-digital'],active:true,featured:false});
+  for (const p of before.products.filter(p=>p.a3Kind==='paper'&&p.a3Popular)) {
+    await ok('/api/products/'+p.id,'PUT',{...p,a3Popular:false});
+  }
+  const config=i=>({productEditorVersion:1,sku:'A3-TAB-QA-'+i,name:'A3 Tab QA '+i,category:'Print A3+',a3Kind:'paper',a3Popular:true,price:10000,saleUnit:'pcs',materialSources:[],machineIds:['mach-digital'],active:true,featured:false});
   const concurrent=await Promise.all(Array.from({length:5},(_,i)=>request('/api/products','POST',config(i))));assert.equal(concurrent.filter(r=>r.status===201).length,4);assert.equal(concurrent.find(r=>r.status===409).body.code,'A3_QUICK_LIMIT');
-  const p=concurrent.find(r=>r.status===201).body;assert.equal(p.a3Kind,'ready');assert.equal(p.featured,false);assert.equal(p.a3Family,null);
+  const p=concurrent.find(r=>r.status===201).body;assert.equal(p.a3Kind,'paper');assert.equal(p.featured,false);assert.equal(p.a3Family,null);
   const order=await ok('/api/orders','POST',{customerName:'A3 Tabs QA',phone:'445566',items:[{productId:p.id,quantity:2}]});assert.equal(order.total,20000);
   const moved=await ok('/api/products/'+p.id,'PUT',{...p,a3Kind:'sticker',a3Popular:false,price:12000});assert.equal(moved.a3Kind,'sticker');assert.equal(moved.a3Popular,false);
   assert.deepEqual((await ok('/api/order-history/'+order.id)).items,order.items);assert.equal((await ok('/api/order-history/'+order.id)).total,order.total);
-  const added=await ok('/api/products','POST',config('replacement'));assert.equal(added.a3Kind,'ready');
+  const added=await ok('/api/products','POST',config('replacement'));assert.equal(added.a3Kind,'paper');
   const paper=await ok('/api/products','POST',{...config('paper'),a3Kind:'paper',a3Popular:false});assert.equal(paper.a3Family,null);
   assert.equal((await ok('/api/orders/check','POST',{items:[{productId:paper.id,quantity:3}]})).total,30000);
   const generic=await ok('/api/products/'+paper.id,'PUT',{...paper,category:'Merchandise',a3Popular:true});assert.equal(generic.a3Kind,null);assert.equal(generic.a3Popular,false);
   assert.equal((await request('/api/products','POST',{...config('invalid'),a3Kind:'INVALID'})).status,400);
+  assert.equal((await request('/api/products','POST',{...config('legacy'),a3Kind:'ready'})).status,400);
+  await ok('/api/categories/products','POST',{name:'Produk Kertas'});
+  const voucher=await ok('/api/products','POST',{...config('voucher'),category:'Produk Kertas',paperProductTab:'voucher',a3Kind:null});
+  assert.equal(voucher.paperProductTab,'voucher');assert.equal(voucher.a3Kind,null);
+  assert.equal((await ok('/api/bootstrap?view=pos')).products.find(p=>p.id===voucher.id).paperProductTab,'voucher');
+  assert.equal((await request('/api/products/'+voucher.id,'PUT',{...voucher,paperProductTab:'karcis'})).status,400);
+  const reassigned=await ok('/api/products/'+voucher.id,'PUT',{...voucher,paperProductTab:'brosur'});
+  assert.equal(reassigned.paperProductTab,'brosur');
+  const automatic=await ok('/api/products/'+voucher.id,'PUT',{...reassigned,paperProductTab:''});
+  assert.equal(automatic.paperProductTab,null);
+  const transferred=await ok('/api/products/'+voucher.id,'PUT',{...reassigned,category:'Merchandise'});
+  assert.equal(transferred.paperProductTab,null);
   await ok('/api/products/'+added.id,'DELETE');assert.equal((await request('/api/products','POST',config('after-delete'))).status,201);
-  const after=await ok('/api/bootstrap?view=master');assert.deepEqual(after.inventory,before.inventory);assert.equal(after.products.filter(p=>p.a3Kind==='ready'&&p.a3Popular&&!p.deletedAt).length,4);
+  const after=await ok('/api/bootstrap?view=master');assert.deepEqual(after.inventory,before.inventory);assert.equal(after.products.filter(p=>p.a3Kind==='paper'&&p.a3Popular&&!p.deletedAt).length,4);
  }finally{child.kill();if(child.exitCode===null)await new Promise(r=>child.once('exit',r));}
 });

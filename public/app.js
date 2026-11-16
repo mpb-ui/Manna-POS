@@ -5,6 +5,7 @@ import { PRODUCTION_STATUSES, productionStatusLabel, canMoveProduction, driveLin
 import {createMasterFilters,bindMasterFilters,compareMasterNames} from './master-filters.js';
 import {bindBackdropClose,trackDialogMutation} from './dialog-dismiss.js';
 import {A3_TABS,a3ProductKind,a3Choices,a3QuickProducts} from './a3-selection.js';
+import { PAPER_PRODUCT_TABS, isPaperProductCategory, paperProductTab } from './paper-product-tabs.js';
 import { createSecurityUI } from './security-ui.js';
 import { createPrintHelperUI } from './print-helper-ui.js';
 import { createReportsUI } from './reports-ui.js';
@@ -16,7 +17,6 @@ import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSale
 import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from './order-discount.js';
 import { paymentDiscountHtml, bindPaymentDiscount } from './payment-discount-ui.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
-import { enhanceMaterialSelects } from './material-picker.js';
 import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
 import { openGoodsReturn, mountGoodsReturnHistory, closeGoodsReturns, goodsReturnReportHtml } from "./goods-returns-ui.js";
@@ -96,7 +96,7 @@ const atkGroups = ["Amplop", "Alat tulis", "Map & arsip", "Perekat", "Kertas & l
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], pics: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], materialCategories: [], saleUnits: [], priceBases: [] }, categoryScroll: 0,
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [],
-  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", atkGroup: "Semua", editingOrderId: null,
+  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", paperProductTab: PAPER_PRODUCT_TABS[0][0], atkGroup: "Semua", editingOrderId: null,
   masterTab: "products", categorySettingsKind: "products", projectView: "list", projectSearch: "", projectStatus: "all", projectDeadlineSort: "nearest",
   stockSearch: "", stockCategory: "",
   projectCollapsed: new Set(["DIAMBIL"]),
@@ -411,13 +411,30 @@ function productCardsHtml(products) {
   </div>`).join("");
 }
 
+function catalogTabsHtml(tabs, active, attribute, label) {
+  return `<div class="a3-kind-tabs" role="group" aria-label="${label}">${tabs.map(([id, title]) => `<button type="button" ${attribute}="${id}" class="${active === id ? 'active' : ''}" aria-pressed="${active === id}">${title}</button>`).join('')}</div>`;
+}
+
+function paperProductsCatalogHtml(products) {
+  const active = state.paperProductTab;
+  const assigned = [], unassigned = [];
+  for (const product of products) {
+    const tab = paperProductTab(product);
+    if (tab === active) assigned.push(product);
+    if (tab === null) unassigned.push(product);
+  }
+  return `${catalogTabsHtml(PAPER_PRODUCT_TABS, active, 'data-paper-product-tab', 'Tab Produk Kertas')}
+    ${assigned.length ? `<div class="product-grid">${productCardsHtml(assigned)}</div>` : '<p class="product-note">Belum ada produk pada tab ini.</p>'}
+    ${unassigned.length ? `<section class="paper-products-unassigned"><div class="catalog-heading"><h3>Belum masuk tab</h3></div><div class="product-grid">${productCardsHtml(unassigned)}</div></section>` : ''}`;
+}
+
 function a3CatalogHtml(products, selected) {
   const kind=selected?a3ProductKind(selected):state.a3Kind,choices=a3Choices(products,kind);
   const quickCards=a3QuickProducts(products,kind).map(product=>`<button type="button" class="a3-quick-card ${selected?.id===product.id?'active':''}" data-config-product="${escapeHtml(product.id)}" aria-pressed="${selected?.id===product.id}"><strong>${escapeHtml(product.name)}</strong><small>${rupiah.format(promoPrice(product,product.price))} ${escapeHtml(product.unitLabel || '')}</small></button>`).join('');
-  const options=choices.map(choice=>`<option value="${escapeHtml(choice.value)}" ${selected&&(choice.family?selected.a3Family===choice.family:selected.id===choice.product.id)?'selected':''}>${escapeHtml(choice.label)}${kind==='ready'?' · '+rupiah.format(promoPrice(choice.product,choice.product.price)):''}</option>`).join('');
-  const placeholder=kind==='paper'?'Pilih bahan kertas…':kind==='sticker'?'Pilih jenis sticker…':'Pilih produk jadi…';
-  const selectedOption=kind==='ready'?selected?.name:selected?.a3Family || selected?.name;
-  return `<div class="a3-kind-tabs" role="group" aria-label="Jenis bahan Print A3+">${A3_TABS.map(([id,label])=>`<button type="button" data-a3-kind="${id}" class="${kind===id?'active':''}" aria-pressed="${kind===id}">${label}</button>`).join('')}</div>
+  const options=choices.map(choice=>`<option value="${escapeHtml(choice.value)}" ${selected&&(choice.family?selected.a3Family===choice.family:selected.id===choice.product.id)?'selected':''}>${escapeHtml(choice.label)}</option>`).join('');
+  const placeholder=kind==='paper'?'Pilih bahan kertas…':'Pilih jenis sticker…';
+  const selectedOption=selected?.a3Family || selected?.name;
+  return `${catalogTabsHtml(A3_TABS, kind, 'data-a3-kind', 'Jenis bahan Print A3+')}
     ${quickCards?`<div class="a3-quick"><span>Sering Dipilih</span><div class="a3-quick-list">${quickCards}</div></div>`:''}
     <label class="field a3-picker"><span>Pilih bahan atau produk</span><select id="a3-product-select" aria-label="${placeholder}" ${!choices.length?'disabled':''}><option value="">${placeholder}</option>${options}</select></label>
     ${!choices.length?'<div class="category-empty"><strong>Belum ada produk pada tab ini</strong><p>Produk dapat ditambahkan melalui Master Data.</p></div>':''}
@@ -526,14 +543,20 @@ function dtfShirtConfigurationHtml(product) {
 
 function renderPos() {
   state.cart = ensureCartIds(state.cart);
-  let visibleProducts = productsForCategory(state.selectedCategory);
+  const visibleProducts = productsForCategory(state.selectedCategory);
   if (!visibleProducts.some((product) => product.id === state.selectedProduct)) state.selectedProduct = null;
   const product = selectedProduct();
-  if (product && state.selectedCategory==='print-a3') state.a3Kind=a3ProductKind(product);
-  const categoryTabs = productCategories().map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${escapeHtml(label)}</button>`).join("");
-  const intro = `<div class="catalog-heading pos-category-title"><h3>${escapeHtml(productCategories().find(([id])=>id===state.selectedCategory)?.[1] || "Produk")}</h3></div>`;
+  const categories = productCategories();
+  const categoryLabel = categories.find(([id]) => id === state.selectedCategory)?.[1];
+  const a3Kind = product && a3ProductKind(product);
+  const paperTab = paperProductTab(product);
+  if (a3Kind && state.selectedCategory === 'print-a3') state.a3Kind = a3Kind;
+  if (paperTab) state.paperProductTab = paperTab;
+  const categoryTabs = categories.map(([id, label]) => `<button type="button" role="tab" aria-selected="${state.selectedCategory === id}" class="category-tab ${state.selectedCategory === id ? "active" : ""}" data-category="${id}">${escapeHtml(label)}</button>`).join("");
+  const intro = `<div class="catalog-heading pos-category-title"><h3>${escapeHtml(categoryLabel || "Produk")}</h3></div>`;
   const productContent = state.selectedCategory === "all" ? allCatalogHtml() : state.selectedCategory === "print-a3"
-    ? intro+a3CatalogHtml(visibleProducts, product) : ["atk", "akrilik", "stempel"].includes(state.selectedCategory)
+    ? intro+a3CatalogHtml(visibleProducts, a3Kind ? product : null) : isPaperProductCategory(categoryLabel)
+    ? intro+paperProductsCatalogHtml(visibleProducts) : ["atk", "akrilik", "stempel"].includes(state.selectedCategory)
     ? intro+flatCatalogHtml(visibleProducts, productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ATK") : visibleProducts.length
     ? `${intro}<div class="product-grid">${productCardsHtml(visibleProducts)}</div>`
     : `${intro}<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
@@ -1157,7 +1180,12 @@ function bindPos() {
     syncDraft(document.querySelector("#checkout"));
     selectA3Family(button.dataset.a3Family);
   }));
-  if(state.selectedCategory==='print-a3'&&state.a3Kind==='ready')enhanceMaterialSelects(root,[],{selector:'#a3-product-select',title:'Pilih Produk Jadi',ariaLabel:'Pilih produk jadi',noun:'produk',searchable:false});
+  document.querySelectorAll('[data-paper-product-tab]').forEach(button => button.addEventListener('click', () => {
+    syncDraft(document.querySelector('#checkout'));
+    state.paperProductTab = button.dataset.paperProductTab;
+    state.selectedProduct = null;
+    renderPos();
+  }));
   document.querySelector("#a3-product-select")?.addEventListener("change", (event) => {
     syncDraft(document.querySelector("#checkout"));
     const value = event.target.value;
@@ -2051,8 +2079,6 @@ function finishingOptionsHtml(category, selectedIds = [], product = null) {
   const options = state.finishings.filter((item) => {
     if (item.active === false || !(item.categories || []).includes(category)) return false;
     if (product?.a3Family && product?.a3Kind === "sticker" && categoryId(category) === "print-a3") return item.id.startsWith("fin-a3-sticker-");
-    if (product?.a3Family && product?.a3Kind === "ready" && categoryId(category) === "print-a3") return product.a3ReadyType === "card" ? item.id.startsWith("fin-a3-card-")
-      : product.a3ReadyType === "nota" ? item.id === "fin-a3-nota-design" : false;
     if (product?.a3Family && product?.a3Kind === "paper" && categoryId(category) === "print-a3") return !item.id.startsWith("fin-a3-sticker-") && item.id !== "fin-a3-two-side" &&
       !item.id.startsWith("fin-a3-card-") && item.id !== "fin-a3-nota-design" &&
       !(item.id.startsWith("fin-a3-lam-") && !item.id.endsWith(product.a3Side === "1S" ? "-1" : "-2"));

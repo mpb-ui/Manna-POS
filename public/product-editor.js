@@ -3,7 +3,8 @@ import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSale
 import { DEFAULT_VARIANT_TYPES, DEFAULT_OPTION_TYPES, variantCardName, copyTierRanges, mergeMaterialSources, promoDate } from './product-variants.js';
 import { enhanceMaterialSelects } from './material-picker.js';
 import {categoryWidthChoices,normalizeProductWidths} from './product-widths.js';
-import { purchaseMultiple, supportsPurchaseMultiple } from './product-pricing.js';
+import { purchaseMultiple } from './product-pricing.js';
+import { PAPER_PRODUCT_TABS, isPaperProductCategory } from './paper-product-tabs.js';
 
 export function openProductEditor(ctx, product = null) {
   const {state,dialog,api,e,toast,showDialog,finishingOptionsHtml,materialRowHtml,readMaterialRows,variantSourcesHtml,deleteButtonHtml,bindDeleteRecord} = ctx;
@@ -56,6 +57,7 @@ export function openProductEditor(ctx, product = null) {
       ${field('Nama Produk',input('name',product?.name,'required maxlength="150"'),'name')}
       ${reference('Kategori','category',categories,product?.category || '', 'categories','Pilih kategori')}
       ${field('Tab Print A3+',select('a3Kind',A3_TABS.map(([value,label])=>({value,label})),product&&ctx.categoryId(product.category)==='print-a3'?a3ProductKind(product):'','Pilih tab'),'a3Kind','data-a3-field')}
+      ${field('Tab Produk Kertas',select('paperProductTab',PAPER_PRODUCT_TABS.map(([value,label])=>({value,label})),product?.paperProductTab || '','Otomatis dari nama'),'paperProductTab','data-paper-product-tab-field hidden')}
       ${reference('Satuan Jual','saleUnit',units,unit,'saleUnits','Pilih satuan jual')}
       ${field('<span id="pe-width-label">Pilihan Lebar Bahan</span>',`<div id="pe-width-chips" class="pe-width-chips" role="group" aria-labelledby="pe-width-label"></div>${input('widths',(product?.widths || []).join(', '),'placeholder="Contoh: 1, 1.5" aria-describedby="pe-width-help"')}<small id="pe-width-help" class="pe-width-help"></small>`,'widths','data-width-field')}
       ${field('Mesin yang Digunakan',select('machineId',machineOptions,product?.machineIds?.[0] || '','Pilih mesin'),'machineId')}
@@ -161,10 +163,12 @@ export function openProductEditor(ctx, product = null) {
     for(const option of el('wholesaleBasis').options)option.disabled=option.value==='area'&&mode!=='sqm'||option.value==='length'&&mode!=='linear_m';
     if(mode==='unit')el('wholesaleBasis').value='quantity';
     form.querySelector('[data-minimum-fields]').hidden=!el('minimumEnabled').checked;
-    const allowsMultiple=supportsPurchaseMultiple(el('category').value);
-    form.querySelector('[data-purchase-multiple-setting]').hidden=!allowsMultiple;
-    el('purchaseMultipleEnabled').disabled=!allowsMultiple;
-    form.querySelector('[data-purchase-multiple-fields]').hidden=!allowsMultiple||!el('purchaseMultipleEnabled').checked;
+    const paperProducts=isPaperProductCategory(el('category').value);
+    form.querySelector('[data-paper-product-tab-field]').hidden=!paperProducts;
+    el('paperProductTab').disabled=!paperProducts;
+    form.querySelector('[data-purchase-multiple-setting]').hidden=!paperProducts;
+    el('purchaseMultipleEnabled').disabled=!paperProducts;
+    form.querySelector('[data-purchase-multiple-fields]').hidden=!paperProducts||!el('purchaseMultipleEnabled').checked;
     form.querySelector('[data-promo-fields]').hidden=!el('discountEnabled').checked;
     const nominal=el('discountType').value==='nominal',discountInput=el('discountValue');
     const prior=discountInput.type;
@@ -253,7 +257,7 @@ export function openProductEditor(ctx, product = null) {
       if(!el('widths').disabled&&!readWidths().length)fail('Pilih minimal satu lebar bahan',form.querySelector('#pe-width-chips button')||el('widths'),'info');
       if(ctx.categoryId(el('category').value)==='print-a3'&&!el('a3Kind').value)fail('Pilih tab Print A3+',el('a3Kind'),'info');
       if(el('minimumEnabled').checked && (!Number.isSafeInteger(Number(el('minimumQuantity').value)) || Number(el('minimumQuantity').value)<1))fail('Minimum pembelian harus bilangan bulat minimal 1',el('minimumQuantity'),'info');
-      const multipleActive = supportsPurchaseMultiple(el('category').value) && el('purchaseMultipleEnabled').checked;
+      const multipleActive = isPaperProductCategory(el('category').value) && el('purchaseMultipleEnabled').checked;
       const multipleValue = Number(el('purchaseMultiple').value);
       if(multipleActive && (!Number.isSafeInteger(multipleValue) || multipleValue<2))fail('Kelipatan pembelian harus bilangan bulat minimal 2',el('purchaseMultiple'),'info');
       if(isVariants()) {
@@ -269,7 +273,7 @@ export function openProductEditor(ctx, product = null) {
       const specs=cardSpecs(),first=cards.get(specs.find(s=>cards.get(s.key).active!==false && Number(cards.get(s.key).price)>0)?.key || specs.find(s=>Number(cards.get(s.key).price)>0)?.key || specs[0].key),variantMode=isVariants();
       const normalizedCard=c=>({...c,baseCost:Number(c.baseCost || 0),price:c.price===''?null:Number(c.price),priceTiers:c.priceTiers.map(t=>({...t,price:Number(t.price)}))});
       const materialVariants=variantMode?variants.map(v=>{const c=normalizedCard(cardState(v.id));const combinations=hasOptions()?options.map(o=>({subVariantId:o.id,...normalizedCard(cardState(v.id+'|'+o.id))})):[];return {id:v.id,label:v.label.trim(),...c,price:c.price || combinations[0]?.price || Number(first.price),sheetProfileId:v.sheetProfileId || '',combinations};}):[];
-      const payload={productEditorVersion:1,sku:el('sku').value.trim(),name:el('name').value.trim(),category:el('category').value,a3Kind:el('a3Kind').disabled?null:el('a3Kind').value,a3Popular:ctx.categoryId(el('category').value)==='print-a3'&&el('a3Popular').checked,saleUnit:normalizeSaleUnit(el('saleUnit').value),widths:el('widths').disabled?[]:readWidths(),machineIds:el('machineId').value?[el('machineId').value]:[],note:el('note').value,
+      const payload={productEditorVersion:1,sku:el('sku').value.trim(),name:el('name').value.trim(),category:el('category').value,paperProductTab:el('paperProductTab').disabled?null:el('paperProductTab').value,a3Kind:el('a3Kind').disabled?null:el('a3Kind').value,a3Popular:ctx.categoryId(el('category').value)==='print-a3'&&el('a3Popular').checked,saleUnit:normalizeSaleUnit(el('saleUnit').value),widths:el('widths').disabled?[]:readWidths(),machineIds:el('machineId').value?[el('machineId').value]:[],note:el('note').value,
         active:el('active').checked,featured:el('featured').checked,minimumEnabled:el('minimumEnabled').checked,minimumQuantity:Number(el('minimumQuantity').value),purchaseMultiple:multipleActive?multipleValue:1,sheetCalculatorEnabled:el('sheetCalculatorEnabled').checked,sheetProfileId:el('sheetProfileId')?.value || '',retailAtK:el('retailAtK').value==='true',atkGroup:el('atkGroup').value,barcode:el('barcode').value,
         price:Number(first.price),baseCost:Number(first.baseCost || 0),materialSources:variantMode?[]:first.materialSources,wholesaleEnabled:!variantMode && first.priceTiers.length>0,wholesaleBasis:el('wholesaleBasis').value,priceTiers:variantMode?[]:normalizedCard(first).priceTiers,
         hasMaterialVariants:variantMode,variantType:el('variantType').value,optionType:hasOptions()?el('optionType').value:'',subVariantLabel:hasOptions()?el('optionType').value:'',materialVariants,subVariants:hasOptions()?options.map(o=>({id:o.id,label:o.label.trim()})):[],finishingIds:[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value),

@@ -14,6 +14,7 @@ import { invoiceDiscount, settledOrder } from './public/order-discount.js';
 import { registerHomeCampaign, campaignForPos } from './lib/home-campaign.js';
 import { registerOrderCustomer, CUSTOMER_DIRECTORY_VERSION } from './lib/customer-directory.js';
 import { DTF_MERCHANDISE_VERSION } from './lib/dtf-catalog.js';
+import { normalizePaperProductTab } from './public/paper-product-tabs.js';
 import { normalizeMinimum, normalizePurchaseMultiple, normalizeWholesaleBasis, normalizeProductTiers, minimumError } from './public/product-pricing.js';
 import { registerGoodsReturnRoutes } from "./lib/goods-return-routes.js";
 import { invoiceCode, INVOICE_NUMBER_VERSION } from "./lib/invoice-numbers.js";
@@ -619,11 +620,10 @@ function saveProduct(state, body, current = null) {
   if (!machineIds.length && !current && !simpleSale) throw new Error("Pilih minimal satu mesin");
   const unitLabels = { pcs: "/pcs", lbr: "/lembar", "m²": "/m²", pack: "/pack", rim: "/rim", set: "/set", "m lari": "/m lari" };
   const {a3Kind,a3Popular,preserveLegacy}=productA3Settings(state,body,current,category);
+  const paperProductTab = normalizePaperProductTab(category, body.paperProductTab === undefined ? current?.paperProductTab : body.paperProductTab);
   const finishingIds = [...new Set(simpleSale ? [] : body.finishingIds || [])].filter((id) => {
     if (!state.finishings.some((item) => item.id === id && item.active !== false && item.categories.includes(text(body.category)))) return false;
     if (preserveLegacy && a3Kind === "sticker") return id.startsWith("fin-a3-sticker-");
-    if (preserveLegacy && a3Kind === "ready") return current.a3ReadyType === "card" ? id.startsWith("fin-a3-card-")
-      : current.a3ReadyType === "nota" ? id === "fin-a3-nota-design" : false;
     if (preserveLegacy && a3Kind === "paper") return !id.startsWith("fin-a3-sticker-") && id !== "fin-a3-two-side" &&
       !id.startsWith("fin-a3-card-") && id !== "fin-a3-nota-design" &&
       !(id.startsWith("fin-a3-lam-") && !id.endsWith(current.a3Side === "1S" ? "-1" : "-2"));
@@ -631,7 +631,7 @@ function saveProduct(state, body, current = null) {
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
   const rollSettings=priceBasis === "unit" ? {widths:[]} : productWidthSettings(categoryId,body.widths || [],current,current ? categoryKey(state.catalogOptions,current.category) : categoryId);
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, ...rollSettings, billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, purchaseMultiple, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Popular, a3ReadyType: preserveLegacy && a3Kind === "ready" ? current?.a3ReadyType : null, a3ReadyGroup: preserveLegacy && a3Kind === "ready" ? current?.a3ReadyGroup : null, a3Family: preserveLegacy ? current?.a3Family : null, a3Variant: preserveLegacy ? current?.a3Variant : null, a3Size: preserveLegacy ? current?.a3Size : null, a3Side: preserveLegacy ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, ...rollSettings, billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, purchaseMultiple, paperProductTab, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Popular, a3ReadyType: null, a3ReadyGroup: null, a3Family: preserveLegacy ? current?.a3Family : null, a3Variant: preserveLegacy ? current?.a3Variant : null, a3Size: preserveLegacy ? current?.a3Size : null, a3Side: preserveLegacy ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   if (modern) {
     product.productEditorVersion = 1;
     product.variantType = hasMaterialVariants ? text(body.variantType ?? current?.variantType ?? "Varian Bahan") : "";
