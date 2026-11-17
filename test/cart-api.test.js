@@ -37,6 +37,13 @@ test('cart quotation is read-only, authoritative, backwards-compatible and permi
     const edited=await ok(`/api/orders/${templateOrder.id}`,'PUT',{customerName:'Template QA',phone:'4567',items:[{...template,itemId:templateOrder.items[0].itemId,quantity:3}]});
     assert.equal(edited.total,240000);
     assert.equal(edited.items[0].templateDesignTotal,105000);
+    const banner=(await ok('/api/bootstrap?view=master')).products.find(product=>product.id===template.productId);
+    await ok(`/api/products/${banner.id}`,'PUT',{...banner,saleUnit:'m lari',price:45000,wholesaleBasis:'length',wholesaleEnabled:true,priceTiers:[{min:1,price:40000}]});
+    const sizes=[{width:1.5,length:1,price:45000},{width:2,length:1.5,price:90000},{width:3,length:2,price:180000}];
+    const fixedQuote=await ok('/api/orders/check','POST',{items:sizes.map(({width,length})=>({...template,width,length})),includeItems:true});
+    assert.deepEqual(fixedQuote.items.map(item=>item.baseTotal),sizes.map(size=>size.price*2));
+    assert.deepEqual(fixedQuote.items.map(item=>item.templateDesignTotal),[70000,70000,70000]);
+    assert.equal(fixedQuote.total,840000);
     assert.deepEqual((await ok('/api/bootstrap?view=stock')).inventory,before.inventory);
   }finally{child.kill();await new Promise(r=>child.once('exit',r));}
 });

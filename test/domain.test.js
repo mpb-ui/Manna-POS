@@ -307,6 +307,19 @@ test("spanduk template memakai ukuran dan kode design yang tersedia", () => {
   assert.match(line.displaySize, /SB-01/);
 });
 
+test("harga Spanduk Template mengikuti ukuran tetap meskipun satuan jualnya berbeda", () => {
+  const product = structuredClone(PRODUCTS.find(item => item.id === "spanduk-template"));
+  const sizes = [[1.5, 1, 45000], [2, 1.5, 90000], [3, 2, 180000]];
+  for (const saleUnit of ["m lari", "m²", "pcs"]) {
+    for (const [width, length, price] of sizes) {
+      const line = calculateLine({ ...product, saleUnit, price: 45000 }, { width, length, quantity: 2, templateDesign: "SB-01" });
+      assert.equal(line.baseTotal, price * 2);
+      assert.equal(line.subtotal, (price + 35000) * 2);
+      assert.match(line.displaySize, new RegExp(`^${width} × ${length} m`));
+    }
+  }
+});
+
 test("catatan finishing tersimpan pada finishing yang dipilih", () => {
   const product = {
     id: "banner", name: "Banner", price: 30000, priceBasis: "sqm", widths: [1], materialSources: [],
