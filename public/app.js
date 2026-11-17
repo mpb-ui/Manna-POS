@@ -17,7 +17,7 @@ import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSale
 import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from './order-discount.js';
 import { paymentDiscountHtml, bindPaymentDiscount } from './payment-discount-ui.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
-import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, templateDesignUnits, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
+import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, spandukTemplatePrintPrice, templateDesignUnits, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
 import { openGoodsReturn, mountGoodsReturnHistory, closeGoodsReturns, goodsReturnReportHtml } from "./goods-returns-ui.js";
 import { checkoutDeadlineHtml, bindCheckoutDeadline } from "./checkout-deadline.js";
@@ -273,14 +273,19 @@ function billedLength(value, increment = 0.5) {
 }
 function productBase(product, width, length, quantity, fixedVariant = null, materialVariant = null, combination = null, pricingContext = null) {
   const billed = billedLength(length, product.billingIncrement);
-  const units = fixedVariant ? Number(quantity) : product.priceBasis === "sqm" ? Number(width) * billed * Number(quantity) : billed * Number(quantity);
-  const tierList = effectivePriceTiers(product, fixedVariant, materialVariant, combination);
+  const fixedPrintPrice = spandukTemplatePrintPrice(product, width, length);
+  const unitsPerProduct = fixedVariant || (fixedPrintPrice !== null && product.priceBasis === 'unit') ? 1 : product.priceBasis === 'sqm' ? Number(width) * billed : billed;
+  const units = unitsPerProduct * Number(quantity);
   let pricingQuantity = wholesaleUnits(product,{width,billedLength:billed,quantity,sizeVariantId:fixedVariant?.id});
+  if (fixedPrintPrice !== null) {
+    const unitPrice = fixedPrintPrice / unitsPerProduct;
+    return { billed, units, wholesaleQuantity:pricingQuantity, total:fixedPrintPrice * Number(quantity), unitPrice, originalUnitPrice:unitPrice, discountApplied:false };
+  }
   if (pricingContext && !fixedVariant && wholesaleBasis(product)!=='quantity') {
     const key=wholesaleGroupKey(pricingContext);
     pricingQuantity=Number((pricingQuantity+state.cart.filter(line=>line.cartId!==configurationEditingLine?.cartId && wholesaleGroupKey(line)===key).reduce((sum,line)=>sum+wholesaleUnits(product,line),0)).toFixed(8));
   }
-  const tier = tierForUnits(tierList,pricingQuantity);
+  const tier = tierForUnits(effectivePriceTiers(product, fixedVariant, materialVariant, combination),pricingQuantity);
   const originalUnitPrice = Number(tier?.price ?? combination?.price ?? materialVariant?.price ?? fixedVariant?.price ?? product.price);
   const unitPrice = promoPrice(product, originalUnitPrice);
   return { billed, units, wholesaleQuantity:pricingQuantity, total: units * unitPrice, unitPrice, originalUnitPrice, tier, discountApplied: unitPrice < originalUnitPrice };
@@ -674,13 +679,13 @@ function readCurrentLine() {
   const isFixedSize = Boolean(fixedVariant);
   const isUnit = product.priceBasis === "unit" || isFixedSize;
   const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
-  let width = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
+  let width = product.templateProduct ? Number(templateSize?.[0]) : isUnit ? 1 : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
   let geometry = null;
   if (!isUnit && !product.templateProduct) {
     const input = { imageWidthCm: Number(document.querySelector("#image-width")?.value), imageLengthCm: Number(document.querySelector("#image-length")?.value), allowanceCm: Number(document.querySelector("#allowance")?.value || 0) };
     try { geometry = imageGeometry(product,input); } catch { geometry = { ...input, billingLength: NaN }; }
   }
-  let length = isUnit ? 1 : product.templateProduct ? Number(templateSize?.[1]) : geometry.billingLength;
+  let length = product.templateProduct ? Number(templateSize?.[1]) : isUnit ? 1 : geometry.billingLength;
   let rollPlacement = null, placementError = '';
   const old = configurationEditingLine;
   const legacyPlacement = !isUnit && supportsRollPlacement(product) && old?.productId === product.id && !old.rollPlacement
@@ -781,13 +786,16 @@ function updatePreview() {
   else if (blockingMessage) document.querySelector('#add-item').disabled = true;
   const materialVariant = product.materialVariants?.find(item => item.id === line.materialVariantId);
   const combination = materialVariant?.combinations?.find(item => item.subVariantId === line.subVariantId);
-  updateWholesalePrices({ scope: document.querySelector('#order-detail'), product, line, fixedVariant, materialVariant, combination });
+  const fixedPrintPrice = spandukTemplatePrintPrice(product, line.width, line.length);
+  if (fixedPrintPrice === null) updateWholesalePrices({ scope: document.querySelector('#order-detail'), product, line, fixedVariant, materialVariant, combination });
   const finalSize = document.querySelector("#final-image-size");
   if (finalSize) finalSize.textContent = Number.isFinite(line.finalImageWidthCm) ? `Ukuran termasuk lebihan: ${line.finalImageWidthCm.toLocaleString("id-ID")} × ${line.finalImageLengthCm.toLocaleString("id-ID")} cm${line.allowanceCm > 0 && line.allowanceCm <= 5 ? " · Lebihan tidak menambah panjang tagihan" : ""}` : "";
   const billedInput = document.querySelector("#billed-length");
   if (billedInput) billedInput.value = `${line.billedLength} m`;
   document.querySelector("#item-price").textContent = line.placementError ? '—' : rupiah.format(line.previewTotal);
-  document.querySelector("#formula-text").textContent = line.sizeVariantId
+  document.querySelector("#formula-text").textContent = fixedPrintPrice !== null
+    ? `${line.width} × ${line.length} m · ${line.quantity} × ${rupiah.format(fixedPrintPrice)} · ${line.templateDesign} + ${rupiah.format(line.templateDesignTotal)}`
+    : line.sizeVariantId
     ? `${line.sizeVariantLabel} × ${line.quantity} ${product.groupedProduct ? product.unitName || "unit" : "Lembar"} · ${rupiah.format(line.unitPrice)}/${product.groupedProduct ? product.unitName || "unit" : "lembar"}`
     : product.priceBasis === "unit"
     ? `${line.quantity} ${product.unitName || "unit"}${line.originalUnitPrice !== product.price ? ` · Grosir ${rupiah.format(line.originalUnitPrice)}` : ""}${line.discountApplied ? ` · Promo ${rupiah.format(line.unitPrice)}` : ""}`
@@ -823,7 +831,7 @@ function toggleFinishing(input) {
     const fixedVariantId = document.querySelector('input[name="size-variant"]:checked')?.value || "";
     const fixedVariant = (product.fixedSizeVariants || []).find((item) => item.id === fixedVariantId);
     const templateSize = document.querySelector('input[name="template-size"]:checked')?.value?.split("x").map(Number);
-    const width = product.priceBasis === "unit" ? 1 : product.templateProduct ? Number(templateSize?.[0]) : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
+    const width = product.templateProduct ? Number(templateSize?.[0]) : product.priceBasis === "unit" ? 1 : Number(document.querySelector('input[name="width"]:checked')?.value || product.widths[0]);
     const length = product.templateProduct ? Number(templateSize?.[1]) : billedLength(Number(document.querySelector("#image-length")?.value || 100) / 100, product.billingIncrement);
     const quantity = Math.max(1, Number(document.querySelector("#quantity")?.value || 1));
     const suggested = manualLfCutting(finish) ? 1 : finish.rule === "area"
@@ -1061,7 +1069,8 @@ function openProductConfigurator(productId, carryDraft = null, editCartId = null
     sheetDraft: sheetController?.capture(),
     notesOpen: Boolean(detail.querySelector(".production-note-details")?.open)
   });
-  detail.innerHTML = `<div class="detail-head configurator-head"><div><span class="product-category">${escapeHtml(product.category)}</span><h2>${escapeHtml(product.name)}</h2><p>${discountActive(product) ? `<span class="discount-badge">DISKON</span> ${escapeHtml(discountLabel(product))}` : `${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}`}</p></div><button class="detail-close" aria-label="Tutup konfigurasi">×</button></div><div class="detail-body configurator-body">${productConfigurationHtml(product)}</div>`;
+  const fixedSizePrices = (product.sizeVariants || []).map(size => spandukTemplatePrintPrice(product, size.width, size.length)).filter(price => price !== null);
+  detail.innerHTML = `<div class="detail-head configurator-head"><div><span class="product-category">${escapeHtml(product.category)}</span><h2>${escapeHtml(product.name)}</h2><p>${fixedSizePrices.length ? `Mulai dari ${rupiah.format(Math.min(...fixedSizePrices))}` : discountActive(product) ? `<span class="discount-badge">DISKON</span> ${escapeHtml(discountLabel(product))}` : `${rupiah.format(product.price)} ${escapeHtml(product.unitLabel)}`}</p></div><button class="detail-close" aria-label="Tutup konfigurasi">×</button></div><div class="detail-body configurator-body">${productConfigurationHtml(product)}</div>`;
   const saved = carryDraft || (editingLine ? {line:editingLine,fields:[],sheetDraft:cartSheetDraft(editingLine)} : configurationDrafts.get(product.id));
   if (saved) {
     if (product.dtfShirt) {

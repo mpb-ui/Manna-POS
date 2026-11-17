@@ -38,6 +38,12 @@ export function purchaseMultipleError(product, quantity, previousQuantity) {
   if (Number.isSafeInteger(amount) && amount >= first && (amount - first) % multiple === 0) return '';
   return `${product.name} memiliki kelipatan pembelian ${multiple} ${purchaseUnit(product)}, mulai dari ${first} ${purchaseUnit(product)}`;
 }
+const spandukTemplatePrices = new Map([['1.5x1', 45000], ['2x1.5', 90000], ['3x2', 180000]]);
+export function spandukTemplatePrintPrice(product, width, length) {
+  return product.id === 'spanduk-template' && product.templateProduct
+    ? spandukTemplatePrices.get(`${Number(width)}x${Number(length)}`) ?? null : null;
+}
+
 export function templateDesignUnits({ quantity, width, length, templateDesign }, previous) {
   // An unchanged saved draft keeps the original design count. New work uses the product quantity.
   if (previous && quantity === previous.quantity && width === previous.width
