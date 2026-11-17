@@ -32,8 +32,9 @@ test('new and edited A3 products persist tabs; concurrent fifth quick pick is re
   assert.equal(voucher.paperProductTab,'voucher');assert.equal(voucher.a3Kind,null);
   assert.equal((await ok('/api/bootstrap?view=pos')).products.find(p=>p.id===voucher.id).paperProductTab,'voucher');
   assert.equal((await request('/api/products/'+voucher.id,'PUT',{...voucher,paperProductTab:'karcis'})).status,400);
-  const reassigned=await ok('/api/products/'+voucher.id,'PUT',{...voucher,paperProductTab:'brosur'});
-  assert.equal(reassigned.paperProductTab,'brosur');
+  const reassigned=await ok('/api/products/'+voucher.id,'PUT',{...voucher,paperProductTab:'nota'});
+  assert.equal(reassigned.paperProductTab,'nota');
+  assert.equal((await ok('/api/bootstrap?view=pos')).products.find(p=>p.id===voucher.id).paperProductTab,'nota');
   const automatic=await ok('/api/products/'+voucher.id,'PUT',{...reassigned,paperProductTab:''});
   assert.equal(automatic.paperProductTab,null);
   const transferred=await ok('/api/products/'+voucher.id,'PUT',{...reassigned,category:'Merchandise'});

@@ -36,11 +36,12 @@ test('tab settings respect renamed categories, preserve false, reject a fifth pi
 });
 
 
-test('Produk Kertas has five tabs and classifies existing products without overwriting manual choices',()=>{
+test('Produk Kertas has six tabs and classifies existing products without overwriting manual choices',()=>{
  const category='Produk Kertas';
- assert.deepEqual(PAPER_PRODUCT_TABS.map(([,label])=>label),['Kartu Nama','Brosur','Tent Card','Map Folder','Voucher']);
+ assert.deepEqual(PAPER_PRODUCT_TABS.map(([,label])=>label),['Kartu Nama','Brosur','Nota','Tent Card','Map Folder','Voucher']);
  for(const [name, tab] of [
    ['Kartu Nama AP260','kartu-nama'],['[RIM] Brosur A3','brosur'],['PAKET Brosur A3','brosur'],
+   ['Nota 2 Ply','nota'],['[RIM] Buku Nota 1/2 Folio 1PLY','nota'],
    ['[3Pcs] Tent Card A6','tent-card'],['[5 Pcs] Map Folder A4','map-folder'],['Voucher Pad AP150','voucher'],
    ['[5 PAD] Karcis Pad HVS/BW',null],['Brosurlain',null]
  ]) assert.equal(paperProductTab({category,name}),tab);
