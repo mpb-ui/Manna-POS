@@ -1,7 +1,7 @@
 export const PAPER_PRODUCT_TABS = [
   ['kartu-nama', 'Kartu Nama'],
   ['brosur', 'Brosur'],
-  ['nota', 'Nota'],
+  ['nota', 'Buku Nota'],
   ['tent-card', 'Tent Card'],
   ['map-folder', 'Map Folder'],
   ['voucher', 'Voucher']
