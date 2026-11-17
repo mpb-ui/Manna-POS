@@ -14,7 +14,6 @@ export function restoreCartEditor(scope, line) {
   for(const choice of line.choices || []) radio(`choice-${choice.groupId}`,choice.optionId);
   radio('template-size',`${line.width}x${line.length ?? line.actualLength}`);
   radio('template-design',line.templateDesign || '');
-  set('#template-design-quantity',line.templateDesignQuantity || 1);
   const designId=line.fileServiceId || 'READY', enabled=scope.querySelector('#design-enabled');
   if(enabled) enabled.checked=designId!=='READY';
   if(designId!=='READY') {

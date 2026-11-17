@@ -27,9 +27,16 @@ test('cart quotation is read-only, authoritative, backwards-compatible and permi
     const saved=await ok(`/api/orders/${draft.id}`,'PUT',{customerName:draft.customerName,phone:draft.phone,items:[changed]});assert.equal(saved.items[0].itemId,draft.items[0].itemId);assert.equal(saved.total,261000);assert.equal(saved.paidAmount,0);
     const paid=await ok(`/api/orders/${draft.id}/payments`,'POST',{method:'TUNAI',amount:1,requestId:'cart-payment'});assert.equal(paid.payments.length,1);assert.equal(paid.paidAmount,1);
     assert.equal((await request(`/api/orders/${draft.id}`,'PUT',{customerName:'Changed',phone:draft.phone,items:[changed]})).status,400);
-    const template={productId:'spanduk-template',width:1.5,length:1,quantity:2,templateDesign:'SB-01',templateDesignQuantity:2,finishing:[]};
+    const template={productId:'spanduk-template',width:1.5,length:1,quantity:2,templateDesign:'SB-01',finishing:[]};
     const templateQuote=await ok('/api/orders/check','POST',{items:[template],includeItems:true});assert.equal(templateQuote.items[0].templateDesignTotal,70000);assert.equal(templateQuote.total,160000);
-    assert.equal((await request('/api/orders/check','POST',{items:[{...template,templateDesignQuantity:0}],includeItems:true})).status,400);
+    const staleClientQuote=await ok('/api/orders/check','POST',{items:[{...template,templateDesignQuantity:1}],includeItems:true});
+    assert.equal(staleClientQuote.total,160000);
+    const templateOrder=await ok('/api/orders','POST',{customerName:'Template QA',phone:'4567',items:[template]});
+    assert.equal(templateOrder.total,160000);
+    assert.equal(templateOrder.items[0].templateDesignQuantity,2);
+    const edited=await ok(`/api/orders/${templateOrder.id}`,'PUT',{customerName:'Template QA',phone:'4567',items:[{...template,itemId:templateOrder.items[0].itemId,quantity:3}]});
+    assert.equal(edited.total,240000);
+    assert.equal(edited.items[0].templateDesignTotal,105000);
     assert.deepEqual((await ok('/api/bootstrap?view=stock')).inventory,before.inventory);
   }finally{child.kill();await new Promise(r=>child.once('exit',r));}
 });

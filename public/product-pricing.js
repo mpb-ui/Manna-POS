@@ -38,6 +38,14 @@ export function purchaseMultipleError(product, quantity, previousQuantity) {
   if (Number.isSafeInteger(amount) && amount >= first && (amount - first) % multiple === 0) return '';
   return `${product.name} memiliki kelipatan pembelian ${multiple} ${purchaseUnit(product)}, mulai dari ${first} ${purchaseUnit(product)}`;
 }
+export function templateDesignUnits({ quantity, width, length, templateDesign }, previous) {
+  // An unchanged saved draft keeps the original design count. New work uses the product quantity.
+  if (previous && quantity === previous.quantity && width === previous.width
+    && length === (previous.actualLength ?? previous.length) && templateDesign === previous.templateDesign) {
+    return previous.templateDesignQuantity ?? 1;
+  }
+  return quantity;
+}
 export function normalizeWholesaleBasis(value, priceBasis, fallback = 'quantity') {
   const basis = value ?? fallback;
   if (!['quantity','area','length'].includes(basis) || basis === 'area' && priceBasis !== 'sqm' || basis === 'length' && priceBasis !== 'linear_m') throw new Error('Dasar harga grosir tidak sesuai perhitungan produk');

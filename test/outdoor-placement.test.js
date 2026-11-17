@@ -73,7 +73,7 @@ test('invalid dimensions/quantity and no-fit are rejected; pricing, finishing, H
   const custom={...p,wholesaleEnabled:true,priceTiers:[{min:2,max:null,price:25000}],discount:{enabled:true,type:'percent',value:10},rollStockSources:{1:[{sourceMaterialId:p.materialSources[0].materialId,materialId:'chosen-roll',sku:'CHOSEN',name:'Chosen'}]}};
   const line=calculateLine(custom,input(200,100,5,{quantity:2,fileServiceId:'DESIGN_B',fileServiceQuantity:2,finishing:[{id:'fin-out-eyelet',units:6,note:'Atas'}]}));
   assert.equal(line.unitPrice,22500);assert.equal(line.baseTotal,90000);assert.equal(line.finishingTotal,3000);assert.equal(line.fileServiceTotal,70000);assert.equal(line.materials[0].materialId,'chosen-roll');assert.equal(line.materials[0].unitCost,p.materialSources[0].cost);assert.equal(line.materials[0].units,4.2);
-  const t=product('spanduk-template'),template=calculateLine(t,{width:1.5,length:1,quantity:2,templateDesign:'SB-01',finishing:[]});assert.equal(template.baseTotal,90000);assert.equal(template.templateDesignTotal,35000);assert.equal(template.rollPlacement,undefined);
+  const t=product('spanduk-template'),template=calculateLine(t,{width:1.5,length:1,quantity:2,templateDesign:'SB-01',finishing:[]});assert.equal(template.baseTotal,90000);assert.equal(template.templateDesignTotal,70000);assert.equal(template.rollPlacement,undefined);
   assert.equal(calculateLine(product('poster-albatros'),input(91,101)).baseTotal,180000);
 });
 

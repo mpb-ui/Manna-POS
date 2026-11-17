@@ -17,7 +17,7 @@ import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSale
 import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from './order-discount.js';
 import { paymentDiscountHtml, bindPaymentDiscount } from './payment-discount-ui.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
-import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
+import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, templateDesignUnits, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
 import { openGoodsReturn, mountGoodsReturnHistory, closeGoodsReturns, goodsReturnReportHtml } from "./goods-returns-ui.js";
 import { checkoutDeadlineHtml, bindCheckoutDeadline } from "./checkout-deadline.js";
@@ -139,7 +139,7 @@ const assistance = createOrderAssistance({
   },
   refreshProjects: () => { if (state.view === "projects") renderProjectContent(PROJECT_STAGES.map(([status]) => status)); },
   useRepeat: quote => {
-    state.cart = quote.items.map(cartLineFromPricedItem); state.editingOrderId = null;
+    state.cart = quote.items.map(cartLineFromPricedItem); savedTemplateItems.clear(); state.editingOrderId = null;
     state.draft = { customerId:quote.customerId || null,customerName: quote.customerName, phone: quote.phone, deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
     state.selectedProduct = state.cart[0]?.productId || null;
     state.selectedCategory = categoryKey(state.products.find(p=>p.id===state.selectedProduct) || {});
@@ -186,6 +186,7 @@ function toast(message, type = "") {
 
 function showLogin() {
   masterFilters.clear();
+  savedTemplateItems.clear();
   securityUI.reset();csrfToken='';loadSequence++;
   state.cart=[];state.editingOrderId=null;state.draft={customerName:'',phone:'',deadline:'',fileStatus:'SIAP_CETAK',fileReadiness:'UNCONFIRMED'};
   for(const name of ['products','allProducts','orders','materials','finishings','machines','users','auditLogs','inventory','stockMovements','shirtStock'])state[name]=[];
@@ -480,9 +481,12 @@ function fileServicesHtml(product) {
 }
 
 function templateOptionsHtml(product) {
-  const sizes = (product.sizeVariants || []).map((size, index) => `<div class="chip"><input type="radio" name="template-size" id="size-${size.id}" value="${size.width}x${size.length}" ${index === 0 ? "checked" : ""}><label for="size-${size.id}">${escapeHtml(size.label)}</label></div>`).join("");
+  const sizes = (product.sizeVariants || []).map((size, index) => {
+    const { total } = productBase(product, size.width, size.length, 1);
+    return `<div class="chip"><input type="radio" name="template-size" id="size-${size.id}" value="${size.width}x${size.length}" ${index === 0 ? "checked" : ""}><label for="size-${size.id}"><strong>${escapeHtml(size.label)}</strong><small>${rupiah.format(Math.round(total))}</small></label></div>`;
+  }).join("");
   const designs = (product.designTemplates || []).map((code, index) => `<div class="chip template-chip"><input type="radio" name="template-design" id="template-${code}" value="${code}" ${index === 0 ? "checked" : ""}><label for="template-${code}"><span class="template-thumb template-tone-${index % 5 + 1}" aria-hidden="true"><i>${code.split("-")[0]}</i></span><span><strong>${code}</strong><small>+ ${rupiah.format(product.templateDesignPrice || 35000)}</small></span></label></div>`).join("");
-  return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div>${quantitySelectorHtml()}<label class="field template-design-quantity"><span>Jumlah Design Template</span><input id="template-design-quantity" type="number" min="1" step="1" value="1"></label>`;
+  return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div>${quantitySelectorHtml()}`;
 }
 
 const catalogRocket = '<svg class="catalog-heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5c3-2 6-2 7-2 0 1 0 4-2 7l-6 6-5-5 6-6Z"/><circle cx="16" cy="8" r="1.5"/><path d="m8 11-4 1-2 4 6-1m5 1-1 4-4 2 1-6m-3 2-3 3"/></svg>';
@@ -697,7 +701,8 @@ function readCurrentLine() {
   const fileServiceQuantity = fileService.price ? Math.max(1, Math.floor(Number(document.querySelector(`[data-design-qty="${fileService.id}"]`)?.value || 1))) : 1;
   const fileServiceNote = fileService.price ? document.querySelector(`[data-design-note="${fileService.id}"]`)?.value.trim() || "" : "";
   const templateDesign = product.templateProduct ? document.querySelector('input[name="template-design"]:checked')?.value || "" : "";
-  const templateDesignQuantity = product.templateProduct ? Math.max(1, Number(document.querySelector("#template-design-quantity")?.value || 1)) : 0;
+  const savedTemplate = state.editingOrderId ? savedTemplateItems.get(old?.itemId) : null;
+  const templateDesignQuantity = product.templateProduct ? templateDesignUnits({ quantity, width, length, templateDesign }, savedTemplate) : 0;
   const templateDesignTotal = product.templateProduct ? Number(product.templateDesignPrice || 35000) * templateDesignQuantity : 0;
   let finishTotal = 0;
   document.querySelectorAll("[data-finishing-price]").forEach((label) => {
@@ -923,7 +928,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
     const radio = document.querySelector(`input[name="width"][value="${width}"]`); if (radio) radio.checked = true;
     updatePreview();
   }));
-  document.querySelectorAll('#image-width,#image-length,#allowance,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],#template-design-quantity,[data-finish-qty]').forEach((input) => {
+  document.querySelectorAll('#image-width,#image-length,#allowance,input[name="width"],input[name="size-variant"],input[name="material-variant"],input[name="sub-variant"],input[name^="choice-"],input[name="template-size"],input[name="template-design"],input[name="file-service"],[data-finish-qty]').forEach((input) => {
     input.addEventListener("input", updatePreview); input.addEventListener("change", updatePreview);
   });
   bindFinishingDropdown(selectedProduct());
@@ -1021,6 +1026,7 @@ function bindProductConfiguration(onAdd, sheetSaved = null) {
 }
 
 const configurationDrafts = new Map();
+const savedTemplateItems = new Map();
 let sheetController = null;
 let shirtStockController = null;
 let configurationNotesCleanup = null;
@@ -1262,7 +1268,7 @@ function bindPos() {
         ? api(`/api/orders/${state.editingOrderId}`, { method: "PUT", body: JSON.stringify(payload) })
         : api("/api/orders", { method: "POST", body: JSON.stringify(payload) }),payload);
       if(!order)return;
-      state.cart = []; configurationDrafts.clear(); state.editingOrderId = null;
+      state.cart = []; configurationDrafts.clear(); savedTemplateItems.clear(); state.editingOrderId = null;
       state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" };
       await load(); toast(`${order.code} berhasil disimpan`);
       state.view = openPayment || !can("orders.view") ? "pos" : "order-history"; render();
@@ -1278,7 +1284,7 @@ function bindPos() {
     await savePosOrder(true);
   });
   document.querySelector("#cancel-edit")?.addEventListener("click", () => {
-    state.cart = []; configurationDrafts.clear(); state.editingOrderId = null;
+    state.cart = []; configurationDrafts.clear(); savedTemplateItems.clear(); state.editingOrderId = null;
     state.draft = { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK" };
     renderPos();
   });
@@ -1704,6 +1710,8 @@ function cartLineFromPricedItem(item) {
 }
 
 function startEditOrder(order) {
+  savedTemplateItems.clear();
+  for (const item of order.items) if (item.templateDesign && item.itemId) savedTemplateItems.set(item.itemId, item);
   state.cart = order.items.map(cartLineFromPricedItem);
   state.draft = { customerId:order.customerId || null, customerName: order.customerName || "", phone: order.phone || "", deadline: localDateTimeInput(order.deadline), fileStatus: order.fileStatus || "SIAP_CETAK", fileReadiness: order.fileReadiness || "UNCONFIRMED" };
   if (order.taxGrossUp) {

@@ -41,7 +41,7 @@ export function mergeCartLines(previous, added, product) {
   if ((previous.fileServiceId || previous.fileService?.id) !== 'READY' && (previous.fileServicePrice || previous.fileService?.price)) {
     merged.fileServiceQuantity = validQuantity(number(previous.fileServiceQuantity ?? previous.fileService?.quantity ?? 1) + number(added.fileServiceQuantity ?? added.fileService?.quantity ?? 1));
   }
-  if (product.templateProduct) merged.templateDesignQuantity = validQuantity(number(previous.templateDesignQuantity || 1) + number(added.templateDesignQuantity || 1));
+  if (product.templateProduct) merged.templateDesignQuantity = merged.quantity;
   merged.finishing = (previous.finishing || []).map(f => {
     const extra = added.finishing.find(item => item.id === f.id);
     return { ...f, units: Number((number(f.units) + number(extra?.units)).toFixed(4)) };
