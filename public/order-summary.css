@@ -81,7 +81,6 @@
 .pos-layout .sticky-summary .checkout-actions>button{min-width:0;white-space:normal;overflow-wrap:anywhere}
 .pos-layout .sticky-summary .checkout-actions>.checkout-save-draft{padding-inline:8px;white-space:nowrap}
 .pos-layout .sticky-summary .cart-item-footer>button:disabled{opacity:.5;cursor:wait}
-.template-design-quantity{margin-top:12px;max-width:180px}
 @media(max-width:480px){
   .pos-layout .sticky-summary .checkout-customer{margin-inline:-16px;padding:16px}
   .pos-layout .sticky-summary .checkout-footer{bottom:-16px;margin:-20px -16px -16px;padding-inline:16px}

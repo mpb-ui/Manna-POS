@@ -66,10 +66,13 @@ test('DTF merges matching package/color/size sets and editing excludes the old q
   const stock=[{color:'Hitam',size:'M',available:5}];assert.equal(remainingShirtStock(stock,cart.filter(l=>l.cartId!==cart[0].cartId),p.id)[0].available,5);assert.equal(remainingShirtStock(stock,cart,p.id)[0].available,0);
 });
 
-test('template design fees accumulate explicitly; legacy requests retain one fee and invalid counts cannot alter billing',()=>{
-  const p=product('spanduk-template'),line={productId:p.id,width:1.5,length:1,quantity:1,templateDesign:'SB-01',templateDesignQuantity:1,finishing:[],fileServiceId:'READY'};
+test('template design fees follow product quantity when cart lines merge',()=>{
+  const p=product('spanduk-template'),line={productId:p.id,width:1.5,length:1,quantity:1,templateDesign:'SB-01',finishing:[],fileServiceId:'READY'};
   const cart=addCartLine(addCartLine([],line,p),line,p),priced=calculateLine(p,cart[0]);
   assert.equal(cart.length,1);assert.equal(priced.quantity,2);assert.equal(priced.baseTotal,90000);assert.equal(priced.templateDesignQuantity,2);assert.equal(priced.templateDesignTotal,70000);
-  const legacy=calculateLine(p,{...line,templateDesignQuantity:undefined});assert.equal(legacy.templateDesignTotal,35000);
-  for(const templateDesignQuantity of [0,-1,1.5,Infinity])assert.throws(()=>calculateLine(p,{...line,templateDesignQuantity}),/template/);
+  for(const quantity of [0,-1,1.5,Infinity])assert.throws(()=>calculateLine(p,{...line,quantity}),/Jumlah produk/);
+  const legacy = {...priced,templateDesignQuantity:1};
+  assert.equal(calculateLine(p,cart[0],[],null,legacy).templateDesignTotal,35000);
+  assert.equal(calculateLine(p,{...cart[0],quantity:3},[],null,legacy).templateDesignTotal,105000);
+  assert.equal(calculateLine(p,{...cart[0],templateDesign:'SB-02'},[],null,legacy).templateDesignTotal,70000);
 });
