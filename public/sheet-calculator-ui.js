@@ -13,10 +13,12 @@ export function bindSheetCalculator({ scope, product, profiles, update, saved })
   if (!panel || !product.sheetCalculatorEnabled) return null;
   const get = id => scope.querySelector('#sheet-'+id), layout = scope.querySelector('.sheet-config-layout');
   const entry = document.createElement('button'); entry.type = 'button'; entry.id = 'sheet-toggle'; entry.className = 'sheet-toggle'; entry.textContent = '▦ Hitung dari ukuran'; entry.setAttribute('aria-controls','sheet-calculator'); entry.setAttribute('aria-expanded','false');
+  const header = scope.querySelector('[data-sheet-entry]');
   const label=scope.querySelector('.quantity-field > span');
-  if(label) label.textContent=product.a3Kind==='ready'?'Jumlah produk':'Jumlah Cetak';
+  if(label && !header) label.textContent=product.a3Kind==='ready'?'Jumlah produk':'Jumlah Cetak';
   const control=scope.querySelector('.quantity-control');
-  if(control){const row=document.createElement('div');row.className='sheet-quantity-row';control.replaceWith(row);row.append(control,entry);}
+  if (header) { entry.textContent = 'Hitung dari Ukuran'; header.append(entry); }
+  else if(control){const row=document.createElement('div');row.className='sheet-quantity-row';control.replaceWith(row);row.append(control,entry);}
   let active = saved?.active === true || saved?.applied === true, result = null;
   function open(show) { if(show) active=true; panel.classList.toggle('hidden',!show); layout?.classList.toggle('sheet-open',show); entry.setAttribute('aria-expanded',String(show)); }
   const input = () => ({ widthCm:get('width').value, lengthCm:get('length').value, allowRotation:get('rotation').checked });

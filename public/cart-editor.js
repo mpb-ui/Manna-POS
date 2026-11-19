@@ -18,7 +18,7 @@ export function restoreCartEditor(scope, line) {
   if(enabled) enabled.checked=designId!=='READY';
   if(designId!=='READY') {
     radio('file-service',designId);
-    set(`[data-design-qty="${CSS.escape(designId)}"]`,line.fileServiceQuantity || 1);
+    set(`[data-design-qty="${CSS.escape(designId)}"]`,line.fileServiceQuantityPerProduct ?? line.fileServiceQuantity ?? 1);
     set(`[data-design-note="${CSS.escape(designId)}"]`,line.fileServiceNote || '');
   }
   set('#production-note',line.productionNote || '');
