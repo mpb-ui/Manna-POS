@@ -73,7 +73,7 @@ test('Migrasi opsi Outdoor tidak mengubah harga, BOM, stok atau snapshot lama da
   const inventory=structuredClone(store.memory.inventory),bom=structuredClone(old.materialSources);
   await store.mutate(()=>{});
   const migrated=await store.read(),updated=migrated.products.find(p=>p.id===old.id);
-  assert.equal(migrated.catalogVersion,16);assert.deepEqual(updated.widths,[2]);
+  assert.equal(migrated.catalogVersion,17);assert.deepEqual(updated.widths,[2]);
   assert.equal(updated.price,12345);assert.equal(updated.note,'Custom');
   assert.deepEqual(updated.materialSources.map(({materialId,quantity,wastePercent})=>({materialId,quantity,wastePercent})),bom);
   assert.deepEqual(migrated.inventory.filter(row=>inventory.some(old=>old.sku===row.sku)).map(({stockMethod,stockUnit,stockNeedsCount,rollWidthCm,...row})=>row),inventory);const { designPicColor, items, stockCommitted: historicalStockCommitted, stockCommitBasis, ...snapshot } = migrated.orders[0];

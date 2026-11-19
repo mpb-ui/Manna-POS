@@ -1,4 +1,4 @@
-import { imageGeometry, outdoorCapacity, supportsOutdoorAllowance } from './outdoor-sizing.js';
+import { imageGeometry, printRollCapacity, printRollLengthLimit, supportsOutdoorAllowance } from './outdoor-sizing.js';
 import { supportsAlbatrosPlacement, albatrosPlacements, albatrosPlacementNote } from './albatros-sizing.js';
 
 export function supportsOutdoorPlacement(product) {
@@ -7,7 +7,7 @@ export function supportsOutdoorPlacement(product) {
 
 export function supportsLfPlacement(product) {
   return !product?.templateProduct && product?.priceBasis === 'sqm'
-    && (['poster-luster', 'poster-canvas'].includes(product.id) || product.category === 'LF Sticker');
+    && (['poster-luster', 'poster-canvas', 'lf-sticker-matte'].includes(product.id) || product.category === 'LF Sticker');
 }
 
 export const supportsRollPlacement = product => supportsAlbatrosPlacement(product) || supportsOutdoorPlacement(product) || supportsLfPlacement(product);
@@ -24,11 +24,12 @@ export function rollPlacements(product, input) {
   const round = n => Number(n.toFixed(8)), candidates = [];
   const orientations = g.imageWidthCm === g.imageLengthCm ? [[g.imageWidthCm,g.imageLengthCm]] : [[g.imageWidthCm,g.imageLengthCm],[g.imageLengthCm,g.imageWidthCm]];
   for (const [imageAcrossCm,imageAlongCm] of orientations) for (const width of product.widths || []) {
-    const nominalWidth = Number(width), capacityCm = outdoorCapacity(product, nominalWidth);
+    const nominalWidth = Number(width), capacityCm = printRollCapacity(product, nominalWidth, input.rollCalculationVersion);
     const acrossCm = Number((imageAcrossCm + 2 * allowance).toFixed(4)), alongCm = Number((imageAlongCm + 2 * allowance).toFixed(4));
     if (!Number.isFinite(nominalWidth) || nominalWidth <= 0 || !Number.isFinite(capacityCm) || capacityCm <= 0 || acrossCm > capacityCm + 1e-9) continue;
     const actualLength = (imageAlongCm + (allowance > 5 ? 2 * allowance : 0)) / 100;
-    const billedLength = Math.max(1, Number((Math.ceil(actualLength / step - 1e-9) * step).toFixed(4)));
+    const roundedLength = Math.max(1, Number((Math.ceil(actualLength / step - 1e-9) * step).toFixed(4)));
+    const billedLength = Math.min(roundedLength, printRollLengthLimit(product, capacityCm, input.rollCalculationVersion));
     const usedArea = round(capacityCm * alongCm / 10000);
     const billingUnits = round((product.priceBasis === 'sqm' ? nominalWidth : 1) * billedLength);
     if (![acrossCm,alongCm,actualLength,billedLength,usedArea,billingUnits].every(Number.isFinite)) throw new Error('Ukuran gambar terlalu besar');
@@ -39,6 +40,10 @@ export function rollPlacements(product, input) {
 
 export function selectRollPlacement(product, input) {
   const best = rollPlacements(product, input)[0];
-  if (!best) throw new Error(`Kedua arah gambar tidak muat pada roll ${product.name || 'produk'} yang tersedia. Perlu bahan lain atau penanganan sambungan.`);
+  if (!best) {
+    const capacity = Math.max(0, ...(product.widths || []).map(width => printRollCapacity(product, width, input.rollCalculationVersion)));
+    const limit = capacity ? ` Lebar roll maksimum ${capacity.toLocaleString('id-ID')} cm.` : '';
+    throw new Error(`Kedua arah gambar tidak muat pada roll ${product.name || 'produk'}.${limit}`);
+  }
   return best;
 }

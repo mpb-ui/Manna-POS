@@ -4,6 +4,7 @@ import { DEFAULT_VARIANT_TYPES, DEFAULT_OPTION_TYPES, variantCardName, copyTierR
 import { enhanceMaterialSelects } from './material-picker.js';
 import {categoryWidthChoices,normalizeProductWidths} from './product-widths.js';
 import { purchaseMultiple } from './product-pricing.js';
+import { usesPrintRollRules } from './outdoor-sizing.js';
 import { PAPER_PRODUCT_TABS, isPaperProductCategory } from './paper-product-tabs.js';
 
 export function openProductEditor(ctx, product = null) {
@@ -47,7 +48,8 @@ export function openProductEditor(ctx, product = null) {
   const profiles = state.catalogOptions.sheetCalculatorProfiles || [];
   const profileChoices = profiles.filter(p=>['a3-plus','a3'].includes(p.id) || p.id===product?.sheetProfileId);
   const machineOptions = state.machines.filter(m=>m.active!==false || product?.machineIds?.includes(m.id)).map(m=>({value:m.id,label:m.name}));
-  let basis = product?.wholesaleBasis || defaultWholesaleBasis(saleUnitBasis(unit));
+  let basis = product && usesPrintRollRules({...product,priceBasis:saleUnitBasis(unit)}) ? 'area'
+    : product?.wholesaleBasis || defaultWholesaleBasis(saleUnitBasis(unit));
   let previousSaleBasis = saleUnitBasis(unit);
   const detail = showDialog(product?'Edit Produk':'Tambah Produk', `<form id="product-form" class="product-form pe-form" novalidate>
     <nav class="pe-tabs" role="tablist" aria-label="Pengaturan produk"><button type="button" id="pe-info-tab" role="tab" aria-selected="true" aria-controls="pe-info-panel" data-editor-tab="info">Informasi Produk</button><button type="button" id="pe-production-tab" role="tab" aria-selected="false" aria-controls="pe-production-panel" tabindex="-1" data-editor-tab="production">Kebutuhan Produksi</button></nav>
@@ -160,7 +162,12 @@ export function openProductEditor(ctx, product = null) {
     const sheet=el('sheetCalculatorEnabled');sheet.disabled=!allowed;sheet.title=allowed?'':'Tersedia untuk produk Print A3+ dengan satuan lbr';if(!allowed)sheet.checked=false;
     form.querySelector('[data-profile-options]').hidden=!sheet.checked;
     form.querySelector('[data-wholesale-basis-field]').hidden=mode==='unit';
-    for(const option of el('wholesaleBasis').options)option.disabled=option.value==='area'&&mode!=='sqm'||option.value==='length'&&mode!=='linear_m';
+    const perSheet = product && usesPrintRollRules({...product,priceBasis:mode});
+    for (const option of el('wholesaleBasis').options) {
+      option.disabled = perSheet ? option.value !== 'area' : option.value === 'area' && mode !== 'sqm' || option.value === 'length' && mode !== 'linear_m';
+      if (option.value === 'area') option.textContent = perSheet ? 'Luas per lembar (m²)' : 'Luas tagihan (m²)';
+    }
+    if (perSheet) el('wholesaleBasis').value = 'area';
     if(mode==='unit')el('wholesaleBasis').value='quantity';
     form.querySelector('[data-minimum-fields]').hidden=!el('minimumEnabled').checked;
     const paperProducts=isPaperProductCategory(el('category').value);

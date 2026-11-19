@@ -1,7 +1,11 @@
 import { isPaperProductCategory } from './paper-product-tabs.js';
+import { PRINT_ROLL_VERSION, usesPrintRollRules } from './outdoor-sizing.js';
 
 // Shared POS/server rules. Existing catalogs without a basis retain quantity tiers.
-export const wholesaleBasis = product => ['area','length'].includes(product.wholesaleBasis) ? product.wholesaleBasis : 'quantity';
+export const usesPrintAreaTier = (product, line) => line?.rollCalculationVersion === PRINT_ROLL_VERSION
+  && !line.sizeVariantId && usesPrintRollRules(product);
+export const wholesaleBasis = (product, line) => usesPrintAreaTier(product, line) ? 'area'
+  : ['area','length'].includes(product.wholesaleBasis) ? product.wholesaleBasis : 'quantity';
 export const purchaseUnit = product => product?.priceBasis && product.priceBasis !== 'unit' ? 'lembar' : product?.unitName || product?.saleUnit || 'pcs';
 export const minimumQuantity = product => product?.minimumEnabled === true ? Math.max(1, Number(product.minimumQuantity) || 1) : 1;
 export function minimumError(product, quantity) {
@@ -72,15 +76,19 @@ export function normalizeProductTiers(tiers, basis = 'quantity') {
 export function tierForUnits(tiers, units) {
   return [...tiers].filter(t=>Number(t.min)<=units+1e-8 && (t.max == null || t.max === '' || units<=Number(t.max)+1e-8)).sort((a,b)=>b.min-a.min)[0];
 }
-export function effectivePriceTiers(product, fixedVariant = null, materialVariant = null, combination = null) {
+export function effectivePriceTiers(product, fixedVariant = null, materialVariant = null, combination = null, line = null) {
   // A fixed-size option never inherits meter-based tiers.
   if (fixedVariant && wholesaleBasis(product) !== 'quantity') return [];
-  return combination?.priceTiers?.length ? combination.priceTiers : combination?.price != null ? []
+  const tiers = combination?.priceTiers?.length ? combination.priceTiers : combination?.price != null ? []
     : materialVariant?.priceTiers?.length ? materialVariant.priceTiers : materialVariant?.price != null || fixedVariant?.price != null ? []
     : product.wholesaleEnabled ? product.priceTiers || [] : [];
+  // Per-sheet area tiers start at each threshold, including catalogs saved with count ranges.
+  return usesPrintAreaTier(product, line) ? tiers.map(tier => ({...tier, max:null})) : tiers;
 }
-export function wholesaleUnits(product, {width=1,billedLength=1,quantity=1,sizeVariantId=''} = {}) {
-  const basis=wholesaleBasis(product);
+export function wholesaleUnits(product, line = {}) {
+  const {width=1, billedLength=1, quantity=1, sizeVariantId='', imageWidthCm, imageLengthCm} = line;
+  if (usesPrintAreaTier(product, line)) return Number((imageWidthCm * imageLengthCm / 10000).toFixed(8));
+  const basis=wholesaleBasis(product, line);
   return Number(((sizeVariantId || basis==='quantity' ? 1 : basis==='area' ? Number(width)*Number(billedLength) : Number(billedLength))*Number(quantity)).toFixed(8));
 }
 export function wholesaleGroupKey(line) {
@@ -90,10 +98,11 @@ export function wholesaleGroupKey(line) {
 export function candidateRollPrice(product, line, candidate) {
   const basis=wholesaleBasis(product), ownUnits=wholesaleUnits(product,line);
   const units=Number((basis==='quantity' ? line.quantity : candidate.billingUnits*line.quantity).toFixed(8));
-  const totalUnits=basis==='quantity'?units:Number((Number(line.wholesaleQuantity ?? ownUnits)-ownUnits+units).toFixed(8));
+  const totalUnits=usesPrintAreaTier(product,line) ? ownUnits
+    : basis==='quantity'?units:Number((Number(line.wholesaleQuantity ?? ownUnits)-ownUnits+units).toFixed(8));
   const material=product.materialVariants?.find(v=>v.id===line.materialVariantId);
   const combination=material?.combinations?.find(c=>c.subVariantId===line.subVariantId);
-  const tier=tierForUnits(effectivePriceTiers(product,null,material,combination),totalUnits);
+  const tier=tierForUnits(effectivePriceTiers(product,null,material,combination,line),totalUnits);
   let price=Number(tier?.price ?? combination?.price ?? material?.price ?? product.price);
   // Match the promo already evaluated for this preview; avoid changing it mid-render.
   if(line.discountApplied)price=product.discount.type==='nominal'?Math.max(0,price-product.discount.value):Math.max(0,Math.round(price*(1-Math.min(product.discount.value,100)/100)));

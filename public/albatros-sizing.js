@@ -1,4 +1,4 @@
-import { outdoorCapacity } from './outdoor-sizing.js';
+import { printRollCapacity } from './outdoor-sizing.js';
 
 export const ALBATROS_CALCULATION_VERSION = 1;
 export function supportsAlbatrosPlacement(product) {
@@ -15,7 +15,7 @@ export function albatrosPlacements(product, input) {
   const candidates = [];
   for (const [acrossCm, alongCm] of w === h ? [[w,h]] : [[w,h],[h,w]]) {
     for (const nominalWidth of product.widths || []) {
-      const capacityCm = outdoorCapacity(product, nominalWidth);
+      const capacityCm = printRollCapacity(product, nominalWidth, input.rollCalculationVersion);
       if (!Number.isFinite(nominalWidth) || nominalWidth <= 0 || !Number.isFinite(capacityCm) || capacityCm <= 0 || acrossCm > capacityCm + 1e-9) continue;
       const actualLength = alongCm / 100;
       const billedLength = Math.max(1, Number((Math.ceil(actualLength / step - 1e-9) * step).toFixed(4)));

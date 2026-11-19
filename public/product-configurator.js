@@ -13,7 +13,9 @@ export function configurationFinishing(number, content, available = true) {
 
 export const configurationDesign = (number, content) => `<div class="config-design">${configurationBadge(number)}${content}</div>`;
 export const configurationNotes = () => '<label class="config-production-note"><textarea id="production-note" rows="1" aria-label="Catatan produksi (opsional)" placeholder="Catatan produksi (opsional)"></textarea></label>';
-export const configurationActions = () => '<div class="item-action-bar"><div class="price-preview"><div><span>Estimasi Harga</span><p id="formula-text">—</p><strong id="item-price">Rp0</strong></div></div><button id="add-item" class="primary" type="button">+ Tambah ke Pesanan</button></div>';
+export const configurationActions = (quantity = '') => `<div class="item-action-bar ${quantity ? 'print-action-bar' : ''}">${quantity}
+  <div class="price-preview"><div>${quantity ? '' : '<span>Estimasi Harga</span>'}<p id="formula-text">—</p><strong id="item-price">Rp0</strong></div></div>
+  <button id="add-item" class="primary" type="button">+ Tambah ke Pesanan</button></div>`;
 
 export function bindConfigurationNotes(scope) {
   const input = scope.querySelector('.config-production-note textarea');

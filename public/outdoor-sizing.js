@@ -18,6 +18,29 @@ export const LF_CAPACITIES = {
   'lf-sticker-oneway-outdoor': {1:102,1.5:152},
   'lf-sticker-oneway-hires': {1:102,1.5:152}
 };
+
+export const PRINT_ROLL_VERSION = 2;
+const PRINT_ROLL_UPDATES = {
+  'fl-280-glossy': {},
+  'poster-albatros': {0.9:[90,91], 1.2:[125,127]},
+  'lf-sticker-matte': {1:[102,105]}
+};
+
+export const usesPrintRollRules = product => !product.templateProduct && product.priceBasis === 'sqm'
+  && Object.hasOwn(PRINT_ROLL_UPDATES, product.id);
+
+export function printRollCapacity(product, width, version) {
+  const capacity = outdoorCapacity(product, width);
+  if (version !== PRINT_ROLL_VERSION || !usesPrintRollRules(product)) return capacity;
+  const update = PRINT_ROLL_UPDATES[product.id][width];
+  const configured = update && capacity === update[0] ? update[1] : capacity;
+  return product.id === 'fl-280-glossy' ? configured : Math.min(152, configured);
+}
+
+export function printRollLengthLimit(product, capacity, version) {
+  return version === PRINT_ROLL_VERSION && product.id === 'fl-280-glossy' && capacity === 320 ? 3 : Infinity;
+}
+
 export function supportsAutoRollWidth(product) {
   return supportsOutdoorAllowance(product) || !product.templateProduct && product.priceBasis !== 'unit' && (Boolean(product.rollCapacities) || Boolean(LF_CAPACITIES[product.id]) || ['LF Poster','LF Sticker'].includes(product.category));
 }

@@ -197,3 +197,122 @@
  .product-config-dialog .finish-dropdown-main [data-finish-note-toggle]{grid-column:2/4}
  .product-config-dialog .finish-dropdown-main [data-remove-finish]{grid-column:3}
 }
+
+/* Print configuration: the body scrolls independently of the quantity and total. */
+.print-config-dialog .configurator-title { flex:1; min-width:0; }
+.print-config-dialog .configurator-head [data-sheet-entry] { flex:0 0 auto; }
+.print-config-dialog .configurator-head .sheet-toggle { min-height:32px; }
+.print-config-dialog .detail-close {
+  background:#F1F3F4 url('./assets/print-config/imgX.svg') center no-repeat;
+  font-size:0;
+}
+.print-config-dialog .configurator-body { gap:16px; scroll-padding:16px; }
+.print-config-dialog .config-section,
+.print-config-dialog .print-size { padding-bottom:16px; border-bottom:1px solid #D7DFE9; }
+.print-config-dialog .config-section-content { margin-top:12px; gap:12px; }
+.print-config-dialog .config-production-note { border:0; padding-top:16px; background:url('./assets/print-config/imgLine83.svg') left top repeat-x; }
+.print-config-dialog .design-toggle input:not(:checked)+.design-switch { background:url('./assets/print-config/imgActionSwitchOff.svg') center no-repeat; }
+.print-config-dialog .design-toggle input:not(:checked)+.design-switch::after { display:none; }
+.print-config-dialog .print-roll-fields { display:grid; gap:8px; }
+.print-roll-status,.print-roll-chips { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.print-roll-status { justify-content:space-between; }
+.print-roll-chips { color:#52627A; font-size:12px; font-weight:600; }
+.print-roll-chip { background:#EDEFF4; border:1px solid #D7DFE9; border-radius:8px; padding:5px 10px; white-space:nowrap; }
+.print-roll-chip[aria-current=true] { background:#E9F1FE; border-color:#0A68F4; color:#0A68F4; font-weight:700; }
+.print-config-dialog .print-roll-details>summary { position:static; min-height:32px; margin:0; padding:0; }
+.print-config-dialog .print-roll-details .ui-chevron,
+.print-config-dialog .wholesale-prices .ui-chevron {
+  background:url('./assets/print-config/imgChevronDown.svg') center no-repeat;
+  border:0; transform:none;
+}
+.print-config-dialog .wholesale-prices .ui-chevron { width:12px; height:12px; background-image:url('./assets/print-config/imgChevronDown1.svg'); }
+.print-config-dialog details[open]>summary .ui-chevron { transform:rotate(180deg); }
+.print-config-dialog .print-roll-fields .roll-details-body { margin-top:0; }
+.print-config-dialog .roll-error { border:0; padding:0; background:transparent; font-weight:600; }
+.print-config-dialog [data-print-wholesale] .wholesale-prices { margin:0; }
+.print-config-dialog .wholesale-finishing-rates caption { padding:8px 0; color:#17263C; font-size:12px; font-weight:700; text-align:left; }
+.print-config-dialog .file-design-actions { flex-wrap:wrap; }
+.print-config-dialog .design-quantity-label { order:-2; color:#52627A; font-size:12px; }
+.print-finishing-grid { display:contents; }
+.print-finish-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.print-finish-choice { position:relative; min-width:0; }
+.print-finish-choice>input { position:absolute; width:1px; height:1px; opacity:0; }
+.print-finish-option {
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  min-width:0; min-height:52px; width:100%; height:100%; padding:8px 12px;
+  border:1px solid #D7DFE9; border-radius:8px; background:#fff;
+  color:#17263C; font-family:inherit; font-size:12px; font-weight:700; line-height:16px;
+  text-align:left; overflow-wrap:anywhere; cursor:pointer;
+}
+.print-finish-option small { display:block; margin-top:2px; color:#52627A; font-size:12px; font-weight:400; }
+.print-finish-option small[hidden] { display:none; }
+.print-finish-choice>input:focus-visible+.print-finish-option { outline:2px solid #0A68F4; outline-offset:2px; }
+.print-finish-choice>input:checked+.print-finish-option,.print-finish-option[aria-pressed=true] {
+  background:#E9F1FE; color:#0A68F4; border-color:#0A68F4; box-shadow:inset 0 0 0 1px #0A68F4;
+}
+.print-finish-choice>input:checked+.print-finish-option small { color:inherit; }
+.print-finish-mark { width:18px; height:18px; flex:0 0 18px; border:1px solid #A8B9CF; border-radius:50%; }
+.print-finish-mark.square { border-color:#0A68F4; border-radius:4px; }
+.print-finish-choice>input:checked+.print-finish-option .print-finish-mark,
+.print-finish-option[aria-pressed=true] .print-finish-mark {
+  border:0; background:url('./assets/print-config/imgRadioControl.svg') center no-repeat;
+}
+.print-finish-choice>input:checked+.print-finish-option .print-finish-mark.square {
+  background:#0A68F4 url('./assets/print-config/imgCheck.svg') center no-repeat;
+}
+.print-finish-detail { display:grid; gap:5px; margin-top:12px; }
+.print-finish-units {
+  display:grid; grid-template-columns:minmax(0,100px) 132px minmax(max-content,1fr);
+  align-items:center; gap:12px; min-width:0; padding:8px 12px;
+  border:1px solid #D7DFE9; border-radius:8px; background:#F3F7FB;
+  color:#17263C; font-size:12px; font-weight:700;
+}
+.print-finish-units b { text-align:right; }
+.print-config-dialog .product-config .print-finish-units .qty-stepper {
+  display:grid; grid-template-columns:40px minmax(0,1fr) 40px;
+  height:36px; width:100%; overflow:hidden; background:#fff; border:1px solid #D7DFE9; border-radius:8px; gap:0;
+}
+.print-config-dialog .product-config .print-finish-units .qty-stepper input {
+  width:100%; min-width:0; min-height:0; height:100%; padding:0 2px; border:0; border-radius:0; text-align:center;
+}
+.print-config-dialog .product-config .print-finish-units .qty-stepper button[data-print-step] {
+  width:100%; min-width:0; min-height:0; height:100%; border:0; padding:0;
+}
+.print-config-dialog .product-config .print-finish-units .print-calculated-qty.qty-stepper { grid-template-columns:1fr; }
+.print-config-dialog .product-config .print-finish-units .qty-stepper button[data-print-step],
+.print-config-dialog .product-config .qty-stepper button:is([data-design-minus],[data-design-plus]),
+.print-config-dialog .print-action-bar .qty-stepper button:is([data-product-minus],[data-product-plus]) {
+  background:#F4F7FA url('./assets/print-config/imgPlus.svg') center no-repeat; font-size:0;
+}
+.print-config-dialog .product-config .print-finish-units .qty-stepper button[data-print-step="-1"],
+.print-config-dialog .product-config .qty-stepper button[data-design-minus],
+.print-config-dialog .print-action-bar .qty-stepper button[data-product-minus] { background-image:url('./assets/print-config/imgMinus.svg'); }
+.print-config-dialog .print-action-bar .qty-stepper button:disabled { opacity:.55; }
+.print-finish-note { justify-self:start; padding:2px 0; font-size:11px; }
+.print-finish-note-field input { width:100%; border:1px solid #D7DFE9; border-radius:8px; padding:7px 10px; }
+.print-config-dialog .print-action-bar {
+  position:relative; bottom:auto; margin:0; display:grid; flex:0 0 auto;
+  --print-action-columns:minmax(0,1fr) minmax(150px,242px);
+  grid-template-columns:var(--print-action-columns); gap:10px 14px;
+  padding:16px 24px calc(16px + env(safe-area-inset-bottom,0px));
+}
+.print-action-bar .quantity-field {
+  display:grid; grid-column:1/-1; grid-template-columns:var(--print-action-columns); align-items:center; column-gap:14px;
+}
+.print-action-bar .quantity-field>span { color:#17263C; font-size:13px; font-weight:700; }
+.print-action-bar .quantity-control { min-width:0; }
+.print-config-dialog .print-action-bar .quantity-control .qty-stepper { width:100%; border-radius:8px; }
+.print-action-bar .quantity-control>b { display:none; }
+.print-action-bar .minimum-help,.print-action-bar .minimum-error { grid-column:1/-1; margin:0; }
+.print-config-dialog .print-action-bar .primary { width:100%; }
+.print-config-dialog .print-action-bar .primary:disabled { background:#9DC2FB; }
+.print-config-dialog .a3-field .chips:has([data-a3-side]) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.print-config-dialog .a3-option[aria-pressed=true] small { color:inherit; }
+@media(max-width:520px) {
+  .print-config-dialog .print-action-bar { padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); --print-action-columns:minmax(0,1fr) minmax(122px,48%); }
+  .print-config-dialog .print-action-bar .primary { padding:8px; font-size:13px; }
+  .print-config-dialog .configurator-head .sheet-toggle { padding:6px; font-size:11px; }
+  .print-finish-options { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .print-finish-units { grid-template-columns:minmax(0,1fr) 100px minmax(max-content,1fr); gap:8px; }
+  .print-config-dialog .product-config .print-finish-units .qty-stepper { grid-template-columns:30px minmax(0,1fr) 30px; }
+}
