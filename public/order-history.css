@@ -1,6 +1,6 @@
 /* Status Order: compact toolbar and separate invoice, date, customer and WA columns. */
 #app-shell>.main-content:has(.order-history){padding:0}
-.order-history{--history-ink:#182136;--history-muted:#6d7787;--history-line:#dfe5ed;min-width:0;padding:0;background:#f5f7fa;color:var(--history-ink);font-family:Inter,system-ui,sans-serif}
+.order-history{--history-ink:#182136;--history-muted:#6d7787;--history-line:#dfe5ed;min-width:0;padding:0;background:#f5f7fa;color:var(--history-ink);font-family:var(--font-ui)}
 .order-history .history-toolbar{display:flex;align-items:center;gap:32px;min-height:68px;padding:15px 24px;background:#fff;border-bottom:1px solid #dce1e7}
 .order-history .history-heading{display:block;flex:none;margin:0}
 .order-history .history-heading h2{margin:0;color:#020203;font-size:22px;line-height:27px;font-weight:700;white-space:nowrap}
