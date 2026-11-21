@@ -16,32 +16,61 @@ export function halfPaymentAmount(total, paid, used, due) {
 export async function mountCustomerPayment({ form, order, initial, api, can, uid, modal, e, money, parseMoney }) {
   const identity = uid(), amount = form.elements.amount, ownerDialog = form.closest('dialog');
   const methods = [...form.querySelectorAll('[name=method]')];
+  const useDeposit = form.querySelector('[data-payment-use]');
+  const depositOption = form.querySelector('[data-payment-deposit]');
+  const depositBalance = form.querySelector('#payment-deposit-balance');
+  const depositCovered = form.querySelector('[data-payment-deposit-covered]');
+  const excessNotice = form.querySelector('[data-payment-excess]');
+  const dueLabel = ownerDialog.querySelector('[data-payment-due-label]');
+  const dueTotal = ownerDialog.querySelector('[data-payment-due]');
+  const depositRow = ownerDialog.querySelector('[data-payment-deposit-row]');
+  const taxRow = ownerDialog.querySelector('[data-payment-tax-row]');
+  const balanceAfter = ownerDialog.querySelector('[data-payment-deposit-after]');
+  const remaining = ownerDialog.querySelector('[data-payment-remaining]');
+  const status = ownerDialog.querySelector('[data-payment-status]');
   const customerRequestId = crypto.randomUUID();
   let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false, halfAmount = false;
   const valid = () => uid() === identity && form.isConnected && (!ownerDialog || ownerDialog.open);
   const isPo = () => form.querySelector('[name=type]:checked')?.value === 'PO';
-  const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: can('deposit.use') ? customer?.depositBalance || 0 : 0, use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), withholding: parseMoney(form.elements.taxWithheld?.value), po: isPo() });
+  const balance = () => can('deposit.use') ? customer?.depositBalance || 0 : 0;
+  const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: balance(), use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), withholding: parseMoney(form.elements.taxWithheld?.value), po: isPo() });
   const setAmount = value => { amount.value = String(value).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
-  const slot = document.createElement('section');
-  slot.className = 'payment-deposit-summary';
-  slot.hidden = true;
-  form.before(slot);
 
   function sync() {
     const n = figures(), po = isPo();
-    slot.hidden = po || !n.available;
-    slot.querySelector('[data-total-due]')?.replaceChildren(document.createTextNode(money(n.due)));
+    const withheld = n.outstanding - n.used - n.due;
+    depositOption.hidden = po || !n.available;
+    useDeposit.checked = use;
+    depositBalance.textContent = money(balance());
+    depositCovered.hidden = !n.used || n.due > 0;
+    excessNotice.hidden = !n.excess;
+    if (n.excess) excessNotice.textContent = `Kelebihan pembayaran ${money(n.excess)}`;
+    if (taxRow) {
+      taxRow.hidden = !withheld;
+      taxRow.querySelector('strong').textContent = `− ${money(withheld)}`;
+    }
+    depositRow.hidden = !n.used;
+    depositRow.querySelector('strong').textContent = `− ${money(n.used)}`;
+    balanceAfter.hidden = !n.used || Boolean(n.excess);
+    balanceAfter.querySelector('strong').textContent = money(balance() - n.used);
+    dueLabel.textContent = po ? 'Sisa tagihan PO' : 'Perlu dibayar';
+    dueTotal.textContent = money(n.due);
     methods.forEach(method => { method.required = !po && parseMoney(amount.value) > 0; });
-    const remaining = form.querySelector('.payment-balance strong');
-    if (remaining) remaining.textContent = `Sisa tagihan: ${money(n.remaining)}`;
+    remaining.textContent = money(n.remaining);
+    status.textContent = po ? 'PO / Tempo' : n.excess ? 'Kelebihan bayar' : n.remaining ? 'Belum Lunas' : 'Lunas';
+    status.dataset.state = po ? 'po' : n.excess || n.remaining ? 'pending' : 'paid';
   }
   function draw() {
-    const n = figures();
-    slot.innerHTML = n.available ? `<div class="payment-deposit-option"><label class="deposit-check"><input type="checkbox" data-payment-use ${use ? 'checked' : ''}> Gunakan deposit</label><strong>${money(n.available)}</strong></div><div class="payment-total-due"><span>Tagihan setelah deposit</span><strong data-total-due>${money(n.due)}</strong></div>` : '';
-    slot.querySelector('[data-payment-use]')?.addEventListener('change', event => { use = event.target.checked; if (halfAmount) setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); else { dirtyAmount = false; setAmount(figures().due); } sync(); });
-    if (!dirtyAmount) setAmount(n.due);
+    if (!dirtyAmount) setAmount(figures().due);
     sync();
   }
+  useDeposit.addEventListener('change', event => {
+    use = event.target.checked;
+    const { used, due } = figures();
+    if (halfAmount) setAmount(halfPaymentAmount(order.total, order.paidAmount, used, due));
+    else { dirtyAmount = false; setAmount(due); }
+    sync();
+  });
   amount.addEventListener('input', () => { dirtyAmount = true; halfAmount = false; sync(); });
   form.addEventListener('payment:totalchange', () => { if (halfAmount) setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); draw(); });
   form.addEventListener('change', sync);

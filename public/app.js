@@ -15,7 +15,8 @@ import { availableVariants } from './product-variants.js';
 import { FINISHING_TYPES, finishingType, finishingTypeLabel, groupFinishingTypes } from './finishing-types.js';
 import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSaleUnit, defaultWholesaleBasis } from './sale-units.js';
 import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from './order-discount.js';
-import { paymentDiscountHtml, bindPaymentDiscount } from './payment-discount-ui.js';
+import { bindPaymentDiscount } from './payment-discount-ui.js';
+import { paymentDialogHtml } from './payment-dialog.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
 import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, spandukTemplatePrintPrice, templateDesignUnits, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits, usesPrintAreaTier } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
@@ -1637,68 +1638,76 @@ function openOrder(id) {
 
 function openPaymentDialog(order, initial={}) {
   if(cancelled(order))return toast("Pesanan dibatalkan tidak dapat menerima pembayaran","error");
-  const outstanding = Math.max(0, Number(order.total) - Number(order.paidAmount || 0));
   const detail = document.querySelector("#order-detail");
   dialog.classList.add("payment-dialog");
-  detail.innerHTML = `<div class="detail-head"><div><span class="order-code">${escapeHtml(order.code)}</span><h2>Pembayaran</h2><p>${escapeHtml(order.customerName)}</p></div><button class="detail-close" aria-label="Tutup pembayaran">×</button></div><div class="detail-body"><div class="payment-order-summary">${order.items.map(item => `<div><strong>${escapeHtml(item.productName)}</strong><small>${escapeHtml(item.displaySize)}</small>${imageSizeNote(item) ? `<small>${escapeHtml(imageSizeNote(item))}</small>` : ""}</div>`).join("")}<div class="summary-row total"><span>Total Pesanan</span><strong>${rupiah.format(invoiceGross(order))}</strong></div></div>${paymentFormHtml(order,outstanding)}</div><div class="detail-actions"><button id="confirm-payment" type="submit" form="payment-form" class="primary">Konfirmasi Pembayaran</button></div>`;
+  dialog.setAttribute("aria-labelledby", "payment-title");
+  detail.innerHTML = paymentDialogHtml(order, { escapeHtml, money:n=>rupiah.format(Number(n || 0)), moneyField, imageSizeNote });
   detail.querySelector(".detail-close").onclick = () => dialog.close();
-  dialog.onclose = () => { if(dialog.open)return;dialog.classList.remove("payment-dialog"); dialog.onclose = null; detail.replaceChildren(); };
-  bindPaymentForm(order,outstanding,initial); dialog.showModal();
+  dialog.onclose = () => {
+    if (dialog.open) return;
+    dialog.classList.remove("payment-dialog");
+    dialog.removeAttribute("aria-labelledby");
+    dialog.onclose = null;
+    detail.replaceChildren();
+  };
+  bindPaymentForm(detail, order, initial);
+  dialog.showModal();
 }
 
-function paymentFormHtml(order, outstanding) {
-  return `${paymentDiscountHtml(order, {moneyField, money:n=>rupiah.format(n)})}<form id="payment-form"><h3>Form Pembayaran</h3><div class="form-grid">
-    <div class="field full"><span>Jenis pembayaran</span><div class="payment-tabs"><label><input type="radio" name="type" value="PAYMENT" checked><span>Pembayaran</span></label><label><input type="radio" name="type" value="PO"><span>Pembayaran PO</span></label></div></div>
-    <div id="payment-fields" class="payment-tab-panel full"><div class="field"><span>Metode</span><div class="chips payment-method-chips">${[["TUNAI","Tunai"],["QRIS","QRIS"],["TRANSFER","Transfer"]].map(([value,label]) => `<div class="chip"><input type="radio" name="method" id="pay-method-${value}" value="${value}" required><label for="pay-method-${value}">${label}</label></div>`).join("")}</div></div>
-    <label class="field"><span>Nominal diterima</span><div class="payment-amount-field">${moneyField("amount", outstanding, "required")}</div></label>
-    <label class="field"><span>Potongan Pajak Aktual</span><div class="payment-amount-field">${moneyField("taxWithheld", order.taxGrossUp ? Math.min(outstanding, Math.max(0, taxAdjustment(order) - taxWithheld(order))) : "", "data-optional-money")}</div></label>
-    <div class="payment-dp-options"><label class="design-toggle"><input id="payment-dp" type="checkbox" role="switch" aria-controls="payment-half" aria-expanded="false"><span class="design-switch" aria-hidden="true"></span><strong>Pembayaran DP</strong></label><button type="button" id="payment-half" class="payment-half hidden">50%</button></div></div>
-    <div id="po-fields" class="payment-tab-panel full hidden"><label class="field"><span>Nomor PO *</span><input name="poNumber" placeholder="Contoh: PO/0924/001"></label><label class="field"><span>Upload PO <small>(opsional)</small></span><input name="poFile" type="file" accept="image/png,image/jpeg,image/webp"></label><div id="po-preview" class="po-preview hidden"></div></div>
-  </div><div class="payment-balance"><span>Pelunasan tercatat: ${rupiah.format(order.paidAmount || 0)}</span><strong>Sisa: ${rupiah.format(outstanding)}</strong></div></form>`;
-}
-
-function bindPaymentForm(order, outstanding, initial={}) {
+function bindPaymentForm(detail, order, initial) {
   const paymentRequestId = crypto.randomUUID();
-  const form = document.querySelector("#payment-form");
-  if (!form) return;
+  const form = detail.querySelector("#payment-form");
+  const discountSection = detail.querySelector(".payment-discount-summary");
   const halfButton = form.querySelector("#payment-half");
+  const dpToggle = form.querySelector("#payment-dp");
   const methods = [...form.querySelectorAll('input[name="method"]')];
   bindMoneyInputs(form);
-  bindMoneyInputs(form.previousElementSibling);
-  const discountController = bindPaymentDiscount(form,order,{parseMoney,money:n=>rupiah.format(n)});
+  bindMoneyInputs(discountSection);
+  const discountController = bindPaymentDiscount(form, discountSection, order, { parseMoney, money:n=>rupiah.format(n) });
   const paymentOrder = discountController.order;
   const taxInput = form.elements.taxWithheld;
-  let taxDirty = false;
-  const syncTaxPayment = () => {
-    const outstanding = Math.max(0, paymentOrder.total - Number(paymentOrder.paidAmount || 0));
-    if (!taxDirty && order.taxGrossUp) {
-      const expected = Math.max(0, paymentOrder.total - (invoiceGross(order) - discountController.amount()) - taxWithheld(order));
-      taxInput.value = formatMoneyValue(form.querySelector('#payment-dp').checked ? 0 : Math.min(outstanding, expected));
-    }
-    const actual = parseMoney(taxInput.value);
-    taxInput.setCustomValidity(Number.isSafeInteger(actual) && actual >= 0 && actual <= outstanding ? '' : 'Potongan pajak harus antara Rp0 dan sisa tagihan.');
-  };
-  taxInput.addEventListener('moneychange', () => { taxDirty = true; form.dispatchEvent(new CustomEvent('payment:totalchange')); });
-  form.addEventListener('payment:totalchange', syncTaxPayment);
-  syncTaxPayment();
+  if (taxInput) {
+    const previouslyWithheld = taxWithheld(order);
+    const gross = invoiceGross(order);
+    const hint = form.querySelector('[data-payment-tax-hint]');
+    let taxDirty = false;
+    const syncTaxPayment = () => {
+      const outstanding = Math.max(0, paymentOrder.total - Number(paymentOrder.paidAmount || 0));
+      if (!taxDirty) {
+        const expected = Math.max(0, paymentOrder.total - (gross - discountController.amount()) - previouslyWithheld);
+        taxInput.value = formatMoneyValue(dpToggle.checked ? 0 : Math.min(outstanding, expected));
+      }
+      const actual = parseMoney(taxInput.value);
+      taxInput.setCustomValidity(Number.isSafeInteger(actual) && actual >= 0 && actual <= outstanding ? '' : 'Potongan pajak harus antara Rp0 dan sisa tagihan.');
+      hint.textContent = actual > 0 ? rupiah.format(actual) : 'Opsional';
+    };
+    taxInput.addEventListener('moneychange', () => { taxDirty = true; form.dispatchEvent(new CustomEvent('payment:totalchange')); });
+    taxInput.addEventListener('invalid', () => { taxInput.closest('details').open = true; });
+    form.addEventListener('payment:totalchange', syncTaxPayment);
+    syncTaxPayment();
+  }
+  const confirmButton = detail.querySelector('#confirm-payment');
   form.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener("change", () => {
     if (!input.checked) return;
     const po = input.value === "PO";
     form.querySelector("#payment-fields").classList.toggle("hidden", po);
     form.querySelector("#po-fields").classList.toggle("hidden", !po);
-    methods.forEach(method => { method.required = !po; method.disabled = po; });
-    form.elements.amount.required = !po; form.elements.amount.disabled = po; taxInput.disabled = po; form.elements.poNumber.required = po;
+    methods.forEach(method => { method.disabled = po; });
+    form.elements.amount.required = !po;
+    form.elements.amount.disabled = po;
+    if (taxInput) taxInput.disabled = po;
+    form.elements.poNumber.required = po;
+    confirmButton.textContent = po ? 'Catat Pembayaran PO' : 'Konfirmasi Pembayaran';
     form.dispatchEvent(new CustomEvent('payment:totalchange'));
   }));
-  form.querySelector("#payment-dp").onchange = event => {
+  dpToggle.onchange = event => {
     halfButton.classList.toggle("hidden",!event.target.checked);
     event.target.setAttribute("aria-expanded",String(event.target.checked));
     form.dispatchEvent(new CustomEvent('payment:totalchange'));
   };
-  const confirmButton = document.querySelector('#confirm-payment');
-  if (confirmButton) confirmButton.disabled = true;
+  confirmButton.disabled = true;
   let depositError;
-  const depositReady=customersUI.mountPayment(form,paymentOrder,initial).catch(error=>{depositError=error;toast(error.message,"error");return null;}).finally(()=>{if(form.isConnected&&confirmButton)confirmButton.disabled=false;});
+  const depositReady=customersUI.mountPayment(form,paymentOrder,initial).catch(error=>{depositError=error;toast(error.message,"error");return null;}).finally(()=>{if(form.isConnected&&!submitting)confirmButton.disabled=false;});
   let previewUrl;
   dialog.addEventListener("close", () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, { once: true });
   form.elements.poFile.addEventListener("change", () => {
@@ -1712,23 +1721,31 @@ function bindPaymentForm(order, outstanding, initial={}) {
     event.preventDefault(); if (submitting) return;
     if (!form.reportValidity()) return;
     submitting = true;
-    const discountSection = document.querySelector(".payment-discount-summary");
-    form.inert = true; if (discountSection) discountSection.inert = true;
-    const button = document.querySelector('#confirm-payment'); if (button) button.disabled = true;
+    form.inert = true;
+    discountSection.inert = true;
+    confirmButton.disabled = true;
     try {
       const depositController=await depositReady;
       if(!form.isConnected)return;
       if(depositError)throw depositError;
       const depositValues=await depositController.confirm();
       if(!depositValues||!form.isConnected||!form.reportValidity())return;
-      const values = {...Object.fromEntries(new FormData(form)),...depositValues,invoiceDiscountAmount:discountController.amount()}; values.amount = values.type === "PO" ? 0 : parseMoney(values.amount); values.taxWithheld = values.type === "PO" ? 0 : parseMoney(values.taxWithheld); delete values.poFile;
+      const values = {...Object.fromEntries(new FormData(form)),...depositValues,invoiceDiscountAmount:discountController.amount()};
+      values.amount = values.type === "PO" ? 0 : parseMoney(values.amount);
+      values.taxWithheld = values.type === "PO" || !taxInput ? 0 : parseMoney(values.taxWithheld);
+      delete values.poFile;
       const file = form.elements.poFile.files[0];
       if (values.type === "PO" && file) values.poAttachment = await readPoAttachment(file);
       const paidOrder = await api(`/api/orders/${order.id}/payments`, { method: "POST", body: JSON.stringify({ ...values, requestId: paymentRequestId }) });
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       dialog.close(); await load(); if (can("orders.view")) { if (!state.orders.some(item => item.id === paidOrder.id)) state.orders.push(paidOrder); openOrder(order.id); } toast("Pembayaran berhasil dicatat");
     } catch (error) { toast(error.message, "error"); }
-    finally { submitting = false; form.inert = false; if (discountSection) discountSection.inert = false; if (button) button.disabled = false; }
+    finally {
+      submitting = false;
+      form.inert = false;
+      discountSection.inert = false;
+      confirmButton.disabled = false;
+    }
   });
 }
 
