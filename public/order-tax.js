@@ -16,3 +16,8 @@ export function grossUpQuote(net, rateBps) {
 
 export const taxAdjustment = order => Number(order.taxGrossUp?.adjustment || 0);
 export const taxWithheld = order => (order.payments || []).reduce((sum, p) => sum + (p.type === 'REVERSAL' || p.type === 'PO' ? 0 : Number(p.taxWithheld || 0)), 0);
+
+export function orderTaxRateBps(order) {
+  const rate = order.taxGrossUp?.rateBps;
+  return Number.isInteger(rate) && rate > 0 && rate < 10000 ? rate : 0;
+}
