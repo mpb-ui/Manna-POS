@@ -6,8 +6,8 @@ export function discountIsActive(product,at=new Date()) {
   const d=product.discount;if(!d?.enabled||!(Number(d.value)>0))return false;
   const t=Number(new Date(at));return (!d.startsAt||t>=Date.parse(d.startsAt))&&(!d.endsAt||t<=Date.parse(d.endsAt));
 }
-export function defaultCampaign(products,at=new Date()) {
-  return {title:CAMPAIGN_TITLE,subtitle:CAMPAIGN_SUBTITLE,guide:'',revision:null,legacy:true,items:products.filter(p=>p.active!==false&&!p.deletedAt&&discountIsActive(p,at)).slice(0,CAMPAIGN_ITEM_LIMIT).map(p=>({id:p.id,productId:p.id,enabled:true,thumbnail:'',startingPrice:null,guide:'',startsAt:'',endsAt:''}))};
+export function defaultCampaign() {
+  return { title: CAMPAIGN_TITLE, subtitle: CAMPAIGN_SUBTITLE, guide: '', revision: null, legacy: true, items: [] };
 }
 export function visibleCampaignItems(campaign,products,at=new Date()) {
   const index=new Map(products.filter(p=>p.active!==false&&!p.deletedAt).map(p=>[p.id,p])),t=Number(new Date(at));

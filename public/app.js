@@ -18,6 +18,7 @@ import { invoiceDiscount, settledOrder, discountPrintLines } from './order-disco
 import { bindPaymentDiscount } from './payment-discount-ui.js';
 import { paymentDialogHtml } from './payment-dialog.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
+import { homeProductsHtml } from './pos-home.js';
 import { minimumQuantity, minimumError, purchaseUnit, purchaseMultiple, firstPurchaseQuantity, roundPurchaseQuantity, purchaseMultipleError, spandukTemplatePrintPrice, templateDesignUnits, wholesaleBasis, wholesaleUnits, wholesaleGroupKey, tierForUnits, usesPrintAreaTier } from './product-pricing.js';
 import { returnableRetailItem } from "./goods-return-rules.js";
 import { openGoodsReturn, mountGoodsReturnHistory, closeGoodsReturns, goodsReturnReportHtml } from "./goods-returns-ui.js";
@@ -263,8 +264,8 @@ function discountActive(product, at = new Date()) {
   const timestamp = at.getTime();
   return (!discount.startsAt || timestamp >= new Date(discount.startsAt).getTime()) && (!discount.endsAt || timestamp <= new Date(discount.endsAt).getTime());
 }
-function promoPrice(product, price) {
-  if (!discountActive(product)) return Number(price || 0);
+function promoPrice(product, price, at) {
+  if (!discountActive(product, at)) return Number(price || 0);
   const value = Number(product.discount.value || 0);
   return product.discount.type === "nominal" ? Math.max(0, Number(price) - value) : Math.max(0, Math.round(Number(price) * (1 - Math.min(value, 100) / 100)));
 }
@@ -497,13 +498,28 @@ function templateOptionsHtml(product) {
   return `<div class="template-variant-block"><span class="variant-label">A. Pilih Ukuran</span><div class="chips">${sizes}</div></div><div class="template-variant-block"><span class="variant-label">B. Pilih Design Template</span><div class="template-design-grid">${designs}</div></div>${quantitySelectorHtml()}`;
 }
 
-const catalogRocket = '<svg class="catalog-heading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 5c3-2 6-2 7-2 0 1 0 4-2 7l-6 6-5-5 6-6Z"/><circle cx="16" cy="8" r="1.5"/><path d="m8 11-4 1-2 4 6-1m5 1-1 4-4 2 1-6m-3 2-3 3"/></svg>';
-function catalogCardHtml(product, promo = false) {
-  return `<button type="button" class="catalog-card ${promo ? "promo-card" : ""}" data-config-product="${product.id}"><div class="catalog-card-title"><strong>${escapeHtml(product.name)}</strong></div><div class="catalog-price">${promo ? `<s>${rupiah.format(product.price)}</s><strong>${rupiah.format(promoPrice(product, product.price))}</strong><small>${escapeHtml(product.unitLabel)}</small><em>${escapeHtml(discountLabel(product))}</em>` : `<strong>${rupiah.format(product.price)}</strong><small>${escapeHtml(product.unitLabel)}</small>`}</div></button>`;
+const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:bindMasterTabs,load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
+function allCatalogHtml() {
+  return `<div class="pos-home">${homeCampaignUI.homeHtml()}<div class="pos-home-products" data-home-products></div></div>`;
 }
 
-const homeCampaignUI=createHomeCampaignUI({state,root,api,e:escapeHtml,money:n=>rupiah.format(n),moneyField,bindMoneyInputs,parseMoney,toast,header:masterHeader,bindHeader:bindMasterTabs,load,onProduct:openProductConfigurator,timeToInput:localDateTimeInput,timeToIso:makassarInputToIso});
-function allCatalogHtml(){return `<div class="pos-home">${homeCampaignUI.homeHtml()}<section class="catalog-section"><div class="catalog-heading">${catalogRocket}<h3>Produk Terlaris</h3></div><div class="catalog-grid">${state.products.filter(p=>p.featured).map(p=>catalogCardHtml(p)).join('')}</div></section></div>`;}
+function mountPosHome() {
+  const catalog = root.querySelector('[data-home-products]');
+  if (!catalog) return homeCampaignUI.stopHome();
+
+  const format = { e: escapeHtml, money: price => rupiah.format(price), promoPrice };
+  let currentHtml = '';
+  const refreshProducts = () => {
+    const nextHtml = homeProductsHtml(state.products, format);
+    if (nextHtml === currentHtml) return;
+    const focusedProduct = catalog.contains(document.activeElement) ? document.activeElement.dataset.configProduct : null;
+    catalog.innerHTML = nextHtml;
+    currentHtml = nextHtml;
+    if (focusedProduct) catalog.querySelector(`[data-config-product="${CSS.escape(focusedProduct)}"]`)?.focus({ preventScroll: true });
+  };
+  refreshProducts();
+  homeCampaignUI.mountHome(refreshProducts);
+}
 
 const usesPrintConfiguration = product => !product.dtfShirt && !product.templateProduct && (
   supportsRollPlacement(product) || ['paper','sticker'].includes(product.a3Kind) || product.finishing?.some(item => item.quantitySource)
@@ -593,7 +609,7 @@ function renderPos() {
   assistance.mountCheckout(state.cartCheck?.cart === state.cart && Date.now()-state.cartCheck.at < 5000 ? state.cartCheck.data : null);
   syncCartBusy();
   customersUI.mountCheckout();
-  homeCampaignUI.mountHome();
+  mountPosHome();
 
 }
 
@@ -1267,7 +1283,12 @@ function bindPos() {
     state.selectedProduct = null;
     renderPos();
   }));
-  document.querySelectorAll("[data-config-product]").forEach((button) => button.addEventListener("click", () => {syncDraft(document.querySelector("#checkout"));openProductConfigurator(button.dataset.configProduct);}));
+  root.querySelector(".category-content").addEventListener("click", event => {
+    const button = event.target.closest("[data-config-product]");
+    if (!button) return;
+    syncDraft(document.querySelector("#checkout"));
+    openProductConfigurator(button.dataset.configProduct);
+  });
   document.querySelectorAll("[data-select-product]").forEach((label) => {
     const select = () => {
       syncDraft(document.querySelector("#checkout"));
