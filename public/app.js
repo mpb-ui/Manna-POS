@@ -1662,8 +1662,7 @@ function bindPaymentForm(detail, order, initial) {
   const dpToggle = form.querySelector("#payment-dp");
   const methods = [...form.querySelectorAll('input[name="method"]')];
   bindMoneyInputs(form);
-  bindMoneyInputs(discountSection);
-  const discountController = bindPaymentDiscount(form, discountSection, order, { parseMoney, money:n=>rupiah.format(n) });
+  const discountController = bindPaymentDiscount(form, discountSection, order, { parseMoney, formatMoneyValue });
   const paymentOrder = discountController.order;
   const taxInput = form.elements.taxWithheld;
   if (taxInput) {
@@ -1722,7 +1721,6 @@ function bindPaymentForm(detail, order, initial) {
     if (!form.reportValidity()) return;
     submitting = true;
     form.inert = true;
-    discountSection.inert = true;
     confirmButton.disabled = true;
     try {
       const depositController=await depositReady;
@@ -1743,7 +1741,6 @@ function bindPaymentForm(detail, order, initial) {
     finally {
       submitting = false;
       form.inert = false;
-      discountSection.inert = false;
       confirmButton.disabled = false;
     }
   });

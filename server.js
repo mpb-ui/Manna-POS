@@ -807,6 +807,7 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
       if(String(req.body.note || "").length>1000||String(req.body.reference || "").length>150)throw new Error("Catatan atau referensi pembayaran terlalu panjang");
       const fingerprintPayload=['payment',order.id,type,method,amount,req.body.depositAmount ?? 0,req.body.customerId || '',req.body.excessAction || '',req.body.confirmDeposit===true,String(req.body.reference || ''),String(req.body.note || ''),String(req.body.poNumber || '')];
       if (Object.hasOwn(req.body,'invoiceDiscountAmount')) fingerprintPayload.push(['invoiceDiscountAmount',req.body.invoiceDiscountAmount]);
+      if (Object.hasOwn(req.body,'expectedExcess')) fingerprintPayload.push(['expectedExcess',req.body.expectedExcess]);
       if (withholding) fingerprintPayload.push(['taxWithheld',withholding]);
       const operation=req.body.requestId?checkOperation(state,req.body.requestId,fingerprintPayload,req.user):null;
       if(operation?.old)return order;
