@@ -7,7 +7,10 @@ export function createHomeCampaignUI({state,root,api,e,money,moneyField,bindMone
   const uid=()=>state.currentUser?.id;
   const currentItems=()=>visibleCampaignItems(state.homeCampaign,state.products || []);
   const thumb=source=>`<span class="campaign-thumbnail"><span ${source?'hidden':''} aria-hidden="true">▧</span>${source?`<img src="${e(source)}" width="66" height="66" alt="" loading="lazy">`:''}</span>`;
-  const card=row=>`<button type="button" class="campaign-product-card" data-campaign-product="${e(row.productId)}">${thumb(row.thumbnail)}<span class="campaign-product-copy"><strong>${e(row.product.name)}</strong><span>Mulai dari ${money(campaignStartingPrice(row,row.product))} <small>${e(campaignUnit(row.product))}</small></span></span><span class="campaign-arrow">${arrow}</span></button>`;
+  const card = row => {
+    const name = e(row.product.name);
+    return `<button type="button" class="campaign-product-card" data-campaign-product="${e(row.productId)}" title="${name}">${thumb(row.thumbnail)}<span class="campaign-product-copy"><strong>${name}</strong><span>Mulai dari ${money(campaignStartingPrice(row, row.product))} <small>${e(campaignUnit(row.product))}</small></span></span><span class="campaign-arrow">${arrow}</span></button>`;
+  };
   function homeHtml(){const rows=currentItems(),c=state.homeCampaign;if(!rows.length)return '<div class="home-campaign-slot" data-home-campaign-root></div>';return `<div class="home-campaign-slot" data-home-campaign-root>${section(rows,c)}</div>`;}
   function section(rows,c){return `<section class="home-campaign-section"><div class="campaign-section-heading"><div><h3>${e(c.title || 'Campaign Pilihan')}</h3>${c.subtitle?`<p>${e(c.subtitle)}</p>`:''}</div><button type="button" class="campaign-guide-trigger" data-campaign-guide>Panduan Penawaran</button></div><div class="campaign-product-grid">${rows.slice(0,CAMPAIGN_HOME_LIMIT).map(card).join('')}</div>${rows.length>CAMPAIGN_HOME_LIMIT?`<button type="button" class="campaign-more" data-campaign-more>Lihat Semua (${rows.length})</button>`:''}</section>`;}
   function imageFallback(scope){scope.querySelectorAll('.campaign-thumbnail img').forEach(img=>img.onerror=()=>{img.hidden=true;img.previousElementSibling.hidden=false;});}
@@ -15,7 +18,25 @@ export function createHomeCampaignUI({state,root,api,e,money,moneyField,bindMone
   function openGuide(){const c=state.homeCampaign,rows=currentItems();modal('Panduan Penawaran',`${c.guide?`<p class="campaign-guide-common">${e(c.guide)}</p>`:''}${rows.map(r=>`<article class="campaign-guide-product"><h3>${e(r.product.name)}</h3><p>${e(r.guide || 'Panduan penawaran belum tersedia untuk produk ini.')}</p></article>`).join('')}`);}
   function bindHome(scope){imageFallback(scope);scope.querySelectorAll('[data-campaign-product]').forEach(button=>button.onclick=()=>{scope.closest('dialog')?.close();onProduct(button.dataset.campaignProduct);});scope.querySelector('[data-campaign-guide]')?.addEventListener('click',openGuide);scope.querySelector('[data-campaign-more]')?.addEventListener('click',()=>{const d=modal(state.homeCampaign.title,`<div class="campaign-product-grid">${currentItems().map(card).join('')}</div>`);bindHome(d);});}
   function stopHome(){clearInterval(homeTimer);homeTimer=null;}
-  function mountHome(){stopHome();const slot=root.querySelector('[data-home-campaign-root]');if(!slot)return;bindHome(slot);let signature='';const fingerprint=()=>JSON.stringify(currentItems().map(r=>[r.id,campaignStartingPrice(r,r.product)]));signature=fingerprint();homeTimer=setInterval(()=>{if(state.view!=='pos'||!slot.isConnected)return stopHome();const next=fingerprint();if(next!==signature){signature=next;const rows=currentItems();slot.innerHTML=rows.length?section(rows,state.homeCampaign):'';bindHome(slot);}},30000);}
+  function mountHome(refreshProducts) {
+    stopHome();
+    const slot = root.querySelector('[data-home-campaign-root]');
+    if (!slot) return;
+    bindHome(slot);
+    const fingerprint = rows => JSON.stringify(rows.map(row => [row.id, campaignStartingPrice(row, row.product)]));
+    let signature = fingerprint(currentItems());
+    homeTimer = setInterval(() => {
+      if (state.view !== 'pos' || !slot.isConnected) return stopHome();
+      const rows = currentItems();
+      const next = fingerprint(rows);
+      if (next !== signature) {
+        signature = next;
+        slot.innerHTML = rows.length ? section(rows, state.homeCampaign) : '';
+        bindHome(slot);
+      }
+      refreshProducts();
+    }, 30000);
+  }
   function reset(){generation++;stopHome();document.querySelectorAll('.campaign-dialog').forEach(d=>d.close());}
   async function mountSettings(){
     const token=++generation,identity=uid(),valid=()=>token===generation&&identity===uid()&&state.view==='master'&&state.masterTab==='campaigns';
