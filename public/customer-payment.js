@@ -1,4 +1,5 @@
 import { customerPhone, customerNameKey } from './customer-identity.js';
+import { taxAdjustment, taxWithheld } from './order-tax.js';
 
 export function paymentDepositAmounts({ total, paid = 0, balance = 0, use = true, planned, received = 0, withholding = 0, po = false }) {
   const outstanding = Math.max(0, total - paid);
@@ -9,12 +10,11 @@ export function paymentDepositAmounts({ total, paid = 0, balance = 0, use = true
   return { outstanding, available, used, due, remaining: Math.max(0, due - (po ? 0 : received)), excess: po ? 0 : Math.max(0, received - due) };
 }
 
-export function halfPaymentAmount(total, paid, used, due) {
-  return Math.max(0, Math.min(due, Math.round(total * .5) - Number(paid || 0) - used));
-}
-
 export async function mountCustomerPayment({ form, order, initial, api, can, uid, modal, e, money, parseMoney }) {
   const identity = uid(), amount = form.elements.amount, ownerDialog = form.closest('dialog');
+  const taxInput = form.elements.taxWithheld;
+  const taxHint = form.querySelector('[data-payment-tax-hint]');
+  const previouslyWithheld = taxInput ? taxWithheld(order) : 0;
   const methods = [...form.querySelectorAll('[name=method]')];
   const useDeposit = form.querySelector('[data-payment-use]');
   const depositOption = form.querySelector('[data-payment-deposit]');
@@ -31,12 +31,12 @@ export async function mountCustomerPayment({ form, order, initial, api, can, uid
   const remaining = ownerDialog.querySelector('[data-payment-remaining]');
   const status = ownerDialog.querySelector('[data-payment-status]');
   const customerRequestId = crypto.randomUUID();
-  let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false, halfAmount = false;
+  let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false, dirtyTax = false;
   const valid = () => uid() === identity && form.isConnected && ownerDialog.open;
   const isPo = () => form.querySelector('[name=type]:checked')?.value === 'PO';
   const excessAction = () => ({ TUNAI: 'CHANGE', QRIS: 'DEPOSIT', TRANSFER: 'DEPOSIT' })[form.elements.method.value];
   const balance = () => can('deposit.use') ? customer?.depositBalance || 0 : 0;
-  const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: balance(), use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), withholding: parseMoney(form.elements.taxWithheld?.value), po: isPo() });
+  const figures = (withholding = parseMoney(taxInput?.value)) => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: balance(), use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), withholding, po: isPo() });
   const formatAmount = value => value.toLocaleString('id-ID');
   const setAmount = value => { amount.value = formatAmount(value); };
 
@@ -68,21 +68,30 @@ export async function mountCustomerPayment({ form, order, initial, api, can, uid
     status.dataset.state = po ? 'po' : depositExcess || chooseMethod || n.remaining ? 'pending' : 'paid';
   }
   function draw() {
+    if (taxInput) {
+      const outstanding = Math.max(0, order.total - Number(order.paidAmount || 0));
+      if (!dirtyTax) {
+        const expected = Math.min(outstanding, Math.max(0, taxAdjustment(order) - previouslyWithheld));
+        // A manually entered partial payment does not imply the expected tax was withheld.
+        taxInput.value = formatAmount(dirtyAmount && figures(expected).remaining > 0 ? 0 : expected);
+      }
+      const actual = parseMoney(taxInput.value);
+      taxInput.setCustomValidity(Number.isSafeInteger(actual) && actual >= 0 && actual <= outstanding ? '' : 'Potongan pajak harus antara Rp0 dan sisa tagihan.');
+      taxHint.textContent = actual > 0 ? money(actual) : 'Opsional';
+    }
     if (!dirtyAmount) setAmount(figures().due);
     sync();
   }
   useDeposit.addEventListener('change', event => {
     use = event.target.checked;
-    const { used, due } = figures();
-    if (halfAmount) setAmount(halfPaymentAmount(order.total, order.paidAmount, used, due));
-    else { dirtyAmount = false; setAmount(due); }
-    sync();
+    dirtyAmount = false;
+    draw();
   });
-  amount.addEventListener('input', () => { dirtyAmount = true; halfAmount = false; sync(); });
-  form.addEventListener('payment:totalchange', () => { if (halfAmount) setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); draw(); });
+  amount.addEventListener('input', () => { dirtyAmount = true; draw(); });
+  taxInput?.addEventListener('moneychange', () => { dirtyTax = true; draw(); });
+  taxInput?.addEventListener('invalid', () => { taxInput.closest('details').open = true; });
+  form.addEventListener('payment:totalchange', draw);
   form.addEventListener('change', sync);
-  form.querySelector('#payment-half')?.addEventListener('click', () => { dirtyAmount = true; halfAmount = true; setAmount(halfPaymentAmount(order.total,order.paidAmount,figures().used,figures().due)); sync(); });
-  form.querySelector('#payment-dp')?.addEventListener('change', event => { if (!event.target.checked) { halfAmount = false; dirtyAmount = false; setAmount(figures().due); sync(); } });
   draw();
 
   if (order.customerId && can('customers.view')) {

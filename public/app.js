@@ -1,4 +1,4 @@
-import { grossUpQuote, taxAdjustment, taxRateBps, taxWithheld } from './order-tax.js';
+import { grossUpQuote, taxRateBps } from './order-tax.js';
 import { invoiceDetailHtml, invoicePaymentHistoryHtml, invoicePickupAllowed } from './invoice-detail.js';
 import { closeProjectItems, openProjectItem } from './project-item-ui.js';
 import { PRODUCTION_STATUSES, productionStatusLabel, canMoveProduction, driveLink, productionSpecification } from './project-item.js';
@@ -14,7 +14,7 @@ import { openProductEditor } from './product-editor.js';
 import { availableVariants } from './product-variants.js';
 import { FINISHING_TYPES, finishingType, finishingTypeLabel, groupFinishingTypes } from './finishing-types.js';
 import { normalizeSaleUnit, normalizeSaleUnitOptions, saleUnitBasis, productSaleUnit, defaultWholesaleBasis } from './sale-units.js';
-import { invoiceDiscount, invoiceGross, settledOrder, discountPrintLines } from './order-discount.js';
+import { invoiceDiscount, settledOrder, discountPrintLines } from './order-discount.js';
 import { bindPaymentDiscount } from './payment-discount-ui.js';
 import { paymentDialogHtml } from './payment-dialog.js';
 import { createHomeCampaignUI } from './home-campaign-ui.js';
@@ -1658,33 +1658,11 @@ function bindPaymentForm(detail, order, initial) {
   const paymentRequestId = crypto.randomUUID();
   const form = detail.querySelector("#payment-form");
   const discountSection = detail.querySelector(".payment-discount-summary");
-  const halfButton = form.querySelector("#payment-half");
-  const dpToggle = form.querySelector("#payment-dp");
   const methods = [...form.querySelectorAll('input[name="method"]')];
   bindMoneyInputs(form);
   const discountController = bindPaymentDiscount(form, discountSection, order, { parseMoney, formatMoneyValue });
   const paymentOrder = discountController.order;
   const taxInput = form.elements.taxWithheld;
-  if (taxInput) {
-    const previouslyWithheld = taxWithheld(order);
-    const gross = invoiceGross(order);
-    const hint = form.querySelector('[data-payment-tax-hint]');
-    let taxDirty = false;
-    const syncTaxPayment = () => {
-      const outstanding = Math.max(0, paymentOrder.total - Number(paymentOrder.paidAmount || 0));
-      if (!taxDirty) {
-        const expected = Math.max(0, paymentOrder.total - (gross - discountController.amount()) - previouslyWithheld);
-        taxInput.value = formatMoneyValue(dpToggle.checked ? 0 : Math.min(outstanding, expected));
-      }
-      const actual = parseMoney(taxInput.value);
-      taxInput.setCustomValidity(Number.isSafeInteger(actual) && actual >= 0 && actual <= outstanding ? '' : 'Potongan pajak harus antara Rp0 dan sisa tagihan.');
-      hint.textContent = actual > 0 ? rupiah.format(actual) : 'Opsional';
-    };
-    taxInput.addEventListener('moneychange', () => { taxDirty = true; form.dispatchEvent(new CustomEvent('payment:totalchange')); });
-    taxInput.addEventListener('invalid', () => { taxInput.closest('details').open = true; });
-    form.addEventListener('payment:totalchange', syncTaxPayment);
-    syncTaxPayment();
-  }
   const confirmButton = detail.querySelector('#confirm-payment');
   form.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener("change", () => {
     if (!input.checked) return;
@@ -1699,11 +1677,6 @@ function bindPaymentForm(detail, order, initial) {
     confirmButton.textContent = po ? 'Catat Pembayaran PO' : 'Konfirmasi Pembayaran';
     form.dispatchEvent(new CustomEvent('payment:totalchange'));
   }));
-  dpToggle.onchange = event => {
-    halfButton.classList.toggle("hidden",!event.target.checked);
-    event.target.setAttribute("aria-expanded",String(event.target.checked));
-    form.dispatchEvent(new CustomEvent('payment:totalchange'));
-  };
   confirmButton.disabled = true;
   let depositError;
   const depositReady=customersUI.mountPayment(form,paymentOrder,initial).catch(error=>{depositError=error;toast(error.message,"error");return null;}).finally(()=>{if(form.isConnected&&!submitting)confirmButton.disabled=false;});

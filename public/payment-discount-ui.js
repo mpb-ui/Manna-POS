@@ -47,6 +47,7 @@ export function bindPaymentDiscount(form, section, original, { parseMoney, forma
     const quote = rateBps ? grossUpQuote(net, rateBps) : { total: net };
     order.total = quote.total;
     if (rateBps) {
+      order.taxGrossUp.adjustment = quote.adjustment;
       section.querySelector('[data-invoice-tax-adjustment]').textContent = formatMoneyValue(quote.adjustment);
       section.querySelector('[data-invoice-total]').textContent = formatMoneyValue(quote.total);
     }
