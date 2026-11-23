@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { paymentDepositAmounts, halfPaymentAmount, mountCustomerPayment } from '../public/customer-payment.js';
+import { paymentDepositAmounts, mountCustomerPayment } from '../public/customer-payment.js';
 import { paymentDialogHtml } from '../public/payment-dialog.js';
 import { bindPaymentDiscount } from '../public/payment-discount-ui.js';
 
@@ -28,14 +28,6 @@ test('overpayment confirmation uses remaining invoice after deposit, and exclude
   assert.equal(po.used, 0);
   assert.equal(po.excess, 0);
   assert.equal(po.remaining, 8000);
-});
-
-test('DP 50% targets the net invoice and includes existing payments and deposit',()=>{
- assert.equal(halfPaymentAmount(8000,0,0,8000),4000);
- assert.equal(halfPaymentAmount(8000,0,3000,5000),1000);
- assert.equal(halfPaymentAmount(8000,2000,1000,5000),1000);
- assert.equal(halfPaymentAmount(8000,5000,0,3000),0);
- assert.equal(halfPaymentAmount(0,0,0,0),0);
 });
 
 test('Ringkasan precedes the payment form and keeps long orders expandable', () => {
@@ -89,8 +81,9 @@ test('Potongan Pajak Aktual requires a saved gross-up rate', () => {
   assert.match(html, /id="payment-fields"[\s\S]*name="taxWithheld" value="25641"[\s\S]*id="po-fields"/);
 });
 
-test('Tunai records change directly while QRIS and Transfer require an explicit deposit confirmation', async () => {
+async function mountPayment(order, { depositBalance = 0, withholding = false } = {}) {
   const amount = Object.assign(new EventTarget(), { value: '' });
+  const taxField = withholding ? Object.assign(new EventTarget(), { value: '', setCustomValidity() {} }) : undefined;
   const method = { value: '' };
   const type = { value: 'PAYMENT' };
   const nodes = new Map();
@@ -104,7 +97,7 @@ test('Tunai records change directly while QRIS and Transfer require an explicit 
   };
   const ownerDialog = { open: true, querySelector: nodeFor };
   const form = Object.assign(new EventTarget(), {
-    elements: { amount, method },
+    elements: { amount, method, taxWithheld: taxField },
     isConnected: true,
     closest: () => ownerDialog,
     querySelector: selector => selector === '[name=type]:checked' ? type : nodeFor(selector),
@@ -127,13 +120,17 @@ test('Tunai records change directly while QRIS and Transfer require an explicit 
     return dialog;
   };
   const controller = await mountCustomerPayment({
-    form, order: installment, initial: {},
-    api: async () => ({ customer: { id: installment.customerId, depositBalance: 0 } }),
+    form, order, initial: {},
+    api: async () => ({ customer: { id: order.customerId, depositBalance } }),
     can: () => true, uid: () => 'cashier', modal, e: value => value,
     money: value => `Rp ${value.toLocaleString('id-ID')}`,
     parseMoney: value => Number(String(value ?? '').replace(/\D/g, ''))
   });
+  return { amount, taxField, form, method, type, nodeFor, controller, confirmations };
+}
 
+test('Tunai records change directly while QRIS and Transfer require an explicit deposit confirmation', async () => {
+  const { amount, form, method, type, nodeFor, controller, confirmations } = await mountPayment(installment);
   assert.equal(amount.value, '242.500');
   amount.value = '310.000';
   amount.dispatchEvent(new Event('input'));
@@ -173,4 +170,42 @@ test('Tunai records change directly while QRIS and Transfer require an explicit 
   assert.equal(nodeFor('[data-payment-excess]').hidden, true);
   assert.equal(nodeFor('[data-payment-status]').textContent, 'PO / Tempo');
   assert.equal((await controller.confirm()).excessAction, undefined);
+});
+
+test('A cashier can enter a partial payment without a DP control or a presumed withholding', async () => {
+  const order = {
+    customerId: installment.customerId,
+    items: [{ productName: 'Spanduk', subtotal: 1000000 }],
+    total: 1025641,
+    taxGrossUp: { rateBps: 250, adjustment: 25641 }
+  };
+  const html = renderPayment(order);
+  assert.doesNotMatch(html, /Pembayaran DP|payment-half|payment-dp/);
+  assert.match(html, /Uang Diterima[\s\S]*name="amount"/);
+  const { amount, taxField, form, method, nodeFor, controller } = await mountPayment(order, {
+    depositBalance: 100000, withholding: true
+  });
+  assert.equal(amount.value, '900.000');
+  assert.equal(taxField.value, '25.641');
+
+  method.value = 'TRANSFER';
+  form.dispatchEvent(new Event('change'));
+  amount.value = '200.000';
+  amount.dispatchEvent(new Event('input'));
+  assert.equal(amount.value, '200.000');
+  assert.equal(taxField.value, '0');
+  assert.equal(nodeFor('[data-payment-remaining]').textContent, 'Rp 725.641');
+  assert.equal((await controller.confirm()).depositAmount, 100000);
+
+  amount.value = '900.000';
+  amount.dispatchEvent(new Event('input'));
+  assert.equal(taxField.value, '25.641');
+  assert.equal(nodeFor('[data-payment-remaining]').textContent, 'Rp 0');
+
+  taxField.value = '5.000';
+  taxField.dispatchEvent(new Event('moneychange'));
+  amount.value = '200.000';
+  amount.dispatchEvent(new Event('input'));
+  assert.equal(taxField.value, '5.000');
+  assert.equal(nodeFor('[data-payment-remaining]').textContent, 'Rp 720.641');
 });

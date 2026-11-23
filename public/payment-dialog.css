@@ -263,21 +263,11 @@
 #payment-form .payment-received input { min-height: 44px; font-size: 20px; }
 #payment-form .money-input input:focus { border-color: var(--payment-blue); outline: 2px solid #0a68f433; }
 #invoice-discount-field .money-input > b::after { content: " −"; }
-.payment-dp-options { display: flex; align-items: center; gap: 9px; }
 .payment-dialog .payment-toggle { max-width: 100%; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; }
 .payment-toggle .design-switch { flex: none; width: 28px; height: 18px; background: #919191; }
 .payment-toggle .design-switch::after { top: 2px; left: 2px; width: 14px; height: 14px; }
 .payment-toggle input:checked + .design-switch { background: var(--payment-blue); }
 .payment-toggle input:checked + .design-switch::after { transform: translateX(10px); }
-.payment-half {
-  padding: 4px 9px;
-  border: 1px solid #cbdffb;
-  border-radius: 6px;
-  background: #eef5ff;
-  color: #1658ae;
-  font-size: 12px;
-  font-weight: 600;
-}
 .payment-tax-details summary { color: var(--payment-muted); }
 .payment-tax-details summary small { margin-left: auto; color: var(--payment-muted); font-size: 11px; }
 #payment-form .payment-tax-details .field { margin-top: 6px; }

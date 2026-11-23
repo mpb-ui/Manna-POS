@@ -58,10 +58,6 @@ function paymentFormHtml(order, { moneyField }) {
           <span>Uang Diterima</span>${moneyField('amount', outstanding, 'required')}
         </label>
         <div class="payment-summary-row"><span data-payment-excess-label>Kembali</span>${paymentReadout(0, 'data-payment-excess-amount')}</div>
-        <div class="payment-dp-options">
-          <label class="design-toggle payment-toggle"><input id="payment-dp" type="checkbox" role="switch" aria-controls="payment-half" aria-expanded="false"><span class="design-switch" aria-hidden="true"></span><span>Pembayaran DP</span></label>
-          <button type="button" id="payment-half" class="payment-half hidden">50%</button>
-        </div>
         ${taxFields}
         <div class="payment-methods" role="group" aria-labelledby="payment-method-label">
           <span id="payment-method-label">Metode</span>
