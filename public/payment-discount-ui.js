@@ -1,41 +1,62 @@
 import { grossUpQuote, orderTaxRateBps, taxAdjustment } from './order-tax.js';
 import { invoiceDiscount, invoiceGross, discountLocked } from './order-discount.js';
 
-export function paymentDiscountHtml(order, { moneyField, money }) {
-  const amount = invoiceDiscount(order), locked = discountLocked(order);
+export function paymentReadout(amount, attributes = '') {
+  return `<span class="payment-readout"><span>Rp</span><strong ${attributes}>${Number(amount || 0).toLocaleString('id-ID')}</strong></span>`;
+}
+
+export function paymentDiscountHtml(order, { moneyField }) {
+  const amount = invoiceDiscount(order);
+  const locked = discountLocked(order);
   return `<div class="payment-discount-summary">
-    <div class="payment-summary-row payment-discount-option">
-      <label class="deposit-check"><input type="checkbox" data-invoice-discount-toggle ${amount ? 'checked' : ''} ${locked ? 'disabled' : ''} aria-controls="invoice-discount-field"> Diskon</label>
-      <span id="invoice-discount-field" ${amount ? '' : 'hidden'}>${moneyField('invoiceDiscountAmount', amount, `form="payment-form" aria-label="Diskon nominal pesanan" ${locked ? 'disabled' : ''}`)}</span>
-      <strong class="payment-discount-dash" ${amount ? 'hidden' : ''}>—</strong>
+    <div class="payment-summary-row">
+      ${locked ? `<span>Diskon</span>${paymentReadout(-amount)}` : `
+        <label class="design-toggle payment-toggle">
+          <input type="checkbox" role="switch" data-invoice-discount-toggle ${amount ? 'checked' : ''} aria-controls="invoice-discount-field">
+          <span class="design-switch" aria-hidden="true"></span><span>Diskon</span>
+        </label>
+        <span id="invoice-discount-field" ${amount ? '' : 'hidden'}>${moneyField('invoiceDiscountAmount', amount, 'aria-label="Diskon nominal pesanan"')}</span>
+        <span class="payment-discount-dash" ${amount ? 'hidden' : ''}>—</span>
+      `}
     </div>
-    ${locked && amount ? '<p class="payment-discount-note">Diskon terkunci setelah konfirmasi pembayaran pertama.</p>' : ''}
-    ${orderTaxRateBps(order) ? `<div class="payment-summary-row"><span>Penyesuaian Harga</span><strong data-invoice-tax-adjustment>+ ${money(taxAdjustment(order))}</strong></div>` : ''}
-    <div class="payment-summary-row payment-invoice-total"><span>Total Tagihan</span><strong data-invoice-total>${money(order.total)}</strong></div>
+    ${orderTaxRateBps(order) ? `
+      <div class="payment-summary-row"><span>Penyesuaian Harga</span>${paymentReadout(taxAdjustment(order), 'data-invoice-tax-adjustment')}</div>
+      <div class="payment-summary-row"><span>Total Tagihan</span>${paymentReadout(order.total, 'data-invoice-total')}</div>
+    ` : ''}
   </div>`;
 }
 
-export function bindPaymentDiscount(form, section, original, { parseMoney, money }) {
+export function bindPaymentDiscount(form, section, original, { parseMoney, formatMoneyValue }) {
   // Keep previews local to this dialog: closing without payment changes nothing.
   const order = structuredClone(original);
-  const toggle = section.querySelector('[data-invoice-discount-toggle]'), field = section.querySelector('[name=invoiceDiscountAmount]');
-  const gross = invoiceGross(original), locked = discountLocked(original);
+  const savedAmount = invoiceDiscount(original);
+  if (discountLocked(original)) return { order, amount: () => savedAmount };
+
+  const toggle = section.querySelector('[data-invoice-discount-toggle]');
+  const field = section.querySelector('[name=invoiceDiscountAmount]');
+  const gross = invoiceGross(original);
   const rateBps = orderTaxRateBps(original);
+  const amount = () => toggle.checked ? parseMoney(field.value) : 0;
   function sync() {
-    const amount = toggle.checked ? parseMoney(field.value) : 0;
-    field.setCustomValidity(!Number.isSafeInteger(amount) || amount < 0 ? 'Diskon harus berupa nominal rupiah yang tidak negatif' : amount > gross ? 'Diskon tidak boleh melebihi Total Pesanan' : '');
+    const discount = amount();
+    field.setCustomValidity(!Number.isSafeInteger(discount) || discount < 0 ? 'Diskon harus berupa nominal rupiah yang tidak negatif' : discount > gross ? 'Diskon tidak boleh melebihi Total Pesanan' : '');
     section.querySelector('#invoice-discount-field').hidden = !toggle.checked;
     section.querySelector('.payment-discount-dash').hidden = toggle.checked;
-    field.disabled = locked || !toggle.checked;
-    const net = gross - Math.max(0, Math.min(gross, amount || 0));
+    field.disabled = !toggle.checked;
+    const net = gross - Math.max(0, Math.min(gross, discount || 0));
     const quote = rateBps ? grossUpQuote(net, rateBps) : { total: net };
     order.total = quote.total;
-    if (rateBps) section.querySelector('[data-invoice-tax-adjustment]').textContent = `+ ${money(quote.adjustment)}`;
-    section.querySelector('[data-invoice-total]').textContent = money(order.total);
+    if (rateBps) {
+      section.querySelector('[data-invoice-tax-adjustment]').textContent = formatMoneyValue(quote.adjustment);
+      section.querySelector('[data-invoice-total]').textContent = formatMoneyValue(quote.total);
+    }
     form.dispatchEvent(new CustomEvent('payment:totalchange'));
   }
-  toggle.addEventListener('change', () => { sync(); if (toggle.checked && !locked) field.focus(); });
+  toggle.addEventListener('change', () => {
+    sync();
+    if (toggle.checked) field.focus();
+  });
   field.addEventListener('moneychange', sync);
   sync();
-  return { order, amount: () => toggle.checked ? parseMoney(field.value) : 0 };
+  return { order, amount };
 }

@@ -18,47 +18,54 @@ export async function mountCustomerPayment({ form, order, initial, api, can, uid
   const methods = [...form.querySelectorAll('[name=method]')];
   const useDeposit = form.querySelector('[data-payment-use]');
   const depositOption = form.querySelector('[data-payment-deposit]');
-  const depositBalance = form.querySelector('#payment-deposit-balance');
+  const depositUsed = form.querySelector('[data-payment-deposit-used]');
+  const depositBadge = ownerDialog.querySelector('[data-payment-deposit-badge]');
+  const depositBalance = depositBadge.querySelector('strong');
   const depositCovered = form.querySelector('[data-payment-deposit-covered]');
+  const balanceAfter = form.querySelector('[data-payment-deposit-after]');
   const excessNotice = form.querySelector('[data-payment-excess]');
-  const dueLabel = ownerDialog.querySelector('[data-payment-due-label]');
-  const dueTotal = ownerDialog.querySelector('[data-payment-due]');
-  const depositRow = ownerDialog.querySelector('[data-payment-deposit-row]');
-  const taxRow = ownerDialog.querySelector('[data-payment-tax-row]');
-  const balanceAfter = ownerDialog.querySelector('[data-payment-deposit-after]');
+  const excessLabel = form.querySelector('[data-payment-excess-label]');
+  const excessAmount = form.querySelector('[data-payment-excess-amount]');
+  const dueLabel = form.querySelector('[data-payment-due-label]');
+  const dueTotal = form.querySelector('[data-payment-due]');
   const remaining = ownerDialog.querySelector('[data-payment-remaining]');
   const status = ownerDialog.querySelector('[data-payment-status]');
   const customerRequestId = crypto.randomUUID();
   let customer = null, use = initial.depositAmount !== 0, dirtyAmount = false, halfAmount = false;
-  const valid = () => uid() === identity && form.isConnected && (!ownerDialog || ownerDialog.open);
+  const valid = () => uid() === identity && form.isConnected && ownerDialog.open;
   const isPo = () => form.querySelector('[name=type]:checked')?.value === 'PO';
+  const excessAction = () => ({ TUNAI: 'CHANGE', QRIS: 'DEPOSIT', TRANSFER: 'DEPOSIT' })[form.elements.method.value];
   const balance = () => can('deposit.use') ? customer?.depositBalance || 0 : 0;
   const figures = () => paymentDepositAmounts({ total: order.total, paid: order.paidAmount, balance: balance(), use, planned: initial.depositAmount || undefined, received: parseMoney(amount.value), withholding: parseMoney(form.elements.taxWithheld?.value), po: isPo() });
-  const setAmount = value => { amount.value = String(value).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+  const formatAmount = value => value.toLocaleString('id-ID');
+  const setAmount = value => { amount.value = formatAmount(value); };
 
   function sync() {
-    const n = figures(), po = isPo();
-    const withheld = n.outstanding - n.used - n.due;
+    const n = figures();
+    const po = isPo();
+    const action = excessAction();
+    const depositExcess = n.excess > 0 && action === 'DEPOSIT';
+    const chooseMethod = n.excess > 0 && !action;
+    const partiallyPaid = n.remaining < n.outstanding || Number(order.paidAmount) > 0;
     depositOption.hidden = po || !n.available;
+    depositBadge.hidden = po || !balance();
     useDeposit.checked = use;
     depositBalance.textContent = money(balance());
+    depositUsed.textContent = n.used ? formatAmount(-n.used) : '—';
     depositCovered.hidden = !n.used || n.due > 0;
-    excessNotice.hidden = !n.excess;
-    if (n.excess) excessNotice.textContent = `Kelebihan pembayaran ${money(n.excess)}`;
-    if (taxRow) {
-      taxRow.hidden = !withheld;
-      taxRow.querySelector('strong').textContent = `− ${money(withheld)}`;
-    }
-    depositRow.hidden = !n.used;
-    depositRow.querySelector('strong').textContent = `− ${money(n.used)}`;
-    balanceAfter.hidden = !n.used || Boolean(n.excess);
+    excessLabel.textContent = action === 'DEPOSIT' ? 'Lebih Bayar' : 'Kembali';
+    excessAmount.textContent = chooseMethod ? '—' : formatAmount(n.excess);
+    excessNotice.hidden = !depositExcess;
+    excessNotice.textContent = depositExcess ? `Kelebihan Pembayaran ${money(n.excess)}` : '';
+    balanceAfter.hidden = !n.used || depositExcess;
     balanceAfter.querySelector('strong').textContent = money(balance() - n.used);
-    dueLabel.textContent = po ? 'Sisa tagihan PO' : 'Perlu dibayar';
-    dueTotal.textContent = money(n.due);
+    dueLabel.textContent = po ? 'Sisa Tagihan PO' : 'Perlu Dibayar';
+    dueTotal.textContent = formatAmount(n.due);
     methods.forEach(method => { method.required = !po && parseMoney(amount.value) > 0; });
     remaining.textContent = money(n.remaining);
-    status.textContent = po ? 'PO / Tempo' : n.excess ? 'Kelebihan bayar' : n.remaining ? 'Belum Lunas' : 'Lunas';
-    status.dataset.state = po ? 'po' : n.excess || n.remaining ? 'pending' : 'paid';
+    status.textContent = po ? 'PO / Tempo' : depositExcess ? 'Lebih Bayar' : chooseMethod ? 'Pilih Metode' :
+      n.remaining ? (partiallyPaid ? 'Bayar Sebagian' : 'Belum Lunas') : 'Lunas';
+    status.dataset.state = po ? 'po' : depositExcess || chooseMethod || n.remaining ? 'pending' : 'paid';
   }
   function draw() {
     if (!dirtyAmount) setAmount(figures().due);
@@ -108,16 +115,19 @@ export async function mountCustomerPayment({ form, order, initial, api, can, uid
   }
 
   return {
-    values: () => ({ customerId: customer?.id || order.customerId || null, depositAmount: figures().used, excessAction: 'DEPOSIT', confirmDeposit: false }),
     async confirm() {
       if (!valid()) return null;
       const n = figures();
-      const values = this.values();
+      const values = { customerId: customer?.id || order.customerId || null, depositAmount: n.used, confirmDeposit: false };
       if (!n.excess) return values;
+      const action = excessAction();
+      if (!action) throw new Error('Metode pembayaran wajib dipilih');
+      Object.assign(values, { excessAction: action, expectedExcess: n.excess });
+      if (action === 'CHANGE') return values;
       if (!can('customers.view')) throw new Error('Akses pelanggan diperlukan untuk menyimpan kelebihan pembayaran');
       const accepted = await new Promise(resolve => {
         let yes = false;
-        const d = modal(`Kelebihan Pembayaran ${money(n.excess)}`, `<p class="deposit-confirm-question">Simpan sebagai deposit?</p><p class="deposit-confirm-customer">${e(customer?.name || order.customerName)} · ${e(customer?.phone || order.phone)}</p><div class="deposit-confirm-actions"><button type="button" class="secondary" data-check-payment>Cek Kembali</button><button type="button" class="primary" data-confirm-excess>Ya, Lanjutkan</button></div>`);
+        const d = modal(`Kelebihan Pembayaran ${money(n.excess)}`, `<p class="deposit-confirm-question">Simpan sebagai deposit?</p><p class="deposit-confirm-customer">${e(customer?.name || order.customerName)} · ${e(customer?.phone || order.phone)}</p><div class="deposit-confirm-actions"><button type="button" class="secondary" data-check-payment>Cek Kembali</button><button type="button" class="primary" data-confirm-excess>Simpan ke Deposit</button></div>`);
         d.classList.add('deposit-confirm-dialog');
         d.setAttribute('aria-label', 'Konfirmasi kelebihan pembayaran');
         d.querySelector('[data-check-payment]').onclick = () => d.close();

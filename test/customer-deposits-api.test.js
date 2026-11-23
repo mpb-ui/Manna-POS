@@ -32,5 +32,29 @@ test('customer API, split payments, real double transfer, idempotency, concurren
   const retail=catalog.products.find(p=>p.retailAtK),stock=(await ok('/api/bootstrap?view=stock')).inventory.find(r=>r.productId===retail.id);assert(stock);await ok('/api/inventory/'+encodeURIComponent(stock.sku),'PATCH',{change:100,reason:'Stock QA'});const retailOrder=await ok('/api/orders','POST',{customerId:c.id,customerName:renamed.name,phone:renamed.phone,items:[{productId:retail.id,quantity:5,finishing:[]}]});
   await ok(`/api/customers/${c.id}/deposit`,'POST',{requestId:'retail-credit',kind:'OPENING',amount:retailOrder.total,note:'Saldo retail QA'});const retailPay={requestId:'retail-pay',amount:0,depositAmount:retailOrder.total,customerId:c.id};await Promise.all(Array.from({length:4},()=>ok(`/api/orders/${retailOrder.id}/payments`,'POST',retailPay,cashier)));const finalStock=(await ok('/api/bootstrap?view=stock')).inventory.find(r=>r.sku===stock.sku);assert.equal(finalStock.quantity,stock.quantity+95);await ok(`/api/orders/${retailOrder.id}/cancel`,'POST',{requestId:'cancel-retail',reason:'Barang belum dikembalikan',disposition:'DEPOSIT'});assert.equal((await ok('/api/bootstrap?view=stock')).inventory.find(r=>r.sku===stock.sku).quantity,finalStock.quantity);
   const legacy=await ok('/api/orders','POST',{customerName:renamed.name,phone:renamed.phone,items:[item]});await ok(`/api/orders/${legacy.id}/payments`,'POST',{requestId:'legacy-paid',method:'TRANSFER',amount:125000});const beforeLegacy=(await ok('/api/customers/'+c.id)).customer.depositBalance;await ok(`/api/orders/${legacy.id}/cancel`,'POST',{requestId:'legacy-cancel',customerId:c.id,reason:'Pembatalan nota lama',disposition:'DEPOSIT'});assert.equal((await ok('/api/customers/'+c.id)).customer.depositBalance,beforeLegacy+125000);
+
+  const cashOrder = await ok('/api/orders','POST',{
+   customerId:c.id, customerName:renamed.name, phone:renamed.phone, items:[item]
+  });
+  const payCashOrder = `/api/orders/${cashOrder.id}/payments`;
+  const balanceBeforeCash = (await ok('/api/customers/'+c.id)).customer.depositBalance;
+  await ok(payCashOrder,'POST',{requestId:'cash-dp',method:'TUNAI',amount:50000,invoiceDiscountAmount:25000},cashier);
+  const cash = {
+   requestId:'cash-change',method:'TUNAI',amount:70000,invoiceDiscountAmount:25000,
+   excessAction:'CHANGE',expectedExcess:20000,customerId:c.id
+  };
+  const wrongChange = await req(payCashOrder,'POST',{...cash,expectedExcess:19000},cashier);
+  assert.equal(wrongChange.status,400);
+  assert.match(wrongChange.body.error,/Kelebihan pembayaran berubah/);
+  assert.equal((await ok('/api/order-history/'+cashOrder.id)).paidAmount,50000);
+  const attempts = await Promise.all([ok(payCashOrder,'POST',cash,cashier),ok(payCashOrder,'POST',cash,cashier)]);
+  assert(attempts.every(order => order.paidAmount === 100000 && order.invoiceDiscount.amount === 25000));
+  const receipts = await ok(`/api/orders/${cashOrder.id}/cash-receipts`);
+  assert.equal(receipts.length,2);
+  const change = receipts.find(receipt => receipt.amountReceived === 70000);
+  assert.equal(change.changeAmount,20000);
+  assert.equal(change.amount,50000);
+  assert.equal(change.depositAmount,0);
+  assert.equal((await ok('/api/customers/'+c.id)).customer.depositBalance,balanceBeforeCash);
  }finally{child.kill();await new Promise(r=>child.once('exit',r));}
 });
