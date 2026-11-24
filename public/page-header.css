@@ -23,6 +23,9 @@
 @media(pointer:coarse){#app-shell .page-toolbar button,#app-shell .page-toolbar select,#app-shell .page-toolbar input:not([type=checkbox]){min-height:44px;height:auto}}
 
 .stock-page .table-wrap{overflow-x:auto}.stock-page .table-wrap table{min-width:900px}
+.movement-order-link{max-width:100%;padding:0;border:0;background:none;color:var(--blue-dark);font-weight:600;text-align:left;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.movement-order-link:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.movement-order-link[aria-busy="true"]{cursor:progress}
 @media(max-width:700px){#app-shell .stock-page .page-toolbar .stock-filters select{flex:1 1 100%;width:100%;max-width:none}}
 
 /* Keep the title, tabs and active toolbar together as the toolbar wraps. */

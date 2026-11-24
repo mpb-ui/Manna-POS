@@ -1,3 +1,5 @@
+import { isQuickSale, PRODUCT_KIND } from "./product-kind.js";
+
 // Shared, read-only rules. File readiness is confirmed by a person, not inferred
 // from a design fee or from the historic "SIAP_CETAK" order field.
 export const FILE_READINESS = ["UNCONFIRMED", "MISSING", "RECEIVED", "READY"];
@@ -15,7 +17,8 @@ export function unconfirmedDraft(order) {
 }
 export function needsProduction(item, product = {}) {
   if (typeof item.needsProduction === "boolean") return item.needsProduction;
-  return !(product.retailAtK || product.quickSale || ["ATK", "Akrilik", "Stempel"].includes(item.category || product.category));
+  if (product.productKind === PRODUCT_KIND.PRODUCTION) return true;
+  return !(isQuickSale(product) || ["ATK", "Akrilik", "Stempel"].includes(item.category || product.category));
 }
 export function needsFile(item, product = {}) {
   if (typeof item.needsFile === "boolean") return item.needsFile;

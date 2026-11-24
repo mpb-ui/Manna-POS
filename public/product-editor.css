@@ -15,6 +15,7 @@
 .product-editor-dialog .pe-form,#dtf-master-form{width:100%;display:flex;flex-direction:column;min-height:0;gap:0;overflow:hidden}
 .pe-form *{box-sizing:border-box}
 .pe-form [hidden]{display:none!important}
+.pe-merchandise :is([data-product-machine],.pe-card-sources,.pe-legacy-sources,.pe-finishing){display:none}
 .pe-tabs{display:flex;flex:none;gap:16px;margin:0 24px;border-bottom:1px solid #d7dfe9}
 .pe-tabs button{position:relative;background:none;border:0;padding:20px 2px 14px;font-size:15px;line-height:18px;font-weight:700;white-space:nowrap;color:#878686}
 .pe-tabs button[aria-selected=true]{color:#17263c}

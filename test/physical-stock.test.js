@@ -1,13 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../lib/store.js";
-import { initializeStockState, commitPhysicalStock, confirmRetailStock, updateStockMethod, adjustPhysicalStock, syncRetailProductStock } from "../lib/physical-stock.js";
+import { initializeStockState, commitPhysicalStock, confirmRetailStock, updateStockMethod, adjustPhysicalStock, syncRetailProductStock, listStockMovements } from "../lib/physical-stock.js";
 
 const actor="Kasir",timestamp="2026-10-14T08:00:00+08:00";
 const row=(sku,quantity,unit="pcs",stockMethod="UNIT")=>({sku,quantity,unit,stockUnit:unit,stockMethod,productName:sku,stockNeedsCount:false});
 const item=(id,sku,units,timing="PRODUCTION",status="SELESAI")=>({itemId:id,productName:sku,materials:[{sku,units,unit:sku==='paper'?'lbr':'pcs'}],quantity:units,stockTiming:timing,status,stockCommitted:false});
 const order=(items)=>({id:'o',code:'INV',status:'SELESAI',items,total:100,paidAmount:100,paymentConfirmed:true,stockCommitted:false});
 const fixture=()=>({inventory:[row('pen',100),row('paper',1000,'lembar'),row('roll',10,'roll','ROLL')],stockMovements:[],materials:[],products:[],orders:[]});
+
+test("ID pesanan pada mutasi lama dicocokkan dengan nomor invoice sesuai akses", () => {
+  const invoice = { id: "order-7", code: "INV-112026-007" };
+  const manual = { id: "manual", orderCode: null };
+  const legacy = { id: "legacy", orderCode: invoice.code };
+  const linked = { id: "linked", orderCode: invoice.code, orderId: "existing-id" };
+  const missing = { id: "missing", orderCode: "INV-112026-008" };
+  const state = { ...fixture(), orders: [invoice], stockMovements: [manual, legacy, linked, missing] };
+
+  assert.deepEqual(listStockMovements(state, 0, 2, true), [manual, { ...legacy, orderId: invoice.id }]);
+  assert.deepEqual(listStockMovements(state, 1, 3, true), [{ ...legacy, orderId: invoice.id }, linked, missing]);
+  assert.deepEqual(listStockMovements(state, 1, 1, false), [legacy]);
+  assert.equal(legacy.orderId, undefined);
+});
 
 test("10 roll tidak dipotong oleh pesanan selesai; keluar 1 lalu masuk 5 menghasilkan 14",()=>{
  const state=fixture(),o=order([item('r','roll',77)]);commitPhysicalStock(state,o,{timestamp});assert.equal(state.inventory[2].quantity,10);assert.equal(state.stockMovements.length,0);assert.equal(o.stockCommitted,true);
