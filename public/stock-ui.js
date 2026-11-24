@@ -135,8 +135,11 @@ export function createStockUi(c) {
   }
 
   function movementHtml(move) {
-    const quantity=move.type==="METHOD_OPENING"?`= ${move.balance}`:`${move.change>0?"+":""}${move.change}`;
-    return `<div class="movement"><div><strong>${h(move.productName)}</strong><br><small>${h(move.reason)}${move.orderCode?` · ${h(move.orderCode)}`:""}${move.type==="METHOD_OPENING"?`<br>Saldo lama: ${move.previousBalance} ${h(move.previousUnit)}`:""}<br>${c.dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change>0?"plus":"minus"}">${quantity} ${h(move.unit || "")}</em></div>`;
+    const quantity = move.type === "METHOD_OPENING" ? `= ${move.balance}` : `${move.change > 0 ? "+" : ""}${move.change}`;
+    const invoice = move.orderId && move.orderCode && c.can("orders.view")
+      ? `<button type="button" class="movement-order-link" data-stock-order="${h(move.orderId)}" aria-haspopup="dialog" aria-label="Detail pesanan ${h(move.orderCode)}">${h(move.orderCode)}</button>`
+      : h(move.orderCode || "");
+    return `<div class="movement"><div><strong>${h(move.productName)}</strong><br><small>${h(move.reason)}${invoice ? ` · ${invoice}` : ""}${move.type==="METHOD_OPENING"?`<br>Saldo lama: ${move.previousBalance} ${h(move.previousUnit)}`:""}<br>${c.dateFormat.format(new Date(move.createdAt))}</small></div><em class="${move.change>0?"plus":"minus"}">${quantity} ${h(move.unit || "")}</em></div>`;
   }
   function renderStock() {
     const legacyIds=new Set(c.state.materials.filter(material=>material.lfLegacyGroup).map(material=>material.id));
@@ -149,9 +152,44 @@ export function createStockUi(c) {
     c.root.querySelector("#stock-search").oninput=apply;c.root.querySelector("#stock-category").onchange=apply;apply();
     for(const [selector,kind] of [["data-stock-in","in"],["data-stock-out","out"],["data-adjust","adjust"]])c.root.querySelectorAll(`[${selector}]`).forEach(button=>button.onclick=()=>openStockEntry(c.state.inventory.find(row=>row.sku===button.getAttribute(selector)),kind));
     c.root.querySelectorAll("[data-stock-count]").forEach(button=>button.onclick=()=>openStockCount(c.state.inventory.find(row=>row.sku===button.dataset.stockCount)));
-    let offset=15;const more=c.root.querySelector("#stock-more-movements");
-    more.hidden=Number(c.state.stockMovementCount || 0)<=15;
-    more.onclick=async()=>{more.disabled=true;try{const data=await c.api(`/api/stock-movements?offset=${offset}&limit=15`);c.root.querySelector("#stock-movement-list").insertAdjacentHTML("beforeend",data.movements.map(movementHtml).join(""));c.state.stockMovements.push(...data.movements);offset+=data.movements.length;more.hidden=!data.hasMore;}catch(error){c.toast(error.message,"error");}finally{more.disabled=false;}};
+    const movementList = c.root.querySelector("#stock-movement-list");
+    let openingOrder = false;
+    movementList.onclick = async event => {
+      const button = event.target.closest("[data-stock-order]");
+      if (!button || openingOrder || c.dialog.open || c.state.view !== "stock" || !c.can("orders.view")) return;
+      const userId = c.state.currentUser?.id;
+      const active = () => button.isConnected && c.state.view === "stock" && c.state.currentUser?.id === userId && c.can("orders.view");
+      openingOrder = true;
+      button.setAttribute("aria-busy", "true");
+      try {
+        const order = await c.api(`/api/order-history/${encodeURIComponent(button.dataset.stockOrder)}`);
+        if (active() && !c.dialog.open) c.showOrderDetail(order);
+      } catch (error) {
+        if (active()) c.toast(error.message, "error");
+      } finally {
+        openingOrder = false;
+        button.removeAttribute("aria-busy");
+      }
+    };
+
+    let offset = 15;
+    const more = c.root.querySelector("#stock-more-movements");
+    more.hidden = Number(c.state.stockMovementCount || 0) <= offset;
+    more.onclick = async () => {
+      more.disabled = true;
+      try {
+        const data = await c.api(`/api/stock-movements?offset=${offset}&limit=15`);
+        if (!movementList.isConnected || c.state.view !== "stock") return;
+        movementList.insertAdjacentHTML("beforeend", data.movements.map(movementHtml).join(""));
+        c.state.stockMovements.push(...data.movements);
+        offset += data.movements.length;
+        more.hidden = !data.hasMore;
+      } catch (error) {
+        if (movementList.isConnected && c.state.view === "stock") c.toast(error.message, "error");
+      } finally {
+        more.disabled = false;
+      }
+    };
   }
   function openStockEntry(item,kind="in") {
     if(!item)return;

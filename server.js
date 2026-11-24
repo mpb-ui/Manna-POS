@@ -15,6 +15,7 @@ import { registerHomeCampaign, campaignForPos } from './lib/home-campaign.js';
 import { registerOrderCustomer, CUSTOMER_DIRECTORY_VERSION } from './lib/customer-directory.js';
 import { DTF_MERCHANDISE_VERSION } from './lib/dtf-catalog.js';
 import { normalizePaperProductTab } from './public/paper-product-tabs.js';
+import { PRODUCT_KIND, supportsProductKind } from './public/product-kind.js';
 import { normalizeMinimum, normalizePurchaseMultiple, normalizeWholesaleBasis, normalizeProductTiers, minimumError } from './public/product-pricing.js';
 import { registerGoodsReturnRoutes } from "./lib/goods-return-routes.js";
 import { invoiceCode, INVOICE_NUMBER_VERSION } from "./lib/invoice-numbers.js";
@@ -27,7 +28,7 @@ import { registerOrderHistoryRoutes } from "./lib/order-history-routes.js";
 import { initializeOrderItems, refreshOrderWorkflow } from "./public/item-workflow.js";
 import { registerItemWorkflowRoutes, commitOrderStock } from "./lib/item-workflow-routes.js";
 import { normalizedStockUnit, stockSetupNeedsCount } from "./public/stock-methods.js";
-import { PRINT_STOCK_VERSION, initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, stockSources, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
+import { PRINT_STOCK_VERSION, initializeStockState, updateStockMethod, adjustPhysicalStock, confirmRetailStock, syncRetailProductStock, stockSources, listStockMovements, STOCK_SCHEMA_VERSION } from "./lib/physical-stock.js";
 import { LF_ROLL_VERSION } from "./lib/lf-rolls.js";
 import { registerAssetRoutes } from "./lib/asset-routes.js";
 import { registerAssistanceRoutes } from "./lib/assistance-routes.js";
@@ -210,7 +211,10 @@ app.get("/api/bootstrap", async (req, res, next) => {
         result.assistanceSummary = { issueCount: completeness(order, state.products).length, checklistDone: checklist.reduce((n, i) => n + i.steps.filter(s => s.done).length, 0), checklistTotal: checklist.reduce((n, i) => n + i.steps.length, 0) };
         return result;
       }),
-      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [], stockMovementCount: canStock ? state.stockMovements.length : 0, stockMovements: canStock ? state.stockMovements.slice(0, view === "full" ? 50 : 15) : [], statusLabels: {...STATUS_LABEL,BATAL:"Dibatalkan"},
+      inventory: canStock ? state.inventory.filter((item) => !state.materials.find((material) => material.id === item.materialId || material.sku === item.sku)?.deletedAt) : [], shirtStock: canCatalog ? shirtAvailability(state) : [],
+      stockMovementCount: canStock ? state.stockMovements.length : 0,
+      stockMovements: canStock ? listStockMovements(state, 0, view === "full" ? 50 : 15, permissions.includes("orders.view")) : [],
+      statusLabels: {...STATUS_LABEL,BATAL:"Dibatalkan"},
       users: includeMaster && permissions.includes("users.manage") ? state.users.filter((item) => !item.deletedAt).map(publicUser) : [],
       auditLogs: includeMaster && permissions.includes("audit.view") ? state.auditLogs.slice(0, 100) : []
     });
@@ -510,8 +514,15 @@ function saveProduct(state, body, current = null) {
   const priceBasis = saleUnitBasis(saleUnit), priceBasisLabel = PRICE_BASIS_LABELS[priceBasis];
   const retailAtK = categoryId === "atk" && (body.retailAtK === true || body.retailAtK === "true");
   if (retailAtK && priceBasis !== "unit") throw new Error("Barang dagangan ATK harus memakai satuan per unit");
-  const quickSale = ["akrilik", "stempel"].includes(categoryId) && priceBasis === "unit";
-  const simpleSale = retailAtK || quickSale;
+  const supportsKind = supportsProductKind(categoryId, category);
+  const productKind = supportsKind ? text(body.productKind ?? current?.productKind) : "";
+  if (productKind && !Object.values(PRODUCT_KIND).includes(productKind)) throw new Error("Jenis produk tidak valid");
+  const merchandise = productKind === PRODUCT_KIND.MERCHANDISE;
+  if (merchandise && priceBasis !== "unit") throw new Error("Barang dagangan harus memakai satuan jual per unit");
+  const legacyQuickSale = ["akrilik", "stempel"].includes(categoryId)
+    || (supportsKind && current?.category === category && current.quickSale === true);
+  const quickSale = !productKind && priceBasis === "unit" && legacyQuickSale;
+  const simpleSale = retailAtK || merchandise || quickSale;
   const atkGroup = categoryId === "atk" ? (ATK_GROUPS.includes(text(body.atkGroup)) ? text(body.atkGroup) : "Peralatan lainnya") : "";
   const barcode = categoryId === "atk" ? text(body.barcode === undefined ? current?.barcode : body.barcode) : "";
   if (barcode.length > 128) throw new Error("Barcode maksimal 128 karakter");
@@ -524,7 +535,7 @@ function saveProduct(state, body, current = null) {
   const purchaseMultiple = normalizePurchaseMultiple(category, body.purchaseMultiple ?? current?.purchaseMultiple);
   const hasMaterialVariants = body.hasMaterialVariants === undefined ? Boolean(current?.hasMaterialVariants) : body.hasMaterialVariants === true;
   const sourceIds = new Set();
-  let materialSources = (simpleSale && !hasMaterialVariants ? [] : body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
+  let materialSources = ((retailAtK || quickSale) && !hasMaterialVariants ? [] : body.materialSources || []).filter((source) => Number(source.quantity) > 0).map((source) => {
     const material = state.materials.find((item) => item.id === source.materialId);
     if (!material || material.active === false) throw new Error("Pilih bahan aktif yang valid");
     if (sourceIds.has(material.id)) throw new Error("Bahan yang sama tidak boleh ditambahkan dua kali");
@@ -579,7 +590,7 @@ function saveProduct(state, body, current = null) {
       (priceOverride !== null && (!Number.isSafeInteger(priceOverride) || priceOverride <= 0))) throw new Error("ID, nama, atau harga varian bahan tidak valid/duplikat");
     variantIds.add(id); variantLabels.add(label.toLowerCase());
     const sources = validateSources(variant.materialSources, label);
-    if (!modern && !sources.length) throw new Error(`Tambahkan minimal satu bahan untuk varian ${label}`);
+    if (!modern && !merchandise && !sources.length) throw new Error(`Tambahkan minimal satu bahan untuk varian ${label}`);
     if (modern && variant.active !== false && !submittedSubVariants.length && priceOverride == null) throw new Error(`Isi harga jual ${label}`);
     const variantRetail = priceOverride ?? price;
     const priceTiers = optionalTiers(variant.priceTiers, variantRetail);
@@ -637,6 +648,7 @@ function saveProduct(state, body, current = null) {
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
   const rollSettings=priceBasis === "unit" ? {widths:[]} : productWidthSettings(categoryId,body.widths || [],current,current ? categoryKey(state.catalogOptions,current.category) : categoryId);
   const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, ...rollSettings, billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, purchaseMultiple, paperProductTab, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Popular, a3ReadyType: null, a3ReadyGroup: null, a3Family: preserveLegacy ? current?.a3Family : null, a3Variant: preserveLegacy ? current?.a3Variant : null, a3Size: preserveLegacy ? current?.a3Size : null, a3Side: preserveLegacy ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  product.productKind = productKind;
   if (modern) {
     product.productEditorVersion = 1;
     product.variantType = hasMaterialVariants ? text(body.variantType ?? current?.variantType ?? "Varian Bahan") : "";
@@ -647,7 +659,8 @@ function saveProduct(state, body, current = null) {
   }
   validateProductCalculator(product, state, body, current);
   if (priceBasis !== "unit" && !product.widths.length) throw new Error("Tambahkan minimal satu pilihan lebar bahan");
-  if (current) Object.assign(current, product); else state.products.push(product);
+  if (current) return Object.assign(current, product);
+  state.products.push(product);
   return product;
 }
 
@@ -980,7 +993,7 @@ app.get("/api/stock-movements", requirePermission("stock.view"), async (req, res
     const state = await store.read();
     const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 15));
-    res.json({ movements: state.stockMovements.slice(offset, offset + limit), hasMore: state.stockMovements.length > offset + limit });
+    res.json({ movements: listStockMovements(state, offset, limit, hasPermission(req.user, "orders.view")), hasMore: state.stockMovements.length > offset + limit });
   } catch (error) { next(error); }
 });
 

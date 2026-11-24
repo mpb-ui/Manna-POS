@@ -6,6 +6,7 @@ import {createMasterFilters,bindMasterFilters,compareMasterNames} from './master
 import {bindBackdropClose,trackDialogMutation} from './dialog-dismiss.js';
 import {A3_TABS,a3ProductKind,a3Choices,a3QuickProducts} from './a3-selection.js';
 import { PAPER_PRODUCT_TABS, isPaperProductCategory, paperProductTab } from './paper-product-tabs.js';
+import { isQuickSale, PRODUCT_KIND } from './product-kind.js';
 import { createSecurityUI } from './security-ui.js';
 import { createPrintHelperUI } from './print-helper-ui.js';
 import { createReportsUI } from './reports-ui.js';
@@ -462,6 +463,9 @@ function a3ConfigurationOptionsHtml(selected) {
   return `${variantsHtml}${printModes}${sides}`;
 }
 
+const allowsQuickQuantity = product => isQuickSale(product) && !product.hasMaterialVariants
+  && !product.fixedSizeVariants?.length && !product.choiceGroups?.length && !product.templateProduct;
+
 function flatCatalogHtml(products, category) {
   const isAtK = categoryId(category) === "atk";
   const active = products.filter((item) => item.active !== false);
@@ -469,7 +473,7 @@ function flatCatalogHtml(products, category) {
     .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }));
   const tabs = isAtK ? ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("") : "";
   const rows = visible.map((item) => {
-    const line = (item.retailAtK || item.quickSale) && !item.hasMaterialVariants ? state.cart.find((entry) => entry.productId === item.id && plainRetailLine(entry)) : null;
+    const line = allowsQuickQuantity(item) ? state.cart.find((entry) => entry.productId === item.id && plainRetailLine(entry)) : null;
     const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="-1" data-flat-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}" ${line.quantity<=minimumQuantity(item)?"disabled":""}>−</button><input type="text" inputmode="numeric" pattern="[0-9]*" data-flat-quantity="${escapeHtml(item.id)}" value="${line.quantity}" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="1" data-flat-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
       : `<button type="button" class="atk-pick" data-flat-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
     return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-flat-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}${minimumQuantity(item)>1?`<small class="minimum-help">Minimum ${minimumQuantity(item)} ${escapeHtml(item.unitName || "pcs")}</small>`:""}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
@@ -529,7 +533,7 @@ const designFollowsProductQuantity = product => usesPrintConfiguration(product)
 
 function productConfigurationHtml(product) {
   if (product.dtfShirt) return dtfShirtConfigurationHtml(product);
-  if (configurationEditingLine && plainRetailLine(configurationEditingLine) && (product.quickSale || product.retailAtK) && !product.hasMaterialVariants && !product.fixedSizeVariants?.length && !product.finishing.length) return `<div class="product-config">${configurationSection(1,"JUMLAH",quantitySelectorHtml(product.unitName || "pcs"))}${configurationNotes()}${configurationActions()}</div>`;
+  if (configurationEditingLine && plainRetailLine(configurationEditingLine) && allowsQuickQuantity(product) && !product.finishing.length) return `<div class="product-config">${configurationSection(1,"JUMLAH",quantitySelectorHtml(product.unitName || "pcs"))}${configurationNotes()}${configurationActions()}</div>`;
   const printConfig = usesPrintConfiguration(product);
   const printFinishing = printConfig ? printFinishingSections(product, 2, escapeHtml, {outdoor:supportsOutdoorPlacement(product)}) : null;
   if (supportsRollPlacement(product)) return rollConfigurationHtml(product, {
@@ -549,7 +553,8 @@ function productConfigurationHtml(product) {
   const main = configurationSection(step++, measurementTitle, measurementContent + (product.sheetCalculatorEnabled ? sheetCalculatorHtml(product) : ''), {className:product.sheetCalculatorEnabled?'sheet-config-layout':''});
   const finishing = printFinishing ? printFinishing.html : product.finishing.length ? configurationFinishing(step++, finishingHtml(product)) : "";
   if (printFinishing) step = printFinishing.next;
-  const design = product.templateProduct || product.a3Kind === "ready" ? "" : configurationDesign(step++, fileServicesHtml(product));
+  const design = product.productKind === PRODUCT_KIND.MERCHANDISE || product.templateProduct || product.a3Kind === "ready"
+    ? "" : configurationDesign(step++, fileServicesHtml(product));
   const content = `${main}${finishing}${design}${configurationNotes()}`;
   return `<div class="product-config">${content}${printConfig ? '' : configurationActions()}</div>`;
 }
@@ -623,7 +628,7 @@ function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
   return state.cart.map((line, i) => {
     const product = state.products.find(item => item.id === line.productId);
-    const retail = (product?.retailAtK || product?.quickSale) && plainRetailLine(line);
+    const retail = isQuickSale(product) && plainRetailLine(line);
     const dimensions = line.imageWidthCm > 0 && line.imageLengthCm > 0 ? `Ukuran gambar: ${Number(line.imageWidthCm).toLocaleString("id-ID")} × ${Number(line.imageLengthCm).toLocaleString("id-ID")} cm${line.allowanceCm > 0 ? ` · Lebihan ${Number(line.allowanceCm).toLocaleString("id-ID")} cm/sisi` : ""}` : line.sheetCalculation ? sheetSpecification(line.sheetCalculation) : "";
     const design = line.fileServicePrice ? `${line.fileServiceName} × ${line.fileServiceQuantity || 1}${line.fileServiceNote ? ` · ${line.fileServiceNote}` : ""}` : line.templateDesign ? `Design Template ${line.templateDesign} × ${line.templateDesignQuantity || 1}` : "";
     return `<article class="cart-item" data-cart-row="${line.cartId}"><span class="cart-item-number" aria-hidden="true">${i + 1}</span><div class="cart-item-content"><div class="cart-item-heading"><h4><button class="cart-edit-button" type="button" aria-label="Edit ${escapeHtml(line.productName)}">${escapeHtml(line.productName)}</button></h4><strong>${rupiah.format(line.previewTotal)}</strong></div><p>${escapeHtml(line.displaySize || `${line.quantity} ${product?.unitName || "unit"}`)}</p>${dimensions ? `<p class="image-size-note">${escapeHtml(dimensions)}</p>` : ""}${design ? `<p>${escapeHtml(design)}</p>` : ""}${line.productionNote ? `<p class="cart-production-note">Catatan: ${escapeHtml(line.productionNote)}</p>` : ""}<div class="cart-item-footer"><div class="cart-item-detail">${retail ? "" : `<p>${escapeHtml(line.finishingNames || "Tanpa finishing tambahan")}</p>`}</div><button type="button" data-remove="${line.cartId}" aria-label="Hapus ${escapeHtml(line.productName)}">Hapus</button></div></div></article>`;
@@ -1206,7 +1211,7 @@ function bindPos() {
   const setFlatQuantity = async (productId, change, absolute = false) => {
     const product = state.products.find(item=>item.id===productId && categoryKey(item)===state.selectedCategory && item.active!==false);
     if(!product)return;
-    if(product.hasMaterialVariants || (!product.retailAtK && !product.quickSale))return openProductConfigurator(productId);
+    if (!allowsQuickQuantity(product)) return openProductConfigurator(productId);
     syncDraft(document.querySelector('#checkout'));
     try {
       await mutateCart(cart=>{
@@ -1580,6 +1585,10 @@ function confirmUnpaidPickup(order) {
 function openOrder(id) {
   const order=state.orders.find(item=>item.id===id);
   if(!order)return toast("Pesanan tidak ditemukan","error");
+  showOrderDetail(order);
+}
+
+function showOrderDetail(order) {
   const detail=document.querySelector('#order-detail');
   const c={escapeHtml,rupiah,dateFormat,statusLabels:state.statusLabels,user:{...state.currentUser,permissions:state.permissions},
     showMoney:can('projects.money'),showPayments:can('projects.money') && can('orders.view') && paymentHistoryVisible(state.currentUser.role),
@@ -2062,7 +2071,7 @@ function switchHtml(name, checked, label = "Aktif") {
 }
 
 let stockUiPromise;
-function getStockUi() { return stockUiPromise ||= import("./stock-ui.js").then(({ createStockUi }) => createStockUi({ state, root, dialog, api, escapeHtml, dateFormat, showMasterDialog, switchHtml, deleteButtonHtml, bindDeleteRecord, can, load, render, toast })); }
+function getStockUi() { return stockUiPromise ||= import("./stock-ui.js").then(({ createStockUi }) => createStockUi({ state, root, dialog, api, escapeHtml, dateFormat, showMasterDialog, showOrderDetail, switchHtml, deleteButtonHtml, bindDeleteRecord, can, load, render, toast })); }
 function openMaterialForm(material = null) { return getStockUi().then(ui => ui.openMaterialForm(material)); }
 
 function finishingTierRowHtml(tier = {}) {
