@@ -45,7 +45,17 @@ export async function openGoodsReturn({ order, api, escapeHtml:e, valid, onSaved
     };
   } catch(error) {if(d.isConnected&&valid()){d.querySelector('.goods-return-body').textContent=error.message;toast(error.message,'error');}}
 }
-export function goodsReturnReportHtml(report,e,money) {
+export function goodsReturnReportHtml(report,e,money,linkInvoice) {
   const data=report.goodsReturns||{rows:[],quantity:0,transactions:0};
-  return `<section class="panel report-ranking"><div class="panel-head"><h2>Retur Barang · Penukaran Defect</h2><span>${data.transactions} retur · ${data.quantity} barang pengganti</span></div><p class="goods-return-report-note">Dicatat berdasarkan tanggal penukaran. Omzet dan uang masuk tambahan Rp 0.${report.capabilities.cost?` Biaya barang pengganti ${money(data.cost||0)} diperhitungkan pada laba estimasi periode ini.`:''}</p><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Retur / Invoice</th><th>Barang</th><th>Jumlah</th><th>Mutasi stok layak jual</th><th>Catatan / Petugas</th>${report.capabilities.cost?'<th>Biaya pengganti</th>':''}</tr></thead><tbody>${data.rows.map(row=>`<tr><td>${e(dateLabel(row.date))}</td><td><strong>${e(row.code)}</strong><small>${e(row.invoice)}</small><small>${e(row.customer)}</small></td><td><strong>${e(row.product)}</strong><small>${e(row.sku)}</small><small>Sumber: ${e(row.sourceCode)}</small></td><td>${row.quantity} ${e(row.unitName)}</td><td>−${row.quantity} ${e(row.unitName)}</td><td>${e(row.note)}<small>${e(row.actor)}</small></td>${report.capabilities.cost?`<td>${money(row.cost)}</td>`:''}</tr>`).join('')||'<tr><td colspan="7">Belum ada retur pada periode ini.</td></tr>'}</tbody></table></div></section>`;
+  const rows = data.rows.map(row => {
+    const opensOrder = linkInvoice && row.orderId && row.invoice;
+    return `<tr${opensOrder ? ` data-report-order-row="${e(row.orderId)}"` : ''}>
+      <td>${e(dateLabel(row.date))}</td>
+      <td><strong>${e(row.code)}</strong><small>${opensOrder ? linkInvoice(row.orderId, row.invoice) : e(row.invoice)}</small><small>${e(row.customer)}</small></td>
+      <td><strong>${e(row.product)}</strong><small>${e(row.sku)}</small><small>Sumber: ${e(row.sourceCode)}</small></td>
+      <td>${row.quantity} ${e(row.unitName)}</td><td>−${row.quantity} ${e(row.unitName)}</td>
+      <td>${e(row.note)}<small>${e(row.actor)}</small></td>${report.capabilities.cost ? `<td>${money(row.cost)}</td>` : ''}
+    </tr>`;
+  }).join('');
+  return `<section class="panel report-ranking"><div class="panel-head"><h2>Retur Barang · Penukaran Defect</h2><span>${data.transactions} retur · ${data.quantity} barang pengganti</span></div><p class="goods-return-report-note">Dicatat berdasarkan tanggal penukaran. Omzet dan uang masuk tambahan Rp 0.${report.capabilities.cost?` Biaya barang pengganti ${money(data.cost||0)} diperhitungkan pada laba estimasi periode ini.`:''}</p><div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Retur / Invoice</th><th>Barang</th><th>Jumlah</th><th>Mutasi stok layak jual</th><th>Catatan / Petugas</th>${report.capabilities.cost?'<th>Biaya pengganti</th>':''}</tr></thead><tbody>${rows||'<tr><td colspan="7">Belum ada retur pada periode ini.</td></tr>'}</tbody></table></div></section>`;
 }

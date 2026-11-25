@@ -35,7 +35,8 @@
 .report-delete{border:0;background:none;font-size:20px;line-height:20px;color:#6d7787;padding:0 4px;min-height:24px;white-space:nowrap}
 .report-delete:hover{background:#fff0ef;border-radius:6px}
 .report-foundation .report-table .report-correction,.report-correction-row td:nth-child(5){color:#b43434}
-.report-table tr[data-report-select-row]{cursor:pointer}
+.report-table tr[data-report-select-row],.report-data tr[data-report-order-row]{cursor:pointer}
+.report-data .report-ranking tr[data-report-order-row]:hover{background:#edf4ff}
 .report-row-toggle{border:0;background:none;padding:0;color:inherit;font:inherit;text-align:left;white-space:nowrap}
 .report-foundation .report-table tbody tr[data-selected]{background:#65a3f6}
 .report-foundation .report-table tr[data-selected] :is(td,button,small,.payment-unpaid){color:#fff}
@@ -53,9 +54,12 @@
 .report-dialog-body .field{margin:0}
 .report-dialog-body input,.report-dialog-body select,.report-dialog-body textarea{width:100%;box-sizing:border-box;font:inherit;min-width:0}
 .report-dialog-body .form-footer{margin:0;padding-top:12px;justify-content:flex-end}
-.report-range-presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.report-range-presets button{font-size:12px;padding:8px 12px}
-.report-range-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.report-calendar-range{width:346px}
+.report-calendar-range .deadline-picker-main{display:block}
+.report-calendar-range .deadline-calendar-days button.in-range{background:#edf4ff;color:#1753a6}
+.report-range-hint{margin:8px 0 6px;color:#52627a;font-size:12px;line-height:16px}
+.report-range-presets{display:flex;flex-wrap:wrap;gap:4px}
+.report-range-presets button{padding:6px 8px;background:#f3f6fa;color:#52627a;font-size:11px;line-height:16px}
 .report-form-error{color:#b43434;font-size:12px;margin:0}
 .report-form-error:empty{display:none}
 .report-cancel-impact{display:flex;flex-direction:column;background:#f5f7fa;border:1px solid #dfe5ed;border-radius:8px;padding:12px;gap:10px}
@@ -68,5 +72,12 @@
 @media(pointer:coarse){.report-main-tabs button,.report-invoice,.report-delete,.report-secondary-actions button,.report-pagination button,.report-row-toggle,.report-clear-selection{min-height:44px}}
 @media print{.report-print .report-table{width:100%;border-collapse:collapse;font-size:10px}.report-print .report-table th,.report-print .report-table td{padding:6px;border-bottom:1px solid #ccc;text-align:left}.report-print .report-table small{display:block}.report-print .table-wrap{overflow:visible}.report-print .report-delete{display:none}}
 
-#app-shell .report-global-filters .report-range-trigger{background:#fff;border:1px solid #dfe5ed;color:#182136;font-weight:400;padding:8px 12px}
+#app-shell .report-global-filters .report-range-trigger{
+  display:inline-flex;justify-content:space-between;align-items:center;gap:6px;
+  min-width:203px;max-width:100%;padding:7px 10px 7px 16px;
+  background:#fff;border:1px solid #dce1e7;border-radius:8px;
+  color:#293050;font-size:14px;font-weight:600;line-height:20px;letter-spacing:-.18px;white-space:nowrap;
+}
+.report-range-trigger img{flex:none}
+.report-range-trigger:disabled{cursor:default;opacity:.65}
 .report-tax-badge{display:inline-block;vertical-align:middle;margin-inline-start:6px;border-radius:999px;padding:2px 7px;background:#ffefc5;color:#6a4805;font-size:11px;font-weight:750;line-height:1.4}
