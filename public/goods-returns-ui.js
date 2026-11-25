@@ -49,7 +49,7 @@ export function goodsReturnReportHtml(report,e,money,linkInvoice) {
   const data=report.goodsReturns||{rows:[],quantity:0,transactions:0};
   const rows = data.rows.map(row => {
     const opensOrder = linkInvoice && row.orderId && row.invoice;
-    return `<tr${opensOrder ? ` data-report-order-row="${e(row.orderId)}"` : ''}>
+    return `<tr${opensOrder ? ` data-report-order-row="${e(row.orderId)}" data-report-select-row="${e(row.id)}"` : ''}>
       <td>${e(dateLabel(row.date))}</td>
       <td><strong>${e(row.code)}</strong><small>${opensOrder ? linkInvoice(row.orderId, row.invoice) : e(row.invoice)}</small><small>${e(row.customer)}</small></td>
       <td><strong>${e(row.product)}</strong><small>${e(row.sku)}</small><small>Sumber: ${e(row.sourceCode)}</small></td>

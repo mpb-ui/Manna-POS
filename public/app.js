@@ -1857,17 +1857,7 @@ const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n)
   identity:()=>state.currentUser?.id,isActive:()=>state.view==='reports',
   canOpenOrder:()=>can('orders.view'),canAssets:()=>canManageSettings() && can('reports.cost'),
   openAssets:()=>{state.view='master';state.masterTab='assets';render();},
-  openOrder:async (id, valid) => {
-    try {
-      const order = await api('/api/order-history/' + encodeURIComponent(id));
-      if (!valid() || dialog.open) return;
-      const index = state.orders.findIndex(row => row.id === id);
-      if (index < 0) state.orders.push(order); else state.orders[index] = order;
-      openOrder(id);
-    } catch (error) {
-      if (valid()) toast(error.message, 'error');
-    }
-  },
+  openOrder: order => { if (!dialog.open && can('orders.view')) showOrderDetail(order); },
   print:html=>showPrintDocument(html,'report-print')
 });
 function renderReports(){return reportsUI.mount();}
