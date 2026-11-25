@@ -69,9 +69,11 @@ export function bindCalendarPicker(trigger, createPicker) {
       panel.style.maxWidth = `${Math.max(0, width - 24)}px`;
       panel.style.maxHeight = `${Math.max(0, height - 24)}px`;
       const size = panel.getBoundingClientRect();
-      const below = topEdge + height - rect.bottom - 8, above = rect.top - topEdge - 8;
-      const top = below >= size.height || below >= above ? rect.bottom + 8 : rect.top - size.height - 8;
-      panel.style.left = `${Math.max(leftEdge + 12, Math.min(rect.right - size.width, leftEdge + width - size.width - 12))}px`;
+      const gap = picker.range ? 0 : 8;
+      const below = topEdge + height - rect.bottom - gap, above = rect.top - topEdge - gap;
+      const top = below >= size.height || below >= above ? rect.bottom + gap : rect.top - size.height - gap;
+      const left = picker.range ? rect.left : rect.right - size.width;
+      panel.style.left = `${Math.max(leftEdge + 12, Math.min(left, leftEdge + width - size.width - 12))}px`;
       panel.style.top = `${Math.max(topEdge + 12, Math.min(top, topEdge + height - size.height - 12))}px`;
     };
     panel.addEventListener("click", event => {
