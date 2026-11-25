@@ -1,8 +1,20 @@
 import {goodsReturnReportHtml} from './goods-returns-ui.js';
+import {bindCalendarPicker} from './calendar-picker.js';
+import {witaDay} from './order-rules.js';
+
+const compactDay = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
+const compactDate = day => compactDay.format(new Date(`${day}T00:00:00Z`));
+function shiftDay(day, offset) {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+
 export function createReportsUI(c) {
   const {root,api,escapeHtml:e,money,toast}=c;
   let generation=0,report=null,tab='sales',sort={key:'date',direction:-1},page=1;
   let filters={from:'',to:'',paymentStatus:'',paymentMethod:''};
+  let openingOrder = null;
   const selectionByTab=new Map([['sales',new Set()],['payments',new Set()]]);
   const clearSelections=()=>selectionByTab.forEach(selection=>selection.clear());
   const selectionKey=(row,view)=>String((view==='sales'?row.eventId:row.id) ?? '');
@@ -13,10 +25,9 @@ export function createReportsUI(c) {
   const day=value=>new Intl.DateTimeFormat('id-ID',{day:'numeric',month:'short',year:'numeric',timeZone:'Asia/Makassar'}).format(new Date(value+'T00:00:00+08:00'));
   const method=value=>({TUNAI:'Tunai',TRANSFER:'Transfer',DEPOSIT:'Deposit',QRIS:'QRIS'}[value] || value || '-');
   const kind=r=>r.paid<0?'Refund':r.kind==='TOPUP' || r.paymentType==='TOPUP'?'Top up deposit':r.kind==='DP' || r.paymentType==='DP'?'Pembayaran DP':'Pembayaran';
-  const today=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Makassar'}).format(new Date());
   const selectedRows=()=>tab==='sales'?report.rows:tab==='payments'?report.receipts:tab==='receivables'?report.receivables:tab==='returns'?report.goodsReturns.rows:tab==='po'?report.purchaseOrders:report[tab] || [];
   const rows=()=>[...selectedRows()].sort((a,b)=>{const x=a[sort.key],y=b[sort.key];return (typeof x==='number'?x-y:String(x??'').localeCompare(String(y??''),'id',{numeric:true}))*sort.direction;});
-  const link=(id,code)=>id && c.canOpenOrder()?`<button class="report-invoice" data-report-order="${e(id)}">${e(code)}</button>`:e(code);
+  const link=(id,code)=>id && code && c.canOpenOrder()?`<button type="button" class="report-invoice" aria-haspopup="dialog" data-report-order="${e(id)}">${e(code)}</button>`:e(code);
   const qty=r=>(r.quantities || [{quantity:r.quantity,unit:r.unit || 'pcs'}]).map(q=>`${Number(q.quantity).toLocaleString('id-ID',{maximumFractionDigits:3})} ${e(q.unit)}`).join(' · ');
   const headers=()=>tab==='sales'?['Tanggal','Invoice','Pelanggan',...(report.capabilities.money?['Pembayaran','Total','Piutang','Metode']:['Produk']),...(report.capabilities.delete?['']:[])]:tab==='payments'?['Tanggal pembayaran','Invoice','Pelanggan','Jenis','Metode','Uang masuk','Uang keluar']:tab==='receivables'?['Tanggal invoice','Invoice','Pelanggan','Total','Dibayar','Piutang']:tab==='po'?['Tanggal PO','Invoice','Pelanggan','Nomor PO']:['#',tab==='categories'?'Kategori':tab==='products'?'Produk':'Mesin','Invoice','Jumlah terjual',...(report.capabilities.money?['Penjualan']:[])];
   const cells=(r,index,interactive=true)=>{
@@ -34,9 +45,11 @@ export function createReportsUI(c) {
       const label=tab==='payments'?kind(r):r.kind==='CANCELLATION'?'Koreksi pembatalan':r.kind==='DISCOUNT'?'Diskon invoice':'Penjualan';
       values[0]=`<button type="button" class="report-row-toggle" data-report-row-toggle aria-pressed="false" aria-label="Pilih baris ${e(label)} ${e(r.code)}, ${e(values[0])}">${values[0]}</button>`;
     }
-    return `<tr${r.kind!=='SALE' && r.kind?' class="report-correction-row"':''}${key?` data-report-select-row="${e(key)}"`:''}>${values.map(cell=>`<td>${cell}</td>`).join('')}</tr>`;
+    const hasOrder = interactive && r.code && c.canOpenOrder();
+    const orderId = hasOrder && (tab === 'sales' || tab === 'receivables' ? r.id : r.orderId);
+    return `<tr${r.kind!=='SALE' && r.kind?' class="report-correction-row"':''}${key?` data-report-select-row="${e(key)}"`:''}${orderId?` data-report-order-row="${e(orderId)}"`:''}>${values.map(cell=>`<td>${cell}</td>`).join('')}</tr>`;
   }).join('') || `<tr><td colspan="${headers().length}" class="report-empty">Belum ada data untuk filter ini.</td></tr>`}</tbody></table></div>`;
-  async function mount() {if(!filters.from){const t=today();filters.from=t.slice(0,7)+'-01';filters.to=t;}await refresh();}
+  async function mount() {if(!filters.from){const t=witaDay();filters.from=t.slice(0,7)+'-01';filters.to=t;}await refresh();}
   async function refresh() {
     const token=++generation,identity=c.identity();
     root.setAttribute('aria-busy','true');
@@ -56,25 +69,28 @@ export function createReportsUI(c) {
   }
   function draw() {
     const cap=report.capabilities;if(!cap.money && ['payments','receivables','po'].includes(tab))tab='sales';
+    const dateWasFocused = document.activeElement?.id === 'report-range' && root.contains(document.activeElement);
     const selection=selectionByTab.get(tab);
     const data=rows(),total=data.length,pages=Math.max(1,Math.ceil(total/pageSize));page=Math.min(page,pages);
-    const dateLabel=filters.from===filters.to?day(filters.from):`${day(filters.from)} – ${day(filters.to)}`;
+    const dateLabel = `${compactDate(filters.from)} – ${compactDate(filters.to)}`;
     const count=tab==='sales'?`${report.summary.orders} invoice${report.summary.corrections?` · ${report.summary.corrections} koreksi`:''}`:tab==='payments'?`${total} mutasi kas`:tab==='receivables'?`${total} invoice`:tab==='returns'?`${report.goodsReturns.transactions} retur`:tab==='po'?`${total} dokumen`:`${total} ${title().toLowerCase()}`;
-    root.innerHTML=`<div class="report-page report-foundation"><header class="page-toolbar"><h1>Laporan</h1><div class="page-toolbar-filters report-global-filters"><button type="button" class="secondary report-range-trigger" id="report-range" aria-haspopup="dialog">${e(dateLabel)}</button>${cap.money?`<label class="report-filter"><span class="sr-only">Status pembayaran</span><select id="report-payment"><option value="">Semua status</option><option value="BELUM_LUNAS" ${filters.paymentStatus==='BELUM_LUNAS'?'selected':''}>Belum Lunas</option><option value="LUNAS" ${filters.paymentStatus==='LUNAS'?'selected':''}>Lunas</option></select></label><label class="report-filter"><span class="sr-only">Metode pembayaran</span><select id="report-method"><option value="">Semua metode</option>${['TUNAI','QRIS','TRANSFER','DEPOSIT'].map(m=>`<option value="${m}" ${filters.paymentMethod===m?'selected':''}>${method(m)}</option>`).join('')}</select></label>`:''}</div></header><div class="report-body">${scopeNote()?`<p class="report-period-note">${scopeNote()}</p>`:''}
+    root.innerHTML=`<div class="report-page report-foundation"><header class="page-toolbar"><h1>Laporan</h1><div class="page-toolbar-filters report-global-filters"><button type="button" class="secondary report-range-trigger" id="report-range" aria-haspopup="dialog" aria-expanded="false" aria-label="Periode laporan WITA, ${e(dateLabel)}" ${report.range.locked ? "disabled" : ""}><span>${e(dateLabel)}</span><img src="/report-assets/range-chevron.svg" width="16" height="16" alt=""></button>${cap.money?`<label class="report-filter"><span class="sr-only">Status pembayaran</span><select id="report-payment"><option value="">Semua status</option><option value="BELUM_LUNAS" ${filters.paymentStatus==='BELUM_LUNAS'?'selected':''}>Belum Lunas</option><option value="LUNAS" ${filters.paymentStatus==='LUNAS'?'selected':''}>Lunas</option></select></label><label class="report-filter"><span class="sr-only">Metode pembayaran</span><select id="report-method"><option value="">Semua metode</option>${['TUNAI','QRIS','TRANSFER','DEPOSIT'].map(m=>`<option value="${m}" ${filters.paymentMethod===m?'selected':''}>${method(m)}</option>`).join('')}</select></label>`:''}</div></header><div class="report-body">${scopeNote()?`<p class="report-period-note">${scopeNote()}</p>`:''}
       <div class="report-summary-line">${cap.money?`<div><span>Omzet</span><strong>${money(report.summary.sales)}</strong><small>Invoice dan koreksi dalam periode</small></div><div><span>Uang Masuk Bersih</span><strong>${money(report.summary.paid)}</strong><small>Penerimaan dikurangi refund</small></div><button class="report-summary-link" data-other-report="receivables"><span>Piutang</span><strong>${money(report.summary.outstanding)}</strong><small>Seluruh tagihan s.d. ${e(day(filters.to))}</small></button>`:`<div><span>Invoice</span><strong>${report.summary.orders}</strong></div>`}</div>
       <div class="report-navigation"><div class="report-main-tabs" role="tablist" aria-label="Laporan">${tabs.filter(([id])=>id!=='payments' || cap.money).map(([id,label])=>`<button role="tab" aria-selected="${tab===id}" data-report-tab="${id}" class="${tab===id?'active':''}">${label}</button>`).join('')}</div><div class="report-secondary-actions"><select id="report-other" aria-label="Laporan lainnya"><option value="">Laporan Lain</option>${[...(cap.money?[['receivables','Piutang'],['po','Dokumen PO']]:[]),['returns','Retur Barang'],...(c.canAssets()?[['assets','Aset & Penyusutan']]:[])].map(([id,label])=>`<option value="${id}" ${tab===id?'selected':''}>${label}</option>`).join('')}</select>${cap.export?'<button class="secondary" id="report-export">Download CSV</button>':''}${cap.print?'<button class="secondary" id="report-print">Print / PDF</button>':''}</div></div>
       <section class="report-data"><div class="report-list-heading"><div><h2>${title()}</h2><span>${count}</span></div>${selection?'<div class="report-selection"><span role="status" data-report-selection-count></span><button type="button" class="report-clear-selection" data-report-clear-selection hidden>Hapus pilihan</button></div>':''}${['categories','products','machines'].includes(tab)?`<select id="report-ranking-sort" aria-label="Urutkan ranking">${cap.money?'<option value="sales" '+(sort.key==='sales'?'selected':'')+'>Penjualan tertinggi</option>':''}<option value="orders" ${sort.key==='orders'?'selected':''}>Invoice terbanyak</option>${tab==='products'?`<option value="quantity" ${sort.key==='quantity'?'selected':''}>Jumlah terjual</option>`:''}<option value="label" ${sort.key==='label'?'selected':''}>Nama A–Z</option></select>`:''}</div>
       <p class="report-table-note">${tab==='payments'?'Setiap penerimaan dan refund adalah satu baris. Penggunaan deposit tidak dihitung sebagai uang masuk baru. Transaksi deposit tanpa invoice hanya tampil pada Semua pembayaran.':tab==='receivables'?'Piutang seluruh invoice sampai akhir periode; pembayaran setelah tanggal akhir belum mengurangi piutang di sini.':tab==='returns'?'Retur penggantian barang memotong stok tanpa menambah omzet atau uang masuk.':tab==='po'?'Dokumen PO adalah persetujuan pembelian; uang masuk dicatat saat pembayaran diterima.':`${tab==='sales'?'Status pembayaran dan piutang mengikuti kondisi akhir periode.':'Penjualan bersih setelah diskon; koreksi mengikuti tanggal pembatalan.'}${filters.paymentMethod?' Filter metode mencakup seluruh nilai invoice yang memakai metode tersebut.':''}`}</p>
-      ${tab==='returns'?goodsReturnReportHtml(report,e,money):table(data.slice((page-1)*pageSize,page*pageSize),(page-1)*pageSize)}
+      ${tab==='returns'?goodsReturnReportHtml(report,e,money,c.canOpenOrder() ? link : undefined):table(data.slice((page-1)*pageSize,page*pageSize),(page-1)*pageSize)}
       ${tab!=='returns'?`<div class="report-pagination"><span>${total?`${(page-1)*pageSize+1}–${Math.min(page*pageSize,total)}`:'0'} dari ${total} baris</span><div><button class="secondary" id="report-prev" ${page===1?'disabled':''}>Sebelumnya</button><span>${page} / ${pages}</span><button class="secondary" id="report-next" ${page===pages?'disabled':''}>Berikutnya</button></div></div>`:''}</section></div></div>`;
-    root.querySelector('#report-range').onclick=openRange;
+    const rangeTrigger = root.querySelector('#report-range');
+    if (!report.range.locked) bindReportRange(rangeTrigger);
+    if (dateWasFocused) rangeTrigger.focus({ preventScroll: true });
     for(const [id,key] of [['report-payment','paymentStatus'],['report-method','paymentMethod']])root.querySelector('#'+id)?.addEventListener('change',event=>{filters[key]=event.target.value;refresh();});
     root.querySelectorAll('[data-report-tab]').forEach(b=>b.onclick=()=>selectTab(b.dataset.reportTab));
     root.querySelectorAll('[data-other-report]').forEach(b=>b.onclick=()=>selectTab(b.dataset.otherReport));
     root.querySelector('#report-other').onchange=event=>{if(event.target.value==='assets')c.openAssets();else if(event.target.value)selectTab(event.target.value);};
     root.querySelector('#report-ranking-sort')?.addEventListener('change',event=>{sort={key:event.target.value,direction:event.target.value==='label'?1:-1};page=1;draw();});
     root.querySelector('#report-prev')?.addEventListener('click',()=>{page--;draw();});root.querySelector('#report-next')?.addEventListener('click',()=>{page++;draw();});
-    root.querySelectorAll('[data-report-order]').forEach(b=>b.onclick=()=>c.openOrder(b.dataset.reportOrder));
+    bindOrderDetails(root.querySelector('.report-data'));
     root.querySelectorAll('[data-report-delete]').forEach(b=>b.onclick=()=>openDelete(b.dataset.reportDelete));
     if(selection)bindRowSelection(selection);
     root.querySelector('#report-export')?.addEventListener('click',exportCsv);root.querySelector('#report-print')?.addEventListener('click',print);
@@ -106,12 +122,72 @@ export function createReportsUI(c) {
   }
   function selectTab(value){tab=value;sort={key:['categories','products','machines'].includes(tab)?report.capabilities.money?'sales':'orders':'date',direction:-1};page=1;draw();root.querySelector(`[data-report-tab="${value}"]`)?.focus({preventScroll:true});}
   function modal(name,body){const d=document.createElement('dialog');d.className='report-dialog';d.innerHTML=`<div class="detail-head"><h2>${e(name)}</h2><button type="button" class="detail-close" aria-label="Tutup">×</button></div><div class="report-dialog-body">${body}</div>`;document.body.append(d);d.querySelector('.detail-close').onclick=()=>d.close();d.onclose=()=>d.remove();d.showModal();return d;}
-  function openRange(){
-    const d=modal('Pilih rentang tanggal',`<div class="report-range-presets">${[['today','Hari Ini'],['yesterday','Kemarin'],['month','Bulan Ini'],['last30','30 Hari Terakhir']].map(([key,label])=>`<button class="secondary" data-range-preset="${key}" ${report.range.locked && key!=='today'?'disabled':''}>${label}</button>`).join('')}</div><form><div class="report-range-fields"><label class="field"><span>Dari tanggal</span><input type="date" name="from" value="${filters.from}" required ${report.range.locked?'readonly':''}></label><label class="field"><span>Sampai tanggal</span><input type="date" name="to" value="${filters.to}" required ${report.range.locked?'readonly':''}></label></div><p class="report-table-note">Tanggal penuh, zona waktu WITA.</p><p class="report-form-error" role="alert"></p><div class="form-footer"><button type="button" class="secondary" data-range-cancel>Batal</button><button class="primary">Terapkan</button></div></form>`);
-    const form=d.querySelector('form');form.elements.from.onchange=()=>{form.elements.to.min=form.elements.from.value;};
-    d.querySelector('[data-range-cancel]').onclick=()=>d.close();
-    d.querySelectorAll('[data-range-preset]').forEach(b=>b.onclick=()=>{let from=today(),to=from;const date=new Date(from+'T00:00:00Z');if(b.dataset.rangePreset==='yesterday'){date.setUTCDate(date.getUTCDate()-1);from=to=date.toISOString().slice(0,10);}if(b.dataset.rangePreset==='month')from=from.slice(0,7)+'-01';if(b.dataset.rangePreset==='last30'){date.setUTCDate(date.getUTCDate()-29);from=date.toISOString().slice(0,10);}form.elements.from.value=from;form.elements.to.value=to;form.elements.to.min=from;});
-    form.onsubmit=event=>{event.preventDefault();const from=form.elements.from.value,to=form.elements.to.value;if(from>to)return d.querySelector('.report-form-error').textContent='Tanggal akhir harus sama atau setelah tanggal awal.';filters={...filters,from,to};d.close();refresh();};
+  function bindReportRange(trigger) {
+    const apply = (from, to) => {
+      if (from === filters.from && to === filters.to) return;
+      filters = { ...filters, from, to };
+      refresh();
+    };
+    bindCalendarPicker(trigger, today => {
+      const monthStart = `${today.slice(0, 7)}-01`;
+      const yesterday = shiftDay(today, -1);
+      const presets = [
+        ['Kemarin', yesterday, yesterday], ['Bulan ini', monthStart, today],
+        ['30 hari terakhir', shiftDay(today, -29), today]
+      ];
+      const picker = {
+        label: 'Pilih periode laporan WITA', range: true, from: filters.from, to: filters.to,
+        clearLabel: 'Atur ulang',
+        below: `<p class="report-range-hint" data-range-hint role="status"></p>
+          <div class="report-range-presets">${presets.map(([label], index) => `<button type="button" data-range-preset="${index}">${label}</button>`).join('')}</div>`,
+        pick(day) {
+          if (picker.to) { picker.from = day; picker.to = ''; }
+          else [picker.from, picker.to] = [picker.from, day].sort();
+        },
+        pickToday(day) { picker.from = picker.to = day; },
+        clear() { apply(monthStart, today); },
+        done() { apply(picker.from, picker.to || picker.from); },
+        render(panel) {
+          const start = compactDate(picker.from);
+          panel.querySelector('[data-range-hint]').textContent = picker.to
+            ? `${start} – ${compactDate(picker.to)}` : `Mulai ${start}. Pilih tanggal akhir.`;
+        },
+        bind(panel, { signal, showDate }) {
+          panel.querySelector('.report-range-presets').addEventListener('click', event => {
+            const button = event.target.closest('[data-range-preset]');
+            if (!button) return;
+            [, picker.from, picker.to] = presets[Number(button.dataset.rangePreset)];
+            showDate(picker.from);
+          }, { signal });
+        }
+      };
+      return picker;
+    });
+  }
+
+  function bindOrderDetails(section) {
+    async function open(id, trigger) {
+      if (!id || openingOrder || !c.canOpenOrder()) return;
+      const identity = c.identity();
+      const valid = () => trigger.isConnected && c.isActive() && c.identity() === identity && c.canOpenOrder();
+      if (!valid()) return;
+      const request = {};
+      openingOrder = request;
+      try { await c.openOrder(id, valid); }
+      finally { if (openingOrder === request) openingOrder = null; }
+    }
+    section.addEventListener('click', event => {
+      const button = event.target.closest('[data-report-order]');
+      if (button) open(button.dataset.reportOrder, button);
+    });
+    section.addEventListener('dblclick', event => {
+      const row = event.target.closest('[data-report-order-row]');
+      if (!row || event.target.closest('button:not([data-report-row-toggle]), a, input, select, textarea, summary')) return;
+      const invoice = row.querySelector('[data-report-order]');
+      invoice?.focus({ preventScroll: true });
+      open(row.dataset.reportOrderRow, row);
+      event.preventDefault();
+    });
   }
   async function openDelete(id){
     try{
@@ -135,6 +211,6 @@ export function createReportsUI(c) {
   }
   function exportCsv(){const data=exportData(),cell=value=>{let v=String(value??'');if(typeof value==='string' && /^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replaceAll('"','""')+'"';};const blob=new Blob(['\uFEFF'+[data.headers,...data.data].map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`laporan-${tab}-${filters.from}-${filters.to}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function print(){c.print(`<div class="print-brand">MANNA PRINT</div><h2>Laporan ${e(title())}</h2><p>${e(day(filters.from))} – ${e(day(filters.to))} WITA · ${filters.paymentStatus==='LUNAS'?'Lunas':filters.paymentStatus==='BELUM_LUNAS'?'Belum Lunas':'Semua pembayaran'} · ${e(method(filters.paymentMethod || 'Semua metode'))}</p>${report.capabilities.money?`<p>Omzet ${money(report.summary.sales)} · Uang Masuk Bersih ${money(report.summary.paid)} · Piutang ${money(report.summary.outstanding)}</p>`:''}${tab==='returns'?goodsReturnReportHtml(report,e,money):table(rows(),0,false)}`);}
-  function reset(){generation++;report=null;clearSelections();filters={from:'',to:'',paymentStatus:'',paymentMethod:''};tab='sales';document.querySelectorAll('.report-dialog').forEach(d=>d.close());}
+  function reset(){generation++;report=null;openingOrder=null;clearSelections();filters={from:'',to:'',paymentStatus:'',paymentMethod:''};tab='sales';document.querySelectorAll('.report-dialog').forEach(d=>d.close());}
   return {mount,reset};
 }
