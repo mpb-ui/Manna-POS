@@ -16,17 +16,102 @@
 .master-page>:not(.page-toolbar){margin-left:24px;margin-right:24px}
 .master-page>.master-summary{margin-top:16px}
 .master-page>#employees-content>:first-child{margin-top:16px}
-.stock-page>.stock-grid{padding:16px 24px 28px}
+.stock-page>.stock-grid{padding:16px 24px 28px;grid-template-columns:minmax(0,1fr) 355px;align-items:start;gap:24px}
 .page-toolbar input:focus-visible,.page-toolbar button:focus-visible,.page-toolbar select:focus-visible{outline:2px solid #0a68f4;outline-offset:2px}
 @media(max-width:1100px){#app-shell .page-toolbar{gap:12px}#app-shell .page-toolbar-filters{flex-basis:65%}#app-shell .page-toolbar .search{flex-basis:200px}}
 @media(max-width:700px){#app-shell .page-toolbar{padding:14px 12px;gap:12px}#app-shell .page-toolbar-filters{flex:1 1 100%;justify-content:flex-start}#app-shell .page-toolbar .search{flex:1 1 100%;width:100%}#app-shell .page-toolbar select{flex:1;max-width:100%;width:auto}#app-shell .page-toolbar input:not([type=checkbox]),#app-shell .page-toolbar select{font-size:16px;min-height:40px}.master-page>:not(.page-toolbar){margin-left:12px;margin-right:12px}.stock-page>.stock-grid{padding:14px 12px 24px}.page-toolbar>button{margin-left:auto!important}}
 @media(pointer:coarse){#app-shell .page-toolbar button,#app-shell .page-toolbar select,#app-shell .page-toolbar input:not([type=checkbox]){min-height:44px;height:auto}}
 
-.stock-page .table-wrap{overflow-x:auto}.stock-page .table-wrap table{min-width:900px}
-.movement-order-link{max-width:100%;padding:0;border:0;background:none;color:var(--blue-dark);font-weight:600;text-align:left;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
-.movement-order-link:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.stock-page{
+  --stock-accent:#0a68f4;
+  --stock-decrease:#ff291b;
+  --stock-muted:#6b7e9a;
+}
+.stock-grid>.panel{border-color:#dce1e7;border-radius:12px}
+.stock-list-head,.stock-movement-head{gap:12px 20px;flex-wrap:wrap;padding:15px 16px;border-color:#dfe5ed}
+.stock-list-head h2,.stock-movement-head h2{color:#020203;font-size:18px;font-weight:700;line-height:22px}
+.stock-list-head .stock-filters{flex:1 1 415px;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:8px;width:auto;min-width:0;margin:0}
+.stock-list-head .stock-filters :is(.search,select),.stock-movement-date{
+  min-height:36px;max-width:100%;min-width:0;border:1px solid #dfe5ed;border-radius:9px;
+  background-color:#fff;color:#17263c;font-size:12px;font-weight:400;line-height:16px;padding:8px 12px;
+}
+.stock-list-head .stock-filters .search{flex:0 1 300px;width:100%}
+.stock-list-head .stock-filters select{
+  flex:0 1 156px;width:100%;appearance:none;
+  background-image:url('/stock-assets/chevron.svg');background-repeat:no-repeat;background-position:right 8px center;
+  padding-inline:8px 28px;
+}
+.stock-list-head .search::placeholder,.stock-list-head select:has(option[value=""]:checked){color:#737373;opacity:1}
+.stock-table{min-width:590px}
+.stock-table:has(.stock-actions){min-width:850px}
+.stock-table :is(th,td){padding:8px 12px;border-color:#dfe5ed}
+.stock-table :is(th,td):first-child{padding-left:16px}
+.stock-table :is(th,td):last-child{padding-right:16px}
+.stock-table th{height:34px;color:#6d7787;font-size:12px;font-weight:700;line-height:14px;letter-spacing:0;background:#fff}
+.stock-table td{color:#182136;font-size:13px;font-weight:500;line-height:15px;font-variant-numeric:tabular-nums}
+.stock-table tbody tr{height:52px}
+.stock-table tbody tr:nth-child(even of :where(:not(.hidden))),.stock-movement:nth-child(even){background:#f8f8f8}
+.stock-table tbody tr:last-child td{border-bottom:0}
+.stock-table .stock-item strong{color:#192438;font-size:13px;font-weight:600;line-height:16px;overflow-wrap:anywhere}
+.stock-table td small{display:block;color:#52627a;font-size:10px;font-weight:500;line-height:13px;margin-top:2px}
+.stock-table .stock-category{margin:0;border-radius:4px;padding:3px 6px;background:#eef2f9;color:#182136;font-size:13px;font-weight:600;line-height:15px}
+.stock-table :is(.stock-balance,.stock-minimum,.stock-updated){white-space:nowrap}
+.stock-table :is(.stock-minimum,.stock-method,.stock-updated){color:var(--stock-muted)}
+.stock-table .stock-method{line-height:16px}
+.stock-table .stock-updated{font-size:12px}
+.stock-table .stock-balance.stock-negative{background:#f6e0e0;color:var(--stock-decrease)}
+.stock-table td:has(.stock-actions){width:1%}
+.stock-table .stock-actions{flex-direction:row;align-items:center;gap:8px}
+.stock-table .stock-actions button{min-height:26px;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:600;line-height:16px}
+.stock-table .stock-actions .primary{min-width:116px;background:var(--stock-accent);color:#fff}
+.stock-table .stock-actions .primary:hover{background:var(--blue-dark)}
+.stock-table .stock-actions .secondary{min-width:94px;background:#ebeff3;color:#17263c}
+.stock-table .stock-actions .secondary:hover{background:#dfe6ee}
+.stock-list :is(button,input,select):focus-visible,.stock-movement-date:focus-within,.movement-order-link:focus-visible{outline:2px solid var(--stock-accent);outline-offset:2px}
+.stock-movement-head{gap:12px}
+.stock-movement-date{
+  display:flex;position:relative;width:140px;align-items:center;justify-content:space-between;gap:8px;white-space:nowrap;
+}
+.stock-movement-date img{flex:none}
+.stock-movement-date input{
+  position:absolute;inset:0;width:100%;height:100%;margin:0;border:0;padding:0;opacity:0;cursor:pointer;font:inherit;
+}
+.stock-movement-date input::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;cursor:pointer}
+.stock-movement{display:grid;gap:8px;padding:12px 16px;color:#17263c}
+.stock-movement+.stock-movement{border-top:1px solid #dce1e7}
+.stock-movement:last-child{border-radius:0 0 11px 11px}
+.stock-movement-top{display:flex;justify-content:space-between;align-items:start;gap:8px}
+.stock-movement-top strong{min-width:0;color:#192438;font-size:14px;font-weight:600;line-height:16px;overflow-wrap:anywhere}
+.stock-movement-delta{font-size:16px;font-weight:600;line-height:16px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stock-movement-delta.plus{color:#14966a}
+.stock-movement-delta.minus{color:var(--stock-decrease)}
+.stock-movement p{margin:0;font-size:12px;font-weight:500;line-height:13px;overflow-wrap:anywhere}
+.stock-movement time{color:#7d8693;font-size:10px;font-weight:400;line-height:13px}
+.stock-movement-status{margin:0;padding:16px;color:#52627a;font-size:12px;line-height:16px}
+.movement-order-link{max-width:100%;padding:0;border:0;background:none;color:var(--stock-accent);font:inherit;text-align:left;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .movement-order-link[aria-busy="true"]{cursor:progress}
-@media(max-width:700px){#app-shell .stock-page .page-toolbar .stock-filters select{flex:1 1 100%;width:100%;max-width:none}}
+#stock-more-movements{margin:8px 16px 16px}
+.stock-direction,.stock-count-settings{min-width:0;margin:0;padding:0;border:0}
+.stock-direction legend{padding:0;margin-bottom:6px;color:#596273;font-size:13px;font-weight:700}
+.stock-direction>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stock-direction label{cursor:pointer}
+.stock-direction label span{display:block;padding:9px 12px;border:1px solid #d7dfe9;border-radius:8px;text-align:center;font-weight:650}
+.stock-direction input:checked+span{border-color:var(--blue);background:var(--blue-soft);color:var(--blue-dark)}
+.stock-direction input:focus-visible+span{outline:2px solid var(--blue);outline-offset:2px}
+.stock-count-settings{padding:12px;border:1px solid var(--line);border-radius:9px;background:#f6f8fb}
+.stock-check{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:13px}
+.stock-check input[type=checkbox]{width:16px;height:16px;flex:none;margin:0;accent-color:var(--blue)}
+.stock-form-error{margin:0;color:#b52c27;font-size:13px}
+#stock-entry-form [hidden],#stock-count-form [hidden]{display:none}
+@media(max-width:1280px){.stock-page>.stock-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:700px){
+  .stock-list-head,.stock-movement-head{padding:12px}
+  .stock-list-head .stock-filters{flex:1 1 100%;justify-content:flex-start}
+  .stock-list-head .stock-filters .search{flex:1 1 190px}
+  .stock-list-head .stock-filters select{flex:1 1 145px}
+  .stock-list-head .stock-filters :is(.search,select){height:40px;font-size:16px}
+}
+@media(pointer:coarse){.stock-list-head .stock-filters :is(.search,select),.stock-table .stock-actions button,.stock-movement-date{min-height:44px}}
 
 /* Keep the title, tabs and active toolbar together as the toolbar wraps. */
 .master-data-page>.master-sticky-header{

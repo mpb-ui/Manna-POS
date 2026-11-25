@@ -82,5 +82,50 @@ test("API stok: roll/opname, ATK, DP/PO, produksi, retry, retur dan izin",async(
   const master=await ok('/api/bootstrap?view=master');assert(master.allProducts.length);assert(master.inventory.length);const history=await ok('/api/stock-movements?offset=0&limit=3');assert.equal(history.movements.length,3);assert.equal(history.hasMore,true);
   await ok('/api/users','POST',{name:'Operator',username:'op-stock',pin:'5678',role:'PRINT'});const auth=await fetch(base+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'op-stock',pin:'5678'})});const restricted=auth.headers.get('set-cookie').split(';')[0];assert.equal((await req('/api/inventory/'+penSku,'PATCH',{change:1,reason:'no'},restricted)).status,403);assert.equal((await req('/api/stock-movements','GET',undefined,restricted)).status,403);
   assert.equal((await req(countPath,'POST',count,restricted)).status,403);
+
+  await ok('/api/users', 'POST', { name: 'Gudang', username: 'gudang-stock', pin: '5678', role: 'WAREHOUSE' });
+  const warehouseLogin = await fetch(base + '/api/login', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'gudang-stock', pin: '5678' })
+  });
+  const warehouse = warehouseLogin.headers.get('set-cookie').split(';')[0];
+  const warehouseStock = async sku => (await ok('/api/bootstrap?view=stock', 'GET', undefined, warehouse)).inventory.find(row => row.sku === sku);
+  const rollBeforeCount = await warehouseStock(roll.sku);
+  const rollCount = { ...expected(rollBeforeCount), stockOpeningBalance: 12, stockCountReason: 'Hitung roll di rak' };
+  assert.equal((await req(countPath, 'POST', { ...rollCount, stockOpeningBalance: 12.5 }, warehouse)).status, 400);
+  assert.equal((await req(countPath, 'POST', { ...rollCount, stockMethod: 'UNIT', unit: 'pcs' }, warehouse)).status, 403);
+  const countedRoll = await ok(countPath, 'POST', rollCount, warehouse);
+  assert.equal(countedRoll.stock.quantity, 12);
+  assert.equal(countedRoll.stock.unit, 'roll');
+  assert.equal(countedRoll.stock.minStock, rollBeforeCount.minStock);
+  assert.equal(countedRoll.movement.previousBalance, rollBeforeCount.quantity);
+  assert.equal(countedRoll.movement.type, 'METHOD_OPENING');
+  assert.equal((await req(countPath, 'POST', rollCount, warehouse)).status, 409);
+
+  const penPath = '/api/inventory/' + penSku;
+  const penBeforeCount = await warehouseStock(penSku);
+  const penCount = { ...expected(penBeforeCount), stockOpeningBalance: '0', stockCountReason: 'Hitung pulpen di etalase' };
+  const penOut = { change: -1, reason: 'Pindah satu pulpen', expectedUnit: penBeforeCount.unit, expectedMethod: penBeforeCount.stockMethod };
+  assert.equal((await req(penPath, 'PATCH', { ...penOut, expectedUnit: 'roll' }, warehouse)).status, 409);
+  await ok(penPath, 'PATCH', penOut, warehouse);
+  assert.equal((await req(penPath + '/count', 'POST', penCount, warehouse)).status, 409);
+  const countedPen = await ok(penPath + '/count', 'POST', { ...penCount, ...expected(await warehouseStock(penSku)) }, warehouse);
+  assert.equal(countedPen.stock.quantity, 0);
+  assert.equal(countedPen.movement.productId, pen.id);
+  assert.equal(countedPen.movement.previousBalance, penBeforeCount.quantity - 1);
+
+  const backdated = await ok(penPath, 'PATCH', { change: 1, movementDate: '2026-09-12', reason: 'Stok lama pertama' });
+  const otherDay = await ok(penPath, 'PATCH', { change: 1, movementDate: '2026-09-13', reason: 'Stok hari berikutnya' });
+  const sameDay = await ok(penPath, 'PATCH', { change: 1, movementDate: '2026-09-12', reason: 'Stok lama kedua' });
+  const datePath = '/api/stock-movements?date=2026-09-12&limit=1';
+  const firstDatePage = await ok(datePath, 'GET', undefined, warehouse);
+  assert.deepEqual(firstDatePage.movements.map(move => move.id), [sameDay.movement.id]);
+  assert.equal(firstDatePage.hasMore, true);
+  const secondDatePage = await ok(datePath + '&offset=1', 'GET', undefined, warehouse);
+  assert.deepEqual(secondDatePage.movements.map(move => move.id), [backdated.movement.id]);
+  assert.equal(secondDatePage.hasMore, false);
+  assert.deepEqual((await ok('/api/stock-movements?date=2026-09-13')).movements.map(move => move.id), [otherDay.movement.id]);
+  assert.deepEqual(await ok('/api/stock-movements?date=2026-09-14'), { movements: [], hasMore: false });
+  assert.equal((await req('/api/stock-movements?date=2026-02-30')).status, 400);
+  assert.equal((await req('/api/stock-movements?date=2026-09-12&date=2026-09-13')).status, 400);
  }finally{child.kill();await new Promise(r=>child.once('exit',r));}
 });

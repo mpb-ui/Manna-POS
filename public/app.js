@@ -102,7 +102,7 @@ const state = {
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [],
   cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", paperProductTab: PAPER_PRODUCT_TABS[0][0], atkGroup: "Semua", editingOrderId: null,
   masterTab: "products", categorySettingsKind: "products", projectView: "list", projectSearch: "", projectStatus: "all", projectDeadlineSort: "nearest",
-  stockSearch: "", stockCategory: "",
+  stockSearch: "", stockCategory: "", stockMovementDate: "",
   projectCollapsed: new Set(["DIAMBIL"]),
   draft: { customerName: "", phone: "", deadline: "", fileStatus: "SIAP_CETAK", fileReadiness: "UNCONFIRMED" }
 };
@@ -191,6 +191,7 @@ function toast(message, type = "") {
 function showLogin() {
   masterFilters.clear();
   savedTemplateItems.clear();
+  state.stockMovementDate = "";
   securityUI.reset();csrfToken='';loadSequence++;
   state.cart=[];state.editingOrderId=null;state.draft={customerName:'',phone:'',deadline:'',fileStatus:'SIAP_CETAK',fileReadiness:'UNCONFIRMED'};
   for(const name of ['products','allProducts','orders','materials','finishings','machines','users','auditLogs','inventory','stockMovements','shirtStock'])state[name]=[];
@@ -2015,10 +2016,10 @@ function openPicForm(pic = null) {
   };
 }
 
-function showMasterDialog(title, body) {
+function showMasterDialog(title, body, section = "Master Data") {
   dialog.classList.add("master-dialog");
   const detail = document.querySelector("#order-detail");
-  detail.innerHTML = `<div class="detail-head"><div><span class="eyebrow">Master Data</span><h2 style="margin:5px 0 0">${title}</h2></div><button class="detail-close">×</button></div><div class="detail-body">${body}</div>`;
+  detail.innerHTML = `<div class="detail-head"><div><span class="eyebrow">${escapeHtml(section)}</span><h2 style="margin:5px 0 0">${title}</h2></div><button class="detail-close">×</button></div><div class="detail-body">${body}</div>`;
   detail.querySelector(".detail-close").onclick = () => dialog.close();
   dialog.onclose = () => { if(dialog.open)return;dialog.classList.remove("master-dialog"); dialog.onclose = null; };
   bindBackdropClose(dialog);
@@ -2071,7 +2072,7 @@ function switchHtml(name, checked, label = "Aktif") {
 }
 
 let stockUiPromise;
-function getStockUi() { return stockUiPromise ||= import("./stock-ui.js").then(({ createStockUi }) => createStockUi({ state, root, dialog, api, escapeHtml, dateFormat, showMasterDialog, showOrderDetail, switchHtml, deleteButtonHtml, bindDeleteRecord, can, load, render, toast })); }
+function getStockUi() { return stockUiPromise ||= import("./stock-ui.js").then(({ createStockUi }) => createStockUi({ state, root, dialog, api, escapeHtml, dateFormat, showMasterDialog, showOrderDetail, switchHtml, deleteButtonHtml, bindDeleteRecord, can, load, toast })); }
 function openMaterialForm(material = null) { return getStockUi().then(ui => ui.openMaterialForm(material)); }
 
 function finishingTierRowHtml(tier = {}) {
@@ -2249,7 +2250,6 @@ function openDtfProductForm(product) {
 }
 
 function renderStock() { return getStockUi().then(ui => { if (state.view === "stock") ui.renderStock(); }); }
-function openStockEntry(item) { return getStockUi().then(ui => ui.openStockEntry(item)); }
 
 document.querySelectorAll(".nav-item").forEach((button) => button.onclick = async () => { if (!canView(button.dataset.view)) return; if (state.view === "employees" && hasUnsavedPayroll()) { if (!window.confirm("Buang perubahan payroll yang belum disimpan?")) return; discardPayrollDrafts(); } closeNavigation(); state.view = button.dataset.view; try { await load(); } catch (error) { toast(error.message, "error"); } });
 window.addEventListener("beforeunload", event => { if (hasUnsavedPayroll()) { event.preventDefault(); event.returnValue = ""; } });
