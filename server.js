@@ -43,6 +43,7 @@ import express from "express";
 import { addCategory, renameCategory, deleteCategory, reorderCategories, categoryKey, savePic, deletePic } from "./lib/catalog-settings.js";
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
+import { registerStockScan } from "./lib/stock-scan-routes.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
 import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges, normalizeDtfWholesaleTiers, normalizeDtfShirtCosts } from "./lib/dtf-variants.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
@@ -57,6 +58,7 @@ if(production && (!process.env.SESSION_SECRET || sessionSecret.length<32 || sess
 const store = new Store(process.env.DATABASE_URL);
 
 installSecurityHeaders(app,{production,origin:process.env.APP_ORIGIN || process.env.RENDER_EXTERNAL_URL || 'https://manna-pos.onrender.com'});
+app.use("/api/stock/scan", express.json({ limit: "24kb" }));
 app.use(express.json({ limit: "5mb" }));
 const security=createSecurity({app,store,secret:sessionSecret,production});
 const backups=new BackupManager(store);
@@ -76,6 +78,7 @@ app.use('/api',security.middleware);
 security.registerAuthenticated();
 registerBackupRoutes(app,{store,security,backups});
 registerPrintHelperAuthenticated();
+registerStockScan(app, { store, audit });
 
 function requirePermission(permission) {
   return (req, res, next) => hasPermission(req.user, permission) ? next() : res.status(403).json({ error: "Anda tidak memiliki akses untuk tindakan ini" });
@@ -379,7 +382,7 @@ app.post("/api/materials", requirePermission("master.materials"), async (req, re
       if (!state.catalogOptions.materialCategories.includes(text(req.body.category) || "Lainnya")) throw new Error("Pilih kategori bahan yang tersedia");
       unique(state, "materials", "sku", sku); unique(state, "materials", "name", name);
       if (state.inventory.some(row => row.sku === sku)) throw new Error("SKU stok sudah digunakan");
-      const material = { id: identifier("mat", sku), sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: materialMinimum(req.body.minStock), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
+      const material = { id: `mat-${crypto.randomUUID()}`, sku, name, category: text(req.body.category) || "Lainnya", unit: text(req.body.unit), stock: Math.max(0, Number(req.body.stock || 0)), minStock: materialMinimum(req.body.minStock), cost: Math.max(0, Number(req.body.cost || 0)), supplier: text(req.body.supplier), active: req.body.active !== false };
       if (!Number.isFinite(material.stock) || !Number.isFinite(material.minStock)) throw new Error("Saldo stok tidak valid");
       updateStockMethod(state, material, req.body, req.user.name, now());
       if (material.stockMethod === "ROLL" && !Number.isInteger(material.stock)) throw new Error("Stok awal roll harus bilangan bulat");
@@ -998,6 +1001,14 @@ app.patch("/api/orders/:id/status", async (req, res, next) => {
   } catch (error) { if (["UNPAID_PICKUP_CONFIRMATION", "ORDER_HELD"].includes(error.code)) return res.status(409).json({ error: error.message, code: error.code }); next(error); }
 });
 
+app.get("/api/stock-balances", requirePermission("stock.view"), async (_req, res, next) => {
+  try {
+    const { materials, inventory } = await store.readStockScanCatalog();
+    const archived = new Set(materials.filter(material => material.deletedAt).flatMap(material => [material.id, material.sku]));
+    res.json({ inventory: inventory.filter(stock => !archived.has(stock.materialId) && !archived.has(stock.sku)) });
+  } catch (error) { next(error); }
+});
+
 app.get("/api/stock-movements", requirePermission("stock.view"), async (req, res, next) => {
   try {
     const { date } = req.query;
@@ -1059,7 +1070,7 @@ app.patch("/api/inventory/:sku", requirePermission("stock.adjust"), async (req, 
       if (state.materials.some((item) => (item.id === stock.materialId || item.sku === stock.sku) && item.deletedAt)) throw new Error("Bahan sudah dihapus");
       const change = Number(req.body.change);
       if (!Number.isFinite(change) || change === 0) throw new Error("Jumlah penyesuaian tidak valid");
-      if (req.body.requestId && state.stockMovements.some(move=>move.requestId===req.body.requestId)) return adjustPhysicalStock(state, stock, req.body, req.user.name, now());
+      if (req.body.requestId && state.stockMovements.some(move=>move.requestId===req.body.requestId && move.source!=="BARCODE" && move.source!=="CORRECTION")) return adjustPhysicalStock(state, stock, req.body, req.user.name, now());
       const { expectedUnit, expectedMethod } = req.body;
       if (expectedUnit !== undefined && expectedUnit !== stock.unit || expectedMethod !== undefined && expectedMethod !== stock.stockMethod) {
         throw Object.assign(new Error("Satuan atau metode stok telah berubah. Muat ulang lalu buka kembali form."), { status: 409 });
