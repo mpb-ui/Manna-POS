@@ -7,6 +7,7 @@ const reader = get("barcode-input");
 const dialog = get("scan-dialog");
 const note = get("scan-note");
 const list = get("scan-draft-list");
+const modeButtons = document.querySelectorAll(".scan-modes button");
 const confirm = get("review-confirm");
 const retry = get("catalog-retry");
 const reviewTitle = get("review-title");
@@ -53,11 +54,16 @@ function connectionStatus() {
   indicator.dataset.status = indicator.textContent === "Siap scan" ? "good" : "";
 }
 
+function renderRollCount() {
+  const total = [...draft.items.values()].reduce((sum, row) => sum + row.quantity, 0);
+  get("scan-roll-count").textContent = `${rollNumber(total)} roll`;
+}
+
 function render() {
   const available = ready && navigator.onLine && acceptsScan(draft) && !pending && !reading;
   reader.readOnly = reading;
   reader.disabled = !ready || !navigator.onLine || !acceptsScan(draft) || Boolean(pending);
-  document.querySelectorAll("[data-mode]").forEach(button => {
+  modeButtons.forEach(button => {
     button.disabled = !available;
     button.setAttribute("aria-pressed", String(button.dataset.mode === draft.direction));
   });
@@ -68,17 +74,43 @@ function render() {
   get("scan-cancel").disabled = !acceptsScan(draft) || Boolean(pending) || !draft.direction || reading;
   note.disabled = !acceptsScan(draft) || Boolean(pending);
   const rows = [...draft.items.values()];
-  const active = draft.items.get(draft.activeId);
-  get("last-read").innerHTML = active ? `<strong>${h(active.name)}</strong><span class="muted">${h(active.rollWidthCm)} cm · ${h(active.sku)}</span>` : '<span class="muted">Belum ada bahan dipindai.</span>';
   list.innerHTML = rows.length ? `<ul class="scan-rows">${rows.map(row => `<li class="scan-row${row.materialId === draft.activeId ? " active" : ""}">
     <div><strong>${h(row.name)}</strong><span class="muted">${h(row.rollWidthCm)} cm · ${h(row.sku)}</span></div>
     <div class="balance"><span class="muted">Saldo</span><strong>${row.unavailable ? "—" : `${rollNumber(row.balance)} roll`}</strong></div>
-    <label><span class="muted">Jumlah</span><input type="number" min="1" step="1" inputmode="numeric" value="${h(row.invalidQuantity ?? row.quantity)}" data-quantity="${h(row.materialId)}" aria-label="Jumlah roll ${h(row.name)}" aria-invalid="${row.invalidQuantity !== undefined}" ${!available ? "disabled" : ""}></label>
+    <div class="scan-quantity">
+      <label class="muted" for="scan-quantity-${h(row.materialId)}">Jumlah</label>
+      <div class="scan-stepper">
+        <button type="button" data-quantity-step="-1" aria-label="Kurangi jumlah roll ${h(row.name)}" ${!available || row.quantity <= 1 ? "disabled" : ""}>−</button>
+        <input id="scan-quantity-${h(row.materialId)}" type="number" min="1" step="1" inputmode="numeric" value="${h(row.invalidQuantity ?? row.quantity)}" data-quantity="${h(row.materialId)}" aria-label="Jumlah roll ${h(row.name)}" aria-invalid="${row.invalidQuantity !== undefined}" ${!available ? "disabled" : ""}>
+        <button type="button" data-quantity-step="1" aria-label="Tambah jumlah roll ${h(row.name)}" ${!available || row.quantity >= Number.MAX_SAFE_INTEGER ? "disabled" : ""}>+</button>
+      </div>
+    </div>
     <button class="scan-remove" type="button" data-remove="${h(row.materialId)}" aria-label="Hapus ${h(row.name)} dari draft" ${!available ? "disabled" : ""}>×</button>
   </li>`).join("")}</ul>` : '<p class="scan-empty">Bahan yang dipindai akan muncul di sini.</p>';
   get("scan-kind-count").textContent = `${rows.length} jenis bahan`;
-  get("scan-roll-count").textContent = `${rollNumber(rows.reduce((sum, row) => sum + row.quantity, 0))} roll`;
+  renderRollCount();
   connectionStatus();
+}
+
+function applyQuantity(input, quantity) {
+  const id = input.dataset.quantity;
+  const item = draft.items.get(id);
+  // Keep the controls mounted when a manual edit is committed during a stepper click.
+  try {
+    setScanQuantity(draft, id, quantity);
+    input.value = item.quantity;
+    list.querySelector(".scan-row.active")?.classList.remove("active");
+    input.closest(".scan-row").classList.add("active");
+    message("");
+  } catch (error) {
+    item.invalidQuantity = input.value;
+    message(error.message, "error");
+  }
+  input.setAttribute("aria-invalid", String(item.invalidQuantity !== undefined));
+  const [decrement, increment] = input.parentElement.querySelectorAll("[data-quantity-step]");
+  decrement.disabled = item.quantity <= 1;
+  increment.disabled = item.quantity >= Number.MAX_SAFE_INTEGER;
+  renderRollCount();
 }
 
 function renderReview() {
@@ -88,10 +120,11 @@ function renderReview() {
   const reviewNote = get("review-note");
   reviewNote.textContent = note.value.trim();
   reviewNote.hidden = !reviewNote.textContent;
-  const sign = draft.direction === "IN" ? "+" : "−";
+  const incoming = draft.direction === "IN";
+  const sign = incoming ? "+" : "−";
   get("review-items").innerHTML = `<ul class="review-rows">${rows.map(row => `<li class="review-row">
     <div><strong>${h(row.name)}</strong><span class="muted">${h(row.rollWidthCm)} cm · ${h(row.sku)}</span></div>
-    <div class="review-numbers"><strong>${sign}${rollNumber(row.quantity)} roll</strong><span class="muted">${row.unavailable ? h(row.unavailable) : `Saldo ${rollNumber(row.balance)} → ${rollNumber(stockAfterScan(draft.direction, row))} roll`}</span></div>
+    <div class="review-numbers"><strong class="${incoming ? "positive" : "negative"}">${sign}${rollNumber(row.quantity)} roll</strong><span class="muted">${row.unavailable ? h(row.unavailable) : `Saldo ${rollNumber(row.balance)} → ${rollNumber(stockAfterScan(draft.direction, row))} roll`}</span></div>
   </li>`).join("")}</ul>`;
   const submitting = draft.phase === "SUBMITTING";
   get("review-cancel").disabled = submitting || Boolean(pending);
@@ -366,7 +399,7 @@ reader.addEventListener("keydown", async event => {
 
 reader.addEventListener("focus", connectionStatus);
 reader.addEventListener("blur", () => queueMicrotask(connectionStatus));
-document.querySelectorAll("[data-mode]").forEach(button => button.onclick = () => {
+modeButtons.forEach(button => button.onclick = () => {
   if (reading) return;
   try { selectScanMode(draft, button.dataset.mode); message(`Mode ${scanModeLabel(draft.direction)} aktif.`); }
   catch (error) { message(error.message, "error"); }
@@ -374,25 +407,26 @@ document.querySelectorAll("[data-mode]").forEach(button => button.onclick = () =
   focusReader();
 });
 list.onchange = event => {
-  const { quantity: id } = event.target.dataset;
-  if (!id || !acceptsScan(draft) || reading) return;
-  try {
-    setScanQuantity(draft, id, event.target.valueAsNumber);
-    message("");
-  } catch (error) {
-    draft.items.get(id).invalidQuantity = event.target.value;
-    message(error.message, "error");
-  }
-  render();
+  const input = event.target;
+  if (!input.dataset.quantity || !acceptsScan(draft) || reading) return;
+  applyQuantity(input, input.valueAsNumber);
 };
 list.onclick = event => {
-  const { remove: id } = event.target.closest("[data-remove]")?.dataset || {};
-  if (!id || !acceptsScan(draft) || reading) return;
-  draft.items.delete(id);
-  if (draft.activeId === id) draft.activeId = [...draft.items.keys()].at(-1);
-  message("");
-  render();
-  focusReader();
+  const button = event.target.closest("button");
+  if (!button || button.disabled || !acceptsScan(draft) || reading) return;
+  const { quantityStep, remove } = button.dataset;
+  if (quantityStep) {
+    const input = button.parentElement.querySelector("[data-quantity]");
+    const { quantity } = draft.items.get(input.dataset.quantity);
+    applyQuantity(input, quantity + Number(quantityStep));
+    if (event.detail > 0) focusReader();
+  } else if (remove) {
+    draft.items.delete(remove);
+    if (draft.activeId === remove) draft.activeId = [...draft.items.keys()].at(-1);
+    message("");
+    render();
+    focusReader();
+  }
 };
 get("scan-cancel").onclick = () => { if (!reading) cancel(); };
 get("review-cancel").onclick = cancel;
