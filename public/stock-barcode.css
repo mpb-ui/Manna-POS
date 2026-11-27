@@ -1,0 +1,34 @@
+.barcode-layout{display:grid;grid-template-columns:minmax(248px,325px) minmax(0,1fr);gap:20px;align-items:start}
+.barcode-controls{padding:16px;display:grid;gap:14px}
+.barcode-fieldset{display:grid;gap:6px;border:0;padding:0;min-width:0}
+.barcode-fieldset legend,.printer-field{font-size:14px;font-weight:600}
+.barcode-fieldset legend{padding:0;margin-bottom:6px}
+.printer-field{display:grid;gap:4px}
+.barcode-checkbox{display:flex;gap:8px;align-items:center;min-height:32px;font-size:14px;cursor:pointer}
+.barcode-checkbox input{flex:none;margin:0}
+.barcode-select-actions{display:flex;gap:0 10px;flex-wrap:wrap}
+.barcode-select-actions button{padding-inline:0;font-size:12px;min-height:36px}
+.barcode-materials{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.barcode-materials .barcode-checkbox{min-height:44px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.barcode-materials .barcode-checkbox:last-child{border-bottom:0}
+.barcode-materials span span{display:block}
+.barcode-preview{min-width:0}
+.preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.barcode-paper{background:white;color:#000;border:1px solid var(--line);border-radius:9px;padding:4mm;min-height:110px}
+.barcode-paper h3{font-size:14px;margin:0 0 2mm}
+.barcode-group+ .barcode-group{margin-top:4mm}
+.barcode-labels{display:grid;grid-template-columns:repeat(var(--paper-columns,2),minmax(0,1fr));gap:3mm}
+.barcode-label{grid-column:span var(--label-span,1);display:grid;align-content:space-between;justify-items:center;gap:1mm;min-width:0;padding:2.7mm 2.8mm;border:0.2mm solid #a4b1bf;border-radius:1.3mm;text-align:center}
+.barcode-label strong{font-size:13px;line-height:1.2;overflow-wrap:anywhere;max-width:100%}
+.barcode-label p{font-size:11px}
+.barcode-label code{font-size:10px;overflow-wrap:anywhere;max-width:100%;line-height:1.3}
+.barcode-label svg{display:block;max-width:100%;height:auto}
+@media(max-width:780px){.barcode-layout{grid-template-columns:1fr}}
+@media print{
+  .barcode-page{background:white;color:black}
+  .barcode-page .scan-header,.barcode-page .scan-heading,.barcode-controls,.preview-heading,.barcode-page #scan-login,.barcode-page #session-message{display:none!important}
+  .barcode-page .scan-main,.barcode-layout,.barcode-preview,.barcode-paper{display:block;padding:0;margin:0;max-width:none;min-height:0;border:0}
+  .barcode-group h3{break-after:avoid}
+  .barcode-label{break-inside:avoid;border-color:#777}
+  .barcode-label svg{max-width:none}
+}

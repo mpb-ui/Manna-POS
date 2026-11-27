@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "jsbarcode": "3.12.3",
     "pdf-lib": "1.17.1",
     "pg": "^8.16.3",
     "proxy-addr": "2.0.8",

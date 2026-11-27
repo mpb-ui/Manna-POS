@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Scan · Manna Print</title>
+  <link rel="icon" href="/manna-logogram.png">
+  <link rel="stylesheet" href="/stock-scan.css">
+  <script type="module" src="/stock-scan.js"></script>
+</head>
+<body>
+  <header class="scan-header">
+    <div class="header-inner">
+      <a href="/#stock" class="scan-brand" aria-label="Manna Print, kembali ke Stok Bahan"><img src="/manna-print-logo-white.png" width="137" alt="Manna Print"></a>
+      <a href="/#stock" class="stock-back">Stok Bahan</a>
+      <div class="scan-account" id="scan-account" hidden><span id="account-name"></span><button type="button" id="scan-sign-out">Keluar</button></div>
+    </div>
+  </header>
+  <main class="scan-main">
+    <form id="scan-login" class="scan-card login-card" hidden>
+      <h1>Masuk ke Stock Scan</h1>
+      <label>Username<input name="username" autocomplete="username" required></label>
+      <label>PIN<input type="password" name="pin" inputmode="numeric" autocomplete="current-password" required></label>
+      <p class="login-error" role="alert"></p>
+      <button type="submit" class="primary">Masuk</button>
+    </form>
+    <p id="session-message" class="scan-notice" role="status" hidden></p>
+    <div id="workspace" hidden>
+      <div class="scan-heading">
+        <h1>Stock Scan</h1>
+        <div class="scan-statuses">
+          <span class="status-pill" id="scan-online"></span>
+          <span class="status-pill" id="scan-ready"></span>
+          <a class="button secondary" id="scan-print" href="/stock/scan/print" hidden>Cetak Barcode</a>
+        </div>
+      </div>
+      <div class="scan-grid">
+        <section aria-labelledby="reader-title" class="scan-card scan-reader">
+          <h2 id="reader-title">Pindai Barcode</h2>
+          <fieldset class="scan-modes" aria-label="Mode transaksi">
+            <button type="button" class="mode" data-mode="IN" aria-pressed="false">Stok Masuk</button>
+            <button type="button" class="mode" data-mode="OUT" aria-pressed="false">Stok Keluar</button>
+          </fieldset>
+          <label class="scan-input-label" for="barcode-input">Input scanner</label>
+          <input id="barcode-input" placeholder="Pindai barcode di sini" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="165" aria-describedby="scan-hint">
+          <p id="scan-hint" class="muted">Gunakan scanner mode HID Keyboard dengan akhiran Enter.</p>
+          <button type="button" id="catalog-retry" class="secondary" hidden>Muat ulang bahan</button>
+          <div class="scan-last" aria-labelledby="last-title">
+            <h3 id="last-title">Bahan terakhir</h3>
+            <div id="last-read"></div>
+          </div>
+        </section>
+        <section aria-labelledby="draft-title" class="scan-card scan-draft">
+          <header class="draft-head"><h2 id="draft-title">Bahan Dipindai</h2><span id="draft-mode" class="mode-label"></span></header>
+          <div id="scan-draft-list"></div>
+          <div class="draft-bottom">
+            <label class="scan-note" for="scan-note">Catatan (opsional)</label>
+            <input type="text" id="scan-note" maxlength="250" placeholder="Tambahkan catatan mutasi">
+            <footer class="draft-footer">
+              <div class="draft-totals"><span id="scan-kind-count">0 jenis bahan</span><strong id="scan-roll-count">0 roll</strong></div>
+              <div class="scan-actions"><button type="button" id="scan-cancel" class="secondary">Batalkan Scan</button><button type="button" id="scan-review" class="primary">Selesai Scan</button></div>
+            </footer>
+          </div>
+        </section>
+        <p id="scan-message" class="scan-notice" role="status" aria-live="polite"></p>
+      </div>
+      <section aria-labelledby="history-title" class="scan-card scan-history">
+        <header class="draft-head"><h2 id="history-title">Riwayat Saya</h2><span class="muted">WITA</span></header>
+        <div id="scan-history-list"></div>
+        <button type="button" class="secondary" id="scan-more" hidden>Muat lainnya</button>
+      </section>
+    </div>
+  </main>
+  <dialog id="scan-dialog" aria-labelledby="review-title" aria-describedby="review-summary">
+    <div class="review-head">
+      <h2 id="review-title" tabindex="-1"></h2>
+      <p id="review-summary"></p>
+    </div>
+    <div class="review-content">
+      <div id="review-items"></div>
+      <p id="review-note" class="muted" hidden></p>
+      <p id="review-message" class="scan-notice" role="status" aria-live="polite" hidden></p>
+    </div>
+    <footer class="review-footer">
+      <button type="button" class="text-button" id="review-edit" hidden>Ubah draft</button>
+      <div class="scan-actions"><button type="button" id="review-cancel" class="secondary">Batalkan</button><button type="button" id="review-confirm" class="primary">Konfirmasi</button></div>
+    </footer>
+  </dialog>
+</body>
+</html>

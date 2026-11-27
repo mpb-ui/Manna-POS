@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cetak Barcode · Manna Print</title>
+  <link rel="icon" href="/manna-logogram.png">
+  <link rel="stylesheet" href="/stock-scan.css">
+  <link rel="stylesheet" href="/stock-barcode.css">
+  <script defer src="/vendor/jsbarcode-code128.min.js"></script>
+  <script type="module" src="/stock-barcode.js"></script>
+</head>
+<body class="barcode-page">
+  <header class="scan-header">
+    <div class="header-inner">
+      <a href="/#stock" class="scan-brand" aria-label="Manna Print, kembali ke Stok Bahan"><img src="/manna-print-logo-white.png" width="137" alt="Manna Print"></a>
+      <a href="/#stock" class="stock-back">Stok Bahan</a>
+      <div class="scan-account" id="scan-account" hidden><span id="account-name"></span><button type="button" id="scan-sign-out">Keluar</button></div>
+    </div>
+  </header>
+  <main class="scan-main">
+    <form id="scan-login" class="scan-card login-card" hidden>
+      <h1>Masuk untuk Cetak Barcode</h1>
+      <label>Username<input name="username" autocomplete="username" required></label>
+      <label>PIN<input type="password" name="pin" inputmode="numeric" autocomplete="current-password" required></label>
+      <p class="login-error" role="alert"></p>
+      <button type="submit" class="primary">Masuk</button>
+    </form>
+    <p id="session-message" class="scan-notice" role="status" hidden></p>
+    <div id="workspace" hidden>
+      <div class="scan-heading">
+        <h1>Cetak Barcode</h1>
+        <button type="button" id="barcode-print" class="primary" disabled>Print</button>
+      </div>
+      <div class="barcode-layout">
+        <section class="scan-card barcode-controls" aria-labelledby="label-selection">
+          <h2 id="label-selection">Pilih Label</h2>
+          <label class="printer-field">Ukuran kertas
+            <select id="paper-size"><option value="a4">A4</option><option value="a3plus">A3+ (329 × 483 mm)</option></select>
+          </label>
+          <fieldset class="barcode-fieldset">
+            <legend>Bahan Per Roll</legend>
+            <label class="printer-field"><span class="muted">Kategori bahan</span><select id="barcode-category"></select></label>
+            <div class="barcode-select-actions">
+              <button type="button" class="text-button" id="select-category">Pilih kategori ini</button>
+              <button type="button" class="text-button" id="select-all">Pilih semua bahan</button>
+              <button type="button" class="text-button" id="select-none">Kosongkan</button>
+            </div>
+            <div id="barcode-materials" class="barcode-materials"></div>
+          </fieldset>
+          <fieldset class="barcode-fieldset">
+            <legend>Perintah dan Jumlah</legend>
+            <label class="barcode-checkbox"><input type="checkbox" id="print-commands" checked> Barcode perintah</label>
+            <label class="barcode-checkbox"><input type="checkbox" id="print-quantities" checked> Barcode jumlah</label>
+          </fieldset>
+          <p class="muted">Gunakan skala 100% dan matikan header serta footer di dialog print.</p>
+          <p id="barcode-message" role="status" class="scan-notice"></p>
+        </section>
+        <section class="barcode-preview" aria-labelledby="preview-heading">
+          <div class="preview-heading"><h2 id="preview-heading">Print Preview</h2><span id="preview-count" class="muted"></span></div>
+          <div class="barcode-paper" id="barcode-paper"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

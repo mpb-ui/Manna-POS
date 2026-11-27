@@ -1,6 +1,7 @@
 import { normalizedStockUnit, stockMethodLabel, stockSetupNeedsCount } from "./stock-methods.js";
 import { compareMasterNames } from "./master-filters.js";
 import { witaDay } from "./order-rules.js";
+import { signalStockUpdate, stockScanAccess, stockUpdatedKey } from "./stock-scan-rules.js";
 
 const stockDateFormat = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Makassar" });
 const stockDateLabel = day => stockDateFormat.format(new Date(`${day}T00:00:00+08:00`));
@@ -17,6 +18,41 @@ export function createStockUi(c) {
   const formatted = value => Number(value ?? 0).toLocaleString("id-ID", { maximumFractionDigits: 4 });
   const timestamp = value => value && Number.isFinite(Date.parse(value))
     ? c.dateFormat.format(new Date(value)).replace(/(\d{1,2})\.(\d{2})$/, "$1:$2") : "—";
+  let refreshPending = false;
+  let refreshing = false;
+  let lastRefresh = 0;
+  const currentStockView = () => c.state.view === "stock" && c.can("stock.view") && c.root.querySelector(".stock-page");
+
+  async function refreshStock() {
+    if (!currentStockView() || c.dialog.open || refreshing) return;
+    const userId = c.state.currentUser?.id;
+    refreshing = true;
+    refreshPending = false;
+    try {
+      const { inventory } = await c.api("/api/stock-balances");
+      if (!currentStockView() || c.state.currentUser?.id !== userId) return;
+      if (c.dialog.open) { refreshPending = true; return; }
+      c.state.inventory = inventory;
+      renderStock();
+    } catch (error) {
+      if (currentStockView()) c.toast(error.message, "error");
+    } finally {
+      refreshing = false;
+      if (refreshPending && !c.dialog.open) refreshStock();
+    }
+  }
+
+  window.addEventListener("storage", event => {
+    if (event.key !== stockUpdatedKey || !currentStockView()) return;
+    refreshPending = true;
+    refreshStock();
+  });
+  window.addEventListener("focus", () => {
+    if (!currentStockView() || Date.now() - lastRefresh < 15000) return;
+    refreshPending = true;
+    refreshStock();
+  });
+  c.dialog.addEventListener("close", () => { if (refreshPending) refreshStock(); });
   const canConfigureStock = () => c.can("stock.view") && c.can("stock.adjust") && c.can("master.materials");
   const countSnapshot = stock => ({
     expectedQuantity:Number(stock.quantity), expectedUnit:stock.unit, expectedMethod:stock.stockMethod, expectedUpdatedAt:stock.updatedAt
@@ -177,14 +213,26 @@ export function createStockUi(c) {
     const invoice = move.orderId && move.orderCode && c.can("orders.view")
       ? `<button type="button" class="movement-order-link" data-stock-order="${h(move.orderId)}" aria-haspopup="dialog" aria-label="Detail pesanan ${h(move.orderCode)}">${h(move.orderCode)}</button>`
       : h(move.orderCode || "");
+    const source = move.source === "BARCODE" ? "Barcode"
+      : move.source === "CORRECTION" ? "Koreksi Stok"
+      : count ? "Stok Opname"
+      : ["AUTO_USE", "DEFECT_EXCHANGE"].includes(move.type) ? "Otomatis POS"
+      : move.type ? "Input Manual" : "";
+    const attribution = [source, move.actor].filter(Boolean).map(h).join(" · ");
+    const correction = move.source === "BARCODE" && stockScanAccess(c.state.currentUser).correct
+      ? `<button type="button" class="movement-order-link" data-stock-correct="${h(move.id)}" aria-haspopup="dialog">Koreksi</button>` : "";
     return `<article class="stock-movement">
       <div class="stock-movement-top"><strong>${h(move.productName)}</strong><span class="stock-movement-delta ${tone}">${quantity} ${h(move.unit || "")}</span></div>
       <p>${h(move.reason)}${invoice ? ` · ${invoice}` : ""}${count ? `<br>Saldo lama: ${formatted(move.previousBalance)} ${h(move.previousUnit)}` : ""}</p>
-      <time datetime="${h(move.createdAt)}">${h(timestamp(move.createdAt))}</time>
+      <div class="stock-movement-meta">
+        <div class="stock-movement-labels"><time datetime="${h(move.createdAt)}">${h(timestamp(move.createdAt))}</time>${attribution ? `<small class="stock-movement-source">${attribution}</small>` : ""}</div>
+        ${correction}
+      </div>
     </article>`;
   }
 
   function renderStock() {
+    lastRefresh = Date.now();
     const { inventory, materials } = c.state;
     const legacyIds = new Set(materials.filter(material => material.lfLegacyGroup).map(material => material.id));
     const categories = [...new Set(inventory.map(stock => stock.category || "Lainnya"))].sort(compareMasterNames);
@@ -192,6 +240,7 @@ export function createStockUi(c) {
     const selectedDate = c.state.stockMovementDate || witaDay();
     const allowActions = c.can("stock.adjust");
     const allowSetup = canConfigureStock();
+    const scanAccess = stockScanAccess(c.state.currentUser);
     const stockRow = stock => {
       const category = h(stock.category || "Lainnya");
       const sku = h(stock.sku);
@@ -216,7 +265,12 @@ export function createStockUi(c) {
       </tr>`;
     };
     c.root.innerHTML = `<div class="stock-page unified-page">
-      <header class="page-toolbar"><h1>Stok Bahan</h1></header>
+      <header class="page-toolbar"><h1>Stok Bahan</h1>
+        <div class="stock-scan-links">
+          ${scanAccess.print ? '<a class="secondary" href="/stock/scan/print">Cetak Barcode</a>' : ""}
+          ${scanAccess.scan ? '<a class="primary" href="/stock/scan">Stock Scan</a>' : ""}
+        </div>
+      </header>
       <div class="stock-grid">
         <section class="panel stock-list" aria-labelledby="stock-list-title">
           <div class="panel-head stock-list-head"><h2 id="stock-list-title">Daftar Bahan</h2>
@@ -278,6 +332,15 @@ export function createStockUi(c) {
     let openingOrder = false;
 
     movementList.onclick = async event => {
+      const correct = event.target.closest("[data-stock-correct]");
+      if (correct) {
+        if (correct.disabled || c.dialog.open || !stockScanAccess(c.state.currentUser).correct) return;
+        correct.disabled = true;
+        try { await openScanCorrection(correct); }
+        catch (error) { if (correct.isConnected) c.toast(error.message, "error"); }
+        finally { correct.disabled = false; }
+        return;
+      }
       const button = event.target.closest("[data-stock-order]");
       if (!button || openingOrder || c.dialog.open || c.state.view !== "stock" || !c.can("orders.view")) return;
       const userId = c.state.currentUser?.id;
@@ -341,6 +404,59 @@ export function createStockUi(c) {
     };
     more.onclick = loadPage;
     loadPage();
+  }
+
+  async function openScanCorrection(button) {
+    const userId = c.state.currentUser?.id;
+    const path = `/api/stock/scan/movements/${encodeURIComponent(button.dataset.stockCorrect)}/correction`;
+    const details = await c.api(path);
+    if (!button.isConnected || c.state.currentUser?.id !== userId || !currentStockView() || c.dialog.open) return;
+    const { current, original, correction, issue } = details;
+    const maximum = Math.abs(original.change);
+    const origin = `${original.change > 0 ? "+" : "−"}${formatted(maximum)} roll · ${h(original.actor)} · ${h(timestamp(original.createdAt))} WITA`;
+    const detail = c.showMasterDialog("Koreksi Stok Barcode", `
+      <form id="scan-correction-form" class="master-form" data-compact-master-form>
+        <div class="stock-entry-summary"><span>${h(original.productName)} · ${h(original.rollWidthCm)} cm</span><strong>${h(original.sku)}</strong></div>
+        <p class="product-note">Mutasi asal ${origin}</p>
+        ${issue ? `<p role="status">${h(issue)}${correction ? ` ${h(correction.actor)} · ${h(timestamp(correction.createdAt))} WITA.` : ""}</p>
+          <div class="form-footer"><button type="button" class="secondary" data-close-stock>Tutup</button></div>`
+        : `${row(original.change > 0 ? "Roll dikeluarkan" : "Roll dikembalikan", number("quantity", maximum, "roll", `min="1" max="${maximum}" step="1" required`))}
+          <p class="product-note">Saldo saat ini <strong>${formatted(current.balance)} roll</strong>. Setiap mutasi asal memiliki satu kesempatan koreksi.</p>
+          ${row("Alasan koreksi", '<input name="reason" maxlength="250" required>')}
+          <label class="stock-check"><input type="checkbox" name="physicalConfirmed" required> Saya sudah memeriksa kondisi fisik roll dan jumlah koreksi.</label>
+          ${stockFooter("Simpan Koreksi")}`}
+      </form>`, "Stok Bahan");
+    const form = detail.querySelector("#scan-correction-form");
+    if (issue) {
+      form.querySelector("[data-close-stock]").onclick = () => c.dialog.close();
+      return;
+    }
+    let version = current.version;
+    let request = null;
+    const submit = form.querySelector("[type=submit]");
+    bindSave(form, async values => {
+      request ||= { requestId: crypto.randomUUID(), quantity: Number(values.quantity), reason: values.reason, physicalConfirmed: values.physicalConfirmed === "on", version };
+      try { await c.api(path, { method: "POST", body: JSON.stringify(request) }); }
+      catch (error) {
+        if (["SCAN_CORRECTION_REVIEW", "SCAN_INPUT"].includes(error.code)) {
+          request = null;
+          form.querySelectorAll("input").forEach(input => { input.readOnly = false; });
+          const latest = await c.api(path);
+          if (latest.issue) throw new Error(latest.issue);
+          version = latest.current.version;
+          form.querySelector(".product-note strong").textContent = `${formatted(latest.current.balance)} roll`;
+          form.elements.physicalConfirmed.checked = false;
+        } else {
+          form.querySelectorAll("input:not([type=checkbox])").forEach(input => { input.readOnly = true; });
+          submit.textContent = "Cek & ulangi";
+        }
+        throw error;
+      }
+      refreshPending = true;
+      c.dialog.close();
+      signalStockUpdate();
+      c.toast("Koreksi stok tersimpan");
+    });
   }
   function openStockEntry(stock) {
     if (!stock || stock.stockNeedsCount) return;

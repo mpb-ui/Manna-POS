@@ -100,7 +100,7 @@ const atkGroups = ["Amplop", "Alat tulis", "Map & arsip", "Perekat", "Kertas & l
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], pics: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], materialCategories: [], saleUnits: [], priceBases: [] }, categoryScroll: 0,
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [],
-  cart: [], view: "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", paperProductTab: PAPER_PRODUCT_TABS[0][0], atkGroup: "Semua", editingOrderId: null,
+  cart: [], view: location.hash === "#stock" ? "stock" : "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", paperProductTab: PAPER_PRODUCT_TABS[0][0], atkGroup: "Semua", editingOrderId: null,
   masterTab: "products", categorySettingsKind: "products", projectView: "list", projectSearch: "", projectStatus: "all", projectDeadlineSort: "nearest",
   stockSearch: "", stockCategory: "", stockMovementDate: "",
   projectCollapsed: new Set(["DIAMBIL"]),
