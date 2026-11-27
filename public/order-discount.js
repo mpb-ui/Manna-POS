@@ -9,37 +9,40 @@ export function discountLocked(order) {
 export function settledOrder(order) {
   return Number(order.paidAmount || 0) >= Number(order.total || 0) && (Number(order.total) > 0 || order.paymentConfirmed);
 }
-// Largest remainder, in integer rupiah. Ties follow invoice line order, and even
-// a one-rupiah discount reconciles exactly across product/category reports.
+// Allocate whole rupiah by weight, breaking ties in the supplied order.
+export function allocateRupiah(total, weights) {
+  const denominator = BigInt(weights.reduce((sum, weight) => sum + weight, 0));
+  const amount = BigInt(total);
+  const parts = weights.map((weight, index) => {
+    const numerator = BigInt(weight) * amount;
+    return { index, share: Number(numerator / denominator), remainder: numerator % denominator };
+  });
+  let remaining = total - parts.reduce((sum, part) => sum + part.share, 0);
+  const ranked = [...parts].sort((a,b) => a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1);
+  for (const part of ranked) {
+    if (!remaining) break;
+    part.share++;
+    remaining--;
+  }
+  return parts.map(part => part.share);
+}
+
 export function discountedItemTotals(order) {
   const values = (order.items || []).map(item => Number(item.subtotal || 0));
   const discount = invoiceDiscount(order);
   if (!discount) return values;
   const gross = values.reduce((sum, value) => sum + value, 0);
   if (!Number.isSafeInteger(gross) || gross <= 0 || discount > gross || !Number.isSafeInteger(discount) || values.some(value => !Number.isSafeInteger(value) || value < 0)) throw new Error('Nilai diskon pesanan tidak valid');
-  const denominator = BigInt(gross), cut = BigInt(discount);
-  const shares = values.map((value, index) => { const numerator = BigInt(value) * cut; return { index, amount: Number(numerator / denominator), remainder: numerator % denominator }; });
-  let remaining = discount - shares.reduce((sum, share) => sum + share.amount, 0);
-  const ranked = [...shares].sort((a,b) => a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1);
-  for (const share of ranked) { if (!remaining) break; share.amount++; remaining--; }
-  return values.map((value,index) => value - shares[index].amount);
+  const shares = allocateRupiah(discount, values);
+  return values.map((value,index) => value - shares[index]);
 }
 export function chargedItemTotals(order, { beforeDiscount = false } = {}) {
   const values = beforeDiscount ? (order.items || []).map(item => Number(item.subtotal || 0)) : discountedItemTotals(order);
   const net = values.reduce((sum, value) => sum + value, 0);
   const adjustment = beforeDiscount && order.taxGrossUp ? grossUpQuote(net, order.taxGrossUp.rateBps).adjustment : taxAdjustment(order);
   if (!adjustment || !net) return values;
-  const denominator = BigInt(net), uplift = BigInt(adjustment);
-  const parts = values.map((value, index) => {
-    const numerator = BigInt(value) * uplift;
-    return { index, amount: Number(numerator / denominator), remainder: numerator % denominator };
-  });
-  let remaining = adjustment - parts.reduce((sum, part) => sum + part.amount, 0);
-  for (const part of [...parts].sort((a,b) => a.remainder === b.remainder ? a.index - b.index : a.remainder > b.remainder ? -1 : 1)) {
-    if (!remaining) break;
-    part.amount++; remaining--;
-  }
-  return values.map((value,index) => value + parts[index].amount);
+  const shares = allocateRupiah(adjustment, values);
+  return values.map((value,index) => value + shares[index]);
 }
 
 export function discountPrintLines(order, money) {
