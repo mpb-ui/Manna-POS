@@ -124,7 +124,7 @@ function sanitizeOrder(order, user) {
   if (!canSeeMoney) {
     delete copy.grossTotal; delete copy.invoiceDiscount; delete copy.taxGrossUp; delete copy.cashReceipts; delete copy.customerId; delete copy.total; delete copy.paidAmount; delete copy.payments; delete copy.paymentStatus; delete copy.paymentConfirmed;
     copy.items.forEach((item) => {
-      ["unitPrice", "originalUnitPrice", "baseTotal", "finishingTotal", "fileServiceTotal", "templateDesignTotal", "subtotal"].forEach((key) => delete item[key]);
+      ["unitPrice", "originalUnitPrice", "baseTotal", "finishingTotal", "fileServiceTotal", "templateDesignTotal", "subtotal", "shirtVariantSubtotals"].forEach((key) => delete item[key]);
       (item.finishing || []).forEach((finish) => { delete finish.unitPrice; delete finish.subtotal; });
       if (item.fileService) delete item.fileService.price;
     });

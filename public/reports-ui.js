@@ -7,6 +7,7 @@ const compactDay = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "sh
 const compactDate = day => compactDay.format(new Date(`${day}T00:00:00Z`));
 const witaDate = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeZone: 'Asia/Makassar' });
 const witaTime = new Intl.DateTimeFormat('id-ID', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Asia/Makassar' });
+const isRankingTab = tab => ['categories', 'products', 'machines'].includes(tab);
 function shiftDay(day, offset) {
   const date = new Date(`${day}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + offset);
@@ -52,7 +53,7 @@ export function createReportsUI(c) {
     if(tab==='payments')return [date(r.date),inv(r.orderId,r.code),e(r.customer),e(kind(r)),e(method(r.method)),r.paid>=0?money(r.paid):'-',r.paid<0?money(-r.paid):'-'];
     if(tab==='receivables')return [date(r.date),inv(r.id,r.code),e(r.customer),money(r.sales),money(r.paid),money(r.outstanding)];
     if(tab==='po')return [date(r.createdAt),inv(r.orderId,r.code),e(r.customer),e(r.poNumber)];
-    return [index+1,`${e(r.label)}${r.category?`<small>${e(r.category)}</small>`:''}`,Number(r.orders || 0).toLocaleString('id-ID'),qty(r),...(report.capabilities.money?[money(r.sales)]:[])];
+    return [index+1,e(r.label),Number(r.orders || 0).toLocaleString('id-ID'),qty(r),...(report.capabilities.money?[money(r.sales)]:[])];
   };
   const scopeNote=()=>report.range.locked?'Akses dibatasi pada data hari ini.':report.range.scope==='own'?'Hanya transaksi yang dibuat atau ditugaskan kepada Anda.':'';
   function table(data, offset = 0, interactive = true) {
@@ -70,17 +71,44 @@ export function createReportsUI(c) {
     </table></div>`;
   }
   async function mount() {if(!filters.from){const t=witaDay();filters.from=t.slice(0,7)+'-01';filters.to=t;}await refresh();}
-  async function refresh() {
-    const token=++generation,identity=c.identity();
-    root.setAttribute('aria-busy','true');
-    if(!report)root.innerHTML='<div class="report-page report-foundation"><header class="page-toolbar"><h1>Laporan</h1></header><div class="report-body"><p>Memuat laporan…</p></div></div>';
-    try{
-      const next=await api('/api/reports?'+new URLSearchParams(Object.entries(filters).filter(([,v])=>v)));
-      if(token!==generation || identity!==c.identity() || !c.isActive())return;
+  function reportQuery(targetTab) {
+    return isRankingTab(targetTab) ? {from:filters.from, to:filters.to} : filters;
+  }
+
+  async function refresh(targetTab = tab) {
+    const token = ++generation, identity = c.identity();
+    const active = () => token === generation && identity === c.identity() && c.isActive();
+    const query = new URLSearchParams(Object.entries(reportQuery(targetTab)).filter(([,value]) => value));
+    root.setAttribute('aria-busy', 'true');
+    if (!report) root.innerHTML = '<div class="report-page report-foundation"><header class="page-toolbar"><h1>Laporan</h1></header><div class="report-body"><p>Memuat laporan…</p></div></div>';
+    try {
+      const next = await api('/api/reports?' + query);
+      if (!active()) return;
+      const changedTab = targetTab !== tab;
+      report = next;
+      filters = {...filters, from:next.range.from, to:next.range.to};
+      if (changedTab) activateTab(targetTab);
       selected = null;
-      report=next;filters={...filters,from:next.range.from,to:next.range.to};page=1;draw();
-    }catch(error){if(token===generation && c.isActive()){toast(error.message,'error');if(report){filters={from:report.range.from,to:report.range.to,paymentStatus:report.paymentStatus,paymentMethod:report.paymentMethod};draw();}else root.innerHTML='<div class="category-empty"><strong>Laporan tidak dapat dimuat</strong><button class="secondary" data-report-retry>Coba lagi</button></div>';root.querySelector('[data-report-retry]')?.addEventListener('click',refresh);}}
-    finally{if(token===generation)root.removeAttribute('aria-busy');}
+      page = 1;
+      draw();
+      if (changedTab) focusTab();
+    } catch (error) {
+      if (!active()) return;
+      toast(error.message, 'error');
+      if (report) {
+        filters = {...filters, from:report.range.from, to:report.range.to};
+        if (!isRankingTab(tab)) {
+          filters.paymentStatus = report.paymentStatus;
+          filters.paymentMethod = report.paymentMethod;
+        }
+        draw();
+      } else {
+        root.innerHTML = '<div class="category-empty"><strong>Laporan tidak dapat dimuat</strong><button class="secondary" data-report-retry>Coba lagi</button></div>';
+        root.querySelector('[data-report-retry]').onclick = () => refresh();
+      }
+    } finally {
+      if (token === generation) root.removeAttribute('aria-busy');
+    }
   }
   function metricsHtml() {
     const { sales, paid, orders } = report.summary;
@@ -113,8 +141,9 @@ export function createReportsUI(c) {
     </div>`;
   }
 
-  function filtersHtml(ranking) {
-    const payment = report.capabilities.money ? `
+  function filtersHtml() {
+    const ranking = isRankingTab(tab);
+    const payment = report.capabilities.money && !ranking ? `
       <select id="report-payment" aria-label="Status pembayaran">
         <option value="">Status pembayaran</option>
         <option value="BELUM_LUNAS" ${filters.paymentStatus === 'BELUM_LUNAS' ? 'selected' : ''}>Belum Lunas</option>
@@ -140,7 +169,7 @@ export function createReportsUI(c) {
     if (tab === 'returns') return 'Retur penggantian barang memotong stok tanpa menambah omzet atau uang masuk.';
     if (tab === 'po') return 'Dokumen PO adalah persetujuan pembelian; uang masuk dicatat saat pembayaran diterima.';
     const scope = tab === 'sales' ? 'Status pembayaran dan piutang mengikuti kondisi akhir periode.' : 'Penjualan bersih setelah diskon; koreksi mengikuti tanggal pembatalan.';
-    return scope + (filters.paymentMethod ? ' Filter metode mencakup seluruh nilai invoice yang memakai metode tersebut.' : '');
+    return scope + (report.paymentMethod ? ' Filter metode mencakup seluruh nilai invoice yang memakai metode tersebut.' : '');
   }
 
   function draw() {
@@ -151,7 +180,6 @@ export function createReportsUI(c) {
     page = Math.min(page, pages);
     const dateLabel = `${compactDate(filters.from)} – ${compactDate(filters.to)}`;
     const offset = (page - 1) * pageSize;
-    const ranking = ['categories', 'products', 'machines'].includes(tab);
     root.innerHTML = `<div class="report-page report-foundation"><header class="page-toolbar"><h1>Laporan</h1></header>
       <div class="report-body">
         <div class="report-period">
@@ -167,7 +195,7 @@ export function createReportsUI(c) {
         <div class="report-layout">
           <section class="report-data" aria-label="${e(title())}">
             ${navigationHtml()}
-            ${filtersHtml(ranking)}
+            ${filtersHtml()}
             <p id="report-table-note" class="${tab === 'sales' || tab === 'returns' ? 'sr-only' : 'report-table-note'}">${tableNote()}</p>
             ${tab === 'returns' ? goodsReturnReportHtml(report, e, money, c.canOpenOrder() ? link : undefined) : table(data.slice(offset, offset + pageSize), offset)}
             ${tab !== 'returns' && pages > 1 ? `<div class="report-pagination">
@@ -206,13 +234,29 @@ export function createReportsUI(c) {
     root.querySelector('#report-print')?.addEventListener('click', print);
   }
 
-  function selectTab(value) {
+  function activateTab(value) {
     selected = null;
     tab = value;
-    sort = { key: ['categories', 'products', 'machines'].includes(tab) ? report.capabilities.money ? 'sales' : 'orders' : 'date', direction: -1 };
+    const rankingOrder = report.capabilities.money ? 'sales' : 'orders';
+    sort = { key: isRankingTab(tab) ? rankingOrder : 'date', direction: -1 };
     page = 1;
+  }
+
+  function focusTab() {
+    root.querySelector("[data-report-tab='" + tab + "']")?.focus({ preventScroll: true });
+  }
+
+  function selectTab(value) {
+    const {from, to, paymentStatus = '', paymentMethod = ''} = reportQuery(value);
+    if (report.range.from !== from || report.range.to !== to
+        || report.paymentStatus !== paymentStatus || report.paymentMethod !== paymentMethod) {
+      return refresh(value);
+    }
+    generation++;
+    root.removeAttribute('aria-busy');
+    activateTab(value);
     draw();
-    root.querySelector(`[data-report-tab="${value}"]`)?.focus({ preventScroll: true });
+    focusTab();
   }
   function modal(name,body){const d=document.createElement('dialog');d.className='report-dialog';d.innerHTML=`<div class="detail-head"><h2>${e(name)}</h2><button type="button" class="detail-close" aria-label="Tutup">×</button></div><div class="report-dialog-body">${body}</div>`;document.body.append(d);d.querySelector('.detail-close').onclick=()=>d.close();d.onclose=()=>d.remove();d.showModal();return d;}
   function bindReportRange(trigger) {
@@ -370,8 +414,16 @@ export function createReportsUI(c) {
     if(tab==='po')return {headers:headers(),data:data.map(r=>[date(r.createdAt),r.code,r.customer,r.poNumber])};
     return {headers:['#',title(),'Invoice','Jumlah terjual','Satuan',...(report.capabilities.money?['Penjualan']:[])],data:data.map((r,i)=>[i+1,r.label,r.orders,r.quantities?.length===1?r.quantities[0].quantity:(r.quantities || []).map(q=>`${q.quantity} ${q.unit}`).join('; '),(r.quantities || []).map(q=>q.unit).join('; '),...(report.capabilities.money?[r.sales]:[])])};
   }
-  function exportCsv(){const data=exportData(),cell=value=>{let v=String(value??'');if(typeof value==='string' && /^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replaceAll('"','""')+'"';};const blob=new Blob(['\uFEFF'+[data.headers,...data.data].map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`laporan-${tab}-${filters.from}-${filters.to}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  function print(){c.print(`<div class="print-brand">MANNA PRINT</div><h2>Laporan ${e(title())}</h2><p>${e(day(filters.from))} – ${e(day(filters.to))} WITA · ${filters.paymentStatus==='LUNAS'?'Lunas':filters.paymentStatus==='BELUM_LUNAS'?'Belum Lunas':'Semua pembayaran'} · ${e(method(filters.paymentMethod || 'Semua metode'))}</p>${report.capabilities.money?`<p>Omzet ${money(report.summary.sales)} · Uang Masuk Bersih ${money(report.summary.paid)} · Piutang ${money(report.summary.outstanding)}</p>`:''}${tab==='returns'?goodsReturnReportHtml(report,e,money):table(rows(),0,false)}`);}
+  function exportCsv(){const data=exportData(),cell=value=>{let v=String(value??'');if(typeof value==='string' && /^[=+@\-\t\r]/.test(v))v="'"+v;return '"'+v.replaceAll('"','""')+'"';};const blob=new Blob(['\uFEFF'+[data.headers,...data.data].map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`laporan-${tab}-${report.range.from}-${report.range.to}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  function print() {
+    const {range, paymentStatus, paymentMethod, summary} = report;
+    const period = `${e(day(range.from))} – ${e(day(range.to))} WITA`;
+    const status = paymentStatus === 'LUNAS' ? 'Lunas' : paymentStatus === 'BELUM_LUNAS' ? 'Belum Lunas' : 'Semua pembayaran';
+    const payment = isRankingTab(tab) ? '' : ` · ${status} · ${e(method(paymentMethod || 'Semua metode'))}`;
+    const totals = report.capabilities.money ? `<p>Omzet ${money(summary.sales)} · Uang Masuk Bersih ${money(summary.paid)} · Piutang ${money(summary.outstanding)}</p>` : '';
+    const detail = tab === 'returns' ? goodsReturnReportHtml(report, e, money) : table(rows(), 0, false);
+    c.print(`<div class="print-brand">MANNA PRINT</div><h2>Laporan ${e(title())}</h2><p>${period}${payment}</p>${totals}${detail}`);
+  }
   function reset(){generation++;report=null;openingOrder=selected=null;filters={from:'',to:'',paymentStatus:'',paymentMethod:''};tab='sales';sort={key:'date',direction:-1};page=1;document.querySelectorAll('.report-dialog').forEach(d=>d.close());}
   return {mount,reset};
 }

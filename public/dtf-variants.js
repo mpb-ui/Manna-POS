@@ -24,6 +24,7 @@ export function dtfWholesaleTier(product, quantity) {
 
 export function dtfLinePrice(product, pack, variants, packageQuantity) {
   const unitPrice = dtfWholesaleTier(product, packageQuantity)?.prices[pack.id] ?? pack.price;
-  const subtotal = variants.reduce((sum, row) => sum + row.quantity * (unitPrice + dtfSizeSurcharge(product, row.size)), 0);
-  return { unitPrice, subtotal };
+  const variantSubtotals = variants.map(row => row.quantity * (unitPrice + dtfSizeSurcharge(product, row.size)));
+  const subtotal = variantSubtotals.reduce((sum, amount) => sum + amount, 0);
+  return { unitPrice, subtotal, variantSubtotals };
 }
