@@ -8,10 +8,10 @@
 .barcode-checkbox input{flex:none;margin:0}
 .barcode-select-actions{display:flex;gap:0 10px;flex-wrap:wrap}
 .barcode-select-actions button{padding-inline:0;font-size:12px;min-height:36px}
-.barcode-materials{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
-.barcode-materials .barcode-checkbox{min-height:44px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
-.barcode-materials .barcode-checkbox:last-child{border-bottom:0}
-.barcode-materials span span{display:block}
+.barcode-options{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 9px}
+.barcode-options .barcode-checkbox{min-height:44px;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.barcode-options .barcode-checkbox:last-child{border-bottom:0}
+.barcode-options span span{display:block}
 .barcode-preview{min-width:0}
 .preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .barcode-paper{background:white;color:#000;border:1px solid var(--line);border-radius:9px;padding:4mm;min-height:110px}

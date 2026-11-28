@@ -5,7 +5,7 @@ import pg from "pg";
 import { databaseConfig } from "../lib/database-config.js";
 import { requestContext } from "../lib/request-context.js";
 import { Store } from "../lib/store.js";
-import { commitStockScan, correctStockScan, parseScanCommit, parseScanCorrection, scanCorrectionDetails, stockScanCatalog } from "../lib/stock-scan.js";
+import { commitStockScan, correctStockScan, parseScanCommit, parseScanCorrection, scanCorrectionDetails, stockScanCatalog, stockScanStaffCatalog } from "../lib/stock-scan.js";
 
 const databaseUrl = process.env.TEST_SECURITY_DATABASE_URL;
 
@@ -22,18 +22,26 @@ test("PostgreSQL mengunci batch scan, stok manual, audit, dan koreksi pada baris
     two.pool = new pg.Pool(options);
     await one.init();
     const actor = { id: "operator-scan", name: "Operator Uji", active: true, sessionVersion: 1 };
+    const owner = { id: randomUUID(), name: "Owner Uji", role: "OWNER", active: true, pinHash: "test-only" };
+    const employee = { id: "emp-" + randomUUID(), name: "Karyawan Uji", code: "K042", active: true, basicSalary: 1000000 };
     const id = "roll-concurrent";
     await one.mutate(state => {
-      state.users.push(actor);
+      state.users.push(actor, owner);
+      state.employees.push(employee);
       state.orders.push({ id: "outside-stock-projection", total: 1000, items: [] });
       const roll = { id, sku: "HARN-110", name: "Roll Parallel", unit: "m²", stock: 10, stockMethod: "ROLL", stockUnit: "roll", stockNeedsCount: false, rollWidthCm: 110 };
       state.materials.push(roll);
       state.inventory.push({ sku: roll.sku, materialId: id, productName: roll.name, unit: "roll", stockMethod: "ROLL", stockUnit: "roll", rollWidthCm: 110, quantity: 10 });
     });
+    const staff = await two.readStockScanStaff();
+    const badges = stockScanStaffCatalog(staff);
+    const ownerBarcode = badges.find(row => row.role === "OWNER").barcode;
+    const staffBarcode = badges.find(row => row.code === employee.code).barcode;
+    assert.ok(staff.every(row => !("basicSalary" in row) && !("pinHash" in row)));
     const row = async () => stockScanCatalog(await two.readStockScanCatalog()).find(material => material.materialId === id);
     const audit = (state, user, action, _reason, metadata) => state.auditLogs.unshift({ userId: user.id, action, metadata });
-    const make = async () => parseScanCommit({ requestId: randomUUID(), direction: "OUT", items: [{ materialId: id, quantity: 2, version: (await row()).version }] });
-    const payload = await make();
+    const make = async () => parseScanCommit({ requestId: randomUUID(), direction: "OUT", staffBarcode, items: [{ materialId: id, quantity: 2, version: (await row()).version }] });
+    const payload = { ...await make(), staffBarcode: ownerBarcode };
     const run = (store, data) => requestContext.run({ userId: actor.id, version: 1 }, () => store.mutate(
       state => commitStockScan(state, data, actor, new Date().toISOString(), audit), { stockScan: true }
     ));
@@ -42,6 +50,9 @@ test("PostgreSQL mengunci batch scan, stok manual, audit, dan koreksi pada baris
     assert.equal(parallel[0].groupId, parallel[1].groupId);
     assert.equal((await row()).balance, 8);
     const original = parallel[0].movements[0];
+    assert.equal(original.staffId, owner.id);
+    assert.equal(original.staffName, owner.name);
+    assert.equal(original.staffRole, "OWNER");
     assert.equal((await one.readStockScanHistory(actor.id, 0, 10)).length, 1);
     assert.deepEqual(await one.readStockScanHistory("someone-else", 0, 10), []);
     const [p1, p2] = await Promise.all([make(), make()]);
@@ -75,9 +86,17 @@ test("PostgreSQL mengunci batch scan, stok manual, audit, dan koreksi pada baris
     assert.equal(updatedDetails.original.id, original.id);
     const complete = await one.read();
     assert.equal(complete.orders[0].id, "outside-stock-projection");
+    assert.equal(complete.employees.find(row => row.id === employee.id).basicSalary, employee.basicSalary);
     assert.equal(complete.auditLogs.length, 3);
     assert.equal(complete.stockMovements.length, 3);
 
+    await one.mutate(state => {
+      state.employees.find(row => row.id === employee.id).active = false;
+      state.users.find(row => row.id === owner.id).active = false;
+    });
+    await assert.rejects(run(two, await make()), error => error.code === "SCAN_STAFF_INVALID");
+    await assert.rejects(run(two, { ...await make(), staffBarcode: ownerBarcode }), error => error.code === "SCAN_STAFF_INVALID");
+    assert.equal((await run(two, payload)).replayed, true);
     await one.mutate(state => { state.users.find(user => user.id === actor.id).sessionVersion = 2; });
     await assert.rejects(run(two, await make()), /Akses akun berubah/);
     assert.equal((await row()).balance, 10);

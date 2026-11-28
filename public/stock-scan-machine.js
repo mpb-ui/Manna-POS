@@ -1,7 +1,7 @@
 import { MAX_SCAN_ITEMS, scanModeLabel } from "./stock-scan-rules.js";
 
 export function scanDraft() {
-  return { phase: "IDLE", direction: null, activeId: null, items: new Map() };
+  return { phase: "IDLE", direction: null, activeId: null, staff: null, items: new Map() };
 }
 
 export function resetScan(draft, phase = "IDLE") {
@@ -56,6 +56,7 @@ export function scanProblem(draft) {
 export function reviewScan(draft) {
   if (!acceptsScan(draft)) return;
   if (!draft.items.size) throw new Error("Scan minimal satu bahan sebelum menyelesaikan scan.");
+  if (!draft.staff) throw new Error("Untuk mengisi, scan barcode staff.");
   const problem = scanProblem(draft);
   if (problem) throw new Error(problem);
   draft.phase = "REVIEW";

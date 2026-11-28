@@ -16,7 +16,7 @@
       <div class="scan-account" id="scan-account" hidden><span id="account-name"></span><button type="button" id="scan-sign-out">Keluar</button></div>
     </div>
   </header>
-  <main class="scan-main">
+  <main class="scan-main stock-scan-main">
     <form id="scan-login" class="scan-card login-card" hidden>
       <h1>Masuk ke Stock Scan</h1>
       <label>Username<input name="username" autocomplete="username" required></label>
@@ -25,46 +25,56 @@
       <button type="submit" class="primary">Masuk</button>
     </form>
     <p id="session-message" class="scan-notice" role="status" hidden></p>
-    <div id="workspace" hidden>
-      <div class="scan-heading">
-        <h1>Stock Scan</h1>
+    <div id="workspace" class="scan-kiosk" hidden>
+      <div class="scan-toolbar">
         <div class="scan-statuses">
-          <span class="status-pill" id="scan-online"></span>
+          <span class="status-pill" id="scan-online" title="Status koneksi aplikasi"></span>
           <span class="status-pill" id="scan-ready"></span>
-          <a class="button secondary" id="scan-print" href="/stock/scan/print" hidden>Cetak Barcode</a>
         </div>
+        <a class="button secondary" id="scan-print" href="/stock/scan/print" hidden>Cetak Barcode</a>
       </div>
-      <div class="scan-grid">
-        <section aria-labelledby="reader-title" class="scan-card scan-reader">
-          <h2 id="reader-title">Pindai Barcode</h2>
+      <section aria-labelledby="reader-title" class="scan-card scan-work">
+        <div class="scan-reader">
+          <h1 id="reader-title">Scan Barcode</h1>
           <fieldset class="scan-modes" aria-label="Mode transaksi">
-            <button type="button" class="mode" data-mode="IN" aria-pressed="false">Stok Masuk</button>
-            <button type="button" class="mode" data-mode="OUT" aria-pressed="false">Stok Keluar</button>
+            <button type="button" class="mode" data-mode="IN" aria-pressed="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 22-9-5V7l9-5 9 5v5M3 7l9 5 9-5M12 12v10M7.5 4.5l9 5M19 14v8m-4-4h8"/></svg>
+              Stok Masuk
+            </button>
+            <button type="button" class="mode" data-mode="OUT" aria-pressed="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 22-9-5V7l9-5 9 5v5M3 7l9 5 9-5M12 12v10M7.5 4.5l9 5m-1.5 8.5h8"/></svg>
+              Stok Keluar
+            </button>
           </fieldset>
-          <label class="scan-input-label" for="barcode-input">Input scanner</label>
-          <input id="barcode-input" placeholder="Pindai barcode di sini" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="165" aria-describedby="scan-hint">
-          <p id="scan-hint" class="muted">Gunakan scanner mode HID Keyboard dengan akhiran Enter.</p>
-          <button type="button" id="catalog-retry" class="secondary" hidden>Muat ulang bahan</button>
-        </section>
-        <section aria-labelledby="draft-title" class="scan-card scan-draft">
-          <header class="draft-head"><h2 id="draft-title">Bahan Dipindai</h2><span id="draft-mode" class="mode-label"></span></header>
-          <div id="scan-draft-list"></div>
-          <div class="draft-bottom">
-            <label class="scan-note" for="scan-note">Catatan (opsional)</label>
-            <input type="text" id="scan-note" maxlength="250" placeholder="Tambahkan catatan mutasi">
-            <footer class="draft-footer">
-              <div class="draft-totals"><span id="scan-kind-count">0 jenis bahan</span><strong id="scan-roll-count">0 roll</strong></div>
-              <div class="scan-actions"><button type="button" id="scan-cancel" class="secondary">Batalkan Scan</button><button type="button" id="scan-review" class="primary">Selesai Scan</button></div>
-            </footer>
+          <div class="scan-input">
+            <label class="scan-input-label" for="barcode-input">Input scanner</label>
+            <div class="scan-input-field">
+              <img class="scanner-icon" src="/stock-assets/scanner.svg" width="24" height="24" alt="">
+              <img class="scanner-icon-active" src="/stock-assets/scanner-active.svg" width="24" height="24" alt="">
+              <input id="barcode-input" placeholder="Scan barcode di sini" type="text" inputmode="none" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="165" aria-describedby="scan-hint">
+            </div>
+            <span id="scan-hint" class="scan-hint">Gunakan scanner mode HID Keyboard dengan akhiran Enter.</span>
           </div>
-        </section>
-        <p id="scan-message" class="scan-notice" role="status" aria-live="polite"></p>
-      </div>
-      <section aria-labelledby="history-title" class="scan-card scan-history">
-        <header class="draft-head"><h2 id="history-title">Riwayat Saya</h2><span class="muted">WITA</span></header>
-        <div id="scan-history-list"></div>
-        <button type="button" class="secondary" id="scan-more" hidden>Muat lainnya</button>
+          <button type="button" id="catalog-retry" class="secondary" hidden>Muat ulang bahan</button>
+          <div id="scan-draft-list" aria-label="Bahan dipindai"></div>
+        </div>
+        <div class="draft-bottom">
+          <div class="scan-staff" role="group" aria-labelledby="scan-staff-label">
+            <span class="scan-staff-label" id="scan-staff-label">
+              <img src="/stock-assets/staff.svg" width="20" height="20" alt="">
+              Staff
+            </span>
+            <span class="staff-name" id="scan-staff" aria-live="polite">Untuk mengisi, scan barcode staff</span>
+          </div>
+          <label class="scan-note" for="scan-note">Catatan (opsional)</label>
+          <input type="text" id="scan-note" maxlength="250" placeholder="Tambahkan catatan">
+          <footer class="draft-footer">
+            <div class="draft-totals"><span id="scan-kind-count">0 jenis bahan</span><strong id="scan-roll-count">0 roll</strong></div>
+            <div class="scan-actions"><button type="button" id="scan-cancel" class="secondary">Batalkan</button><button type="button" id="scan-review" class="primary" disabled>Selesai Scan</button></div>
+          </footer>
+        </div>
       </section>
+      <p id="scan-message" class="scan-notice" role="status" aria-live="polite"></p>
     </div>
   </main>
   <dialog id="scan-dialog" aria-labelledby="review-title" aria-describedby="review-summary">

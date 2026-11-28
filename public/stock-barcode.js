@@ -5,10 +5,12 @@ const get = id => document.getElementById(id);
 const category = get("barcode-category");
 const sizes = { a4: { page: "A4", width: 210, columns: 2 }, a3plus: { page: "329mm 483mm", width: 329, columns: 3 } };
 const selected = new Set();
+const selectedStaff = new Set();
 const paper = get("barcode-paper");
 const pageStyle = document.createElement("style");
 document.head.append(pageStyle);
 let materials = [];
+let staffMembers = [];
 
 const session = createStockScanSession("print", {
   onReady: load, onReset: reset, onError: error => { get("barcode-message").textContent = error; }
@@ -16,23 +18,33 @@ const session = createStockScanSession("print", {
 
 function reset() {
   materials = [];
+  staffMembers = [];
   selected.clear();
+  selectedStaff.clear();
   category.replaceChildren();
   get("barcode-materials").replaceChildren();
+  get("barcode-staff").replaceChildren();
   paper.replaceChildren();
   get("barcode-print").disabled = true;
 }
 
 async function load(user) {
-  try {
-    const result = await session.api("/api/stock/scan/catalog");
-    if (session.user()?.id !== user.id) return;
-    materials = result.materials;
-    category.innerHTML = '<option value="">Semua kategori</option>' + [...new Set(materials.map(row => row.category))]
-      .map(name => `<option value="${h(name)}">${h(name)}</option>`).join("");
-    renderChoices();
-    renderPreview();
-  } catch (error) { if (session.user()?.id === user.id) get("barcode-message").textContent = error.message; }
+  const [catalog, staff] = await Promise.allSettled([
+    session.api("/api/stock/scan/catalog"),
+    session.api("/api/stock/scan/staff")
+  ]);
+  if (session.user()?.id !== user.id) return;
+  materials = catalog.value?.materials || [];
+  staffMembers = staff.value?.staff || [];
+  category.innerHTML = '<option value="">Semua kategori</option>' + [...new Set(materials.map(row => row.category))]
+    .map(name => `<option value="${h(name)}">${h(name)}</option>`).join("");
+  renderChoices();
+  get("barcode-staff").innerHTML = staffMembers.map(row => `<label class="barcode-checkbox">
+    <input type="checkbox" value="${h(row.barcode)}" ${selectedStaff.has(row.barcode) ? "checked" : ""}>
+    <span>${h(row.name)} <span class="muted">${h(row.role === "OWNER" ? "Owner" : row.code || "")}</span></span></label>`).join("")
+    || `<p class="muted">${h(staff.reason?.message || "Belum ada Owner atau karyawan aktif.")}</p>`;
+  if (catalog.status === "rejected") get("barcode-materials").textContent = catalog.reason.message;
+  renderPreview();
 }
 
 function inCategory() {
@@ -80,6 +92,10 @@ function renderPreview() {
   const groups = new Map();
   if (get("print-commands").checked) groups.set("Perintah", SCAN_COMMANDS.map(([code, name]) => ({ code, name })));
   if (get("print-quantities").checked) groups.set("Jumlah Roll", SCAN_QUANTITIES.map(quantity => ({ code: `QTY:${quantity}`, name: `×${quantity} roll` })));
+  const staffLabels = staffMembers.filter(row => selectedStaff.has(row.barcode)).map(({ barcode, name, role, code }) => ({
+    code: barcode, name, info: role === "OWNER" ? "Owner" : ["Staff", code].filter(Boolean).join(" · ")
+  }));
+  if (staffLabels.length) groups.set("Staff", staffLabels);
   for (const material of materials.filter(row => selected.has(row.materialId))) {
     const title = `Bahan · ${material.category}`;
     if (!groups.has(title)) groups.set(title, []);
@@ -117,6 +133,12 @@ get("barcode-materials").onchange = event => {
   if (checkbox.checked) selected.add(checkbox.value);
   else selected.delete(checkbox.value);
   get("select-none").disabled = !selected.size;
+  renderPreview();
+};
+get("barcode-staff").onchange = event => {
+  const checkbox = event.target;
+  if (checkbox.checked) selectedStaff.add(checkbox.value);
+  else selectedStaff.delete(checkbox.value);
   renderPreview();
 };
 for (const id of ["paper-size", "print-commands", "print-quantities"]) get(id).onchange = renderPreview;

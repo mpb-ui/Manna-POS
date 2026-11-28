@@ -1,6 +1,6 @@
-import { parseStockBarcode, scanModeLabel, signalStockUpdate, stockScanAccess, stockUpdatedKey } from "./stock-scan-rules.js";
+import { parseStockBarcode, scanModeLabel, signalStockUpdate, stockScanAccess } from "./stock-scan-rules.js";
 import { acceptsScan, deliberateClick, resetScan, reviewScan, scanDraft, scanProblem, selectScanMode, setScanQuantity, stageScannedMaterial, stockAfterScan, updateScanReview } from "./stock-scan-machine.js";
-import { createStockScanSession, dateOfScan, escapeScanText as h, rollNumber, scanPendingKey } from "./stock-scan-session.js";
+import { createStockScanSession, escapeScanText as h, rollNumber, scanPendingKey } from "./stock-scan-session.js";
 
 const get = id => document.getElementById(id);
 const reader = get("barcode-input");
@@ -11,17 +11,14 @@ const modeButtons = document.querySelectorAll(".scan-modes button");
 const confirm = get("review-confirm");
 const retry = get("catalog-retry");
 const reviewTitle = get("review-title");
-const historyList = get("scan-history-list");
-const more = get("scan-more");
+const staffName = get("scan-staff");
+const finish = get("scan-review");
 const catalog = new Map();
 const draft = scanDraft();
 let ready = false;
 let reading = false;
 let identityVersion = 0;
 let pending = null;
-let page = 0;
-let historyVersion = 0;
-let historyRows = [];
 
 const session = createStockScanSession("scan", { onReady, onReset, onError: error => message(error, "error") });
 
@@ -67,18 +64,17 @@ function render() {
     button.disabled = !available;
     button.setAttribute("aria-pressed", String(button.dataset.mode === draft.direction));
   });
-  const label = get("draft-mode");
-  label.textContent = draft.direction ? scanModeLabel(draft.direction) : "Pilih mode";
-  label.dataset.mode = draft.direction || "";
-  get("scan-review").disabled = !available || !draft.items.size;
-  get("scan-cancel").disabled = !acceptsScan(draft) || Boolean(pending) || !draft.direction || reading;
+  const staffLabel = draft.staff?.name || "Untuk mengisi, scan barcode staff";
+  if (staffName.textContent !== staffLabel) staffName.textContent = staffLabel;
+  staffName.classList.toggle("assigned", Boolean(draft.staff));
+  finish.disabled = !available || !draft.items.size || !draft.staff;
+  get("scan-cancel").disabled = !acceptsScan(draft) || Boolean(pending) || (!draft.direction && !draft.staff) || reading;
   note.disabled = !acceptsScan(draft) || Boolean(pending);
   const rows = [...draft.items.values()];
   list.innerHTML = rows.length ? `<ul class="scan-rows">${rows.map(row => `<li class="scan-row${row.materialId === draft.activeId ? " active" : ""}">
     <div><strong>${h(row.name)}</strong><span class="muted">${h(row.rollWidthCm)} cm · ${h(row.sku)}</span></div>
     <div class="balance"><span class="muted">Saldo</span><strong>${row.unavailable ? "—" : `${rollNumber(row.balance)} roll`}</strong></div>
     <div class="scan-quantity">
-      <label class="muted" for="scan-quantity-${h(row.materialId)}">Jumlah</label>
       <div class="scan-stepper">
         <button type="button" data-quantity-step="-1" aria-label="Kurangi jumlah roll ${h(row.name)}" ${!available || row.quantity <= 1 ? "disabled" : ""}>−</button>
         <input id="scan-quantity-${h(row.materialId)}" type="number" min="1" step="1" inputmode="numeric" value="${h(row.invalidQuantity ?? row.quantity)}" data-quantity="${h(row.materialId)}" aria-label="Jumlah roll ${h(row.name)}" aria-invalid="${row.invalidQuantity !== undefined}" ${!available ? "disabled" : ""}>
@@ -116,7 +112,11 @@ function applyQuantity(input, quantity) {
 function renderReview() {
   reviewTitle.textContent = `Konfirmasi ${scanModeLabel(draft.direction)}`;
   const rows = [...draft.items.values()];
-  get("review-summary").textContent = `${session.user()?.name || ""} · ${rows.length} jenis bahan · ${rollNumber(rows.reduce((sum, row) => sum + row.quantity, 0))} roll`;
+  get("review-summary").textContent = [
+    draft.staff && `Staff ${draft.staff.name}`,
+    `${rows.length} jenis bahan`,
+    `${rollNumber(rows.reduce((sum, row) => sum + row.quantity, 0))} roll`
+  ].filter(Boolean).join(" · ");
   const reviewNote = get("review-note");
   reviewNote.textContent = note.value.trim();
   reviewNote.hidden = !reviewNote.textContent;
@@ -128,9 +128,9 @@ function renderReview() {
   </li>`).join("")}</ul>`;
   const submitting = draft.phase === "SUBMITTING";
   get("review-cancel").disabled = submitting || Boolean(pending);
-  get("review-edit").hidden = Boolean(pending) || !scanProblem(draft);
+  get("review-edit").hidden = submitting || Boolean(pending);
   confirm.textContent = submitting ? "Menyimpan…" : pending ? "Cek & ulangi" : "Konfirmasi";
-  confirm.disabled = submitting || !navigator.onLine || (!pending && Boolean(scanProblem(draft)));
+  confirm.disabled = submitting || !navigator.onLine || (!pending && (!draft.staff || Boolean(scanProblem(draft))));
   if (!dialog.open) {
     dialog.showModal();
     reviewTitle.focus();
@@ -158,14 +158,9 @@ function openReview() {
 
 function onReset() {
   identityVersion++;
-  historyVersion++;
   ready = false;
   reading = false;
   pending = null;
-  page = 0;
-  historyRows = [];
-  historyList.replaceChildren();
-  more.hidden = true;
   catalog.clear();
   resetScan(draft);
   reader.value = "";
@@ -184,6 +179,7 @@ function restorePending(saved) {
   pending = saved;
   resetScan(draft, "ERROR");
   draft.direction = saved.body.direction;
+  draft.staff = saved.staff || null;
   draft.items = new Map(saved.items.map(item => [item.materialId, item]));
   note.value = saved.body.note;
   render();
@@ -200,7 +196,6 @@ function onReady(user) {
     message("Penyimpanan browser tidak tersedia. Periksa izin browser sebelum mengonfirmasi.", "error");
   }
   loadCatalog();
-  loadHistory();
 }
 
 async function loadCatalog() {
@@ -224,42 +219,6 @@ async function loadCatalog() {
   }
 }
 
-async function loadHistory(append = false) {
-  if (!session.user()) return;
-  const version = ++historyVersion;
-  const offset = append ? page : 0;
-  more.disabled = true;
-  historyList.setAttribute("aria-busy", "true");
-  if (!append) historyList.innerHTML = '<p class="scan-empty">Memuat riwayat…</p>';
-  try {
-    const result = await session.api(`/api/stock/scan/history?offset=${offset}&limit=10`);
-    if (historyVersion !== version) return;
-    if (!append) historyRows = [];
-    const ids = new Set(historyRows.map(row => row.id));
-    historyRows.push(...result.movements.filter(row => !ids.has(row.id)));
-    page = offset + result.movements.length;
-    more.textContent = "Muat lainnya";
-    more.hidden = !result.hasMore;
-    historyList.innerHTML = historyRows.length ? `<ul class="history-rows">${historyRows.map(row => `<li class="history-row">
-      <div><strong>${h(row.productName)}</strong><span class="muted">${h(row.rollWidthCm)} cm · ${h(row.sku)} · ${h(dateOfScan.format(new Date(row.createdAt)))}</span></div>
-      <div class="history-qty"><strong class="${row.change > 0 ? "positive" : "negative"}">${row.change > 0 ? "+" : ""}${rollNumber(row.change)} roll</strong><span class="muted">Saldo ${rollNumber(row.balance)} roll</span></div>
-    </li>`).join("")}</ul>` : '<p class="scan-empty">Belum ada mutasi barcode.</p>';
-  } catch (error) {
-    if (historyVersion !== version) return;
-    if (!append) {
-      page = 0;
-      historyList.innerHTML = `<p class="scan-empty">${h(error.message)}</p>`;
-    } else message(error.message, "error");
-    more.textContent = "Coba lagi";
-    more.hidden = false;
-  } finally {
-    if (historyVersion === version) {
-      more.disabled = false;
-      historyList.removeAttribute("aria-busy");
-    }
-  }
-}
-
 async function handleBarcode(code) {
   const token = parseStockBarcode(code);
   if (!token) throw new Error("Barcode tidak dikenal.");
@@ -273,6 +232,15 @@ async function handleBarcode(code) {
   if (token.type === "quantity") {
     setScanQuantity(draft, draft.activeId, token.value);
     message(`Jumlah bahan aktif diatur ke ${token.value} roll.`);
+    return;
+  }
+  if (token.type === "staff") {
+    const version = identityVersion;
+    draft.staff = null;
+    const { staff } = await session.api(`/api/stock/scan/staff/${encodeURIComponent(token.value)}`);
+    if (version !== identityVersion) return;
+    draft.staff = { name: staff.name, barcode: token.value };
+    message("");
     return;
   }
   if (!draft.direction) throw new Error("Pilih atau scan Stok Masuk / Keluar terlebih dahulu.");
@@ -294,10 +262,12 @@ function makePending() {
     body: {
       requestId: crypto.randomUUID(),
       direction: draft.direction,
+      staffBarcode: draft.staff.barcode,
       items: items.map(({ materialId, quantity, version }) => ({ materialId, quantity, version })),
       note: note.value.trim()
     },
-    items
+    items,
+    staff: draft.staff
   };
 }
 
@@ -346,9 +316,18 @@ async function submitReview(event) {
       render();
       focusReader();
       message(`${scanModeLabel(response.direction)} tersimpan. ${rollNumber(response.movements.reduce((sum, row) => sum + Math.abs(row.change), 0))} roll tercatat di Mutasi Stok.`, "success");
-      loadHistory();
     } catch (error) {
       if (version !== identityVersion) return;
+      if (["SCAN_STAFF_REQUIRED", "SCAN_STAFF_INVALID"].includes(error.code)) {
+        resolvePending(id, stored);
+        draft.staff = null;
+        draft.phase = "SCANNING";
+        dialog.close();
+        message(error.message, "error");
+        render();
+        focusReader();
+        return;
+      }
       if (["SCAN_REVIEW_CHANGED", "SCAN_INPUT"].includes(error.code)) {
         resolvePending(id, stored);
         updateScanReview(draft, error.materials || []);
@@ -430,7 +409,7 @@ list.onclick = event => {
 };
 get("scan-cancel").onclick = () => { if (!reading) cancel(); };
 get("review-cancel").onclick = cancel;
-get("scan-review").onclick = () => {
+finish.onclick = () => {
   if (reading) return;
   try { openReview(); } catch (error) { message(error.message, "error"); }
 };
@@ -455,7 +434,6 @@ dialog.addEventListener("keydown", event => {
 }, true);
 confirm.onclick = submitReview;
 retry.onclick = loadCatalog;
-more.onclick = () => loadHistory(Boolean(page));
 for (const event of ["online", "offline"]) window.addEventListener(event, () => {
   render();
   if (dialog.open) renderReview();
@@ -471,7 +449,6 @@ window.addEventListener("storage", event => {
     if (!draft.items.size) restorePending(JSON.parse(event.newValue));
     else message("Ada transaksi yang sedang diproses di tab lain. Periksa hasilnya sebelum mengonfirmasi draft ini.");
   }
-  if (event.key === stockUpdatedKey) loadHistory();
 });
 
 render();
