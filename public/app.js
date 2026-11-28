@@ -6,7 +6,7 @@ import {createMasterFilters,bindMasterFilters,compareMasterNames} from './master
 import {bindBackdropClose,trackDialogMutation} from './dialog-dismiss.js';
 import {A3_TABS,a3ProductKind,a3Choices,a3QuickProducts} from './a3-selection.js';
 import { PAPER_PRODUCT_TABS, isPaperProductCategory, paperProductTab } from './paper-product-tabs.js';
-import { isQuickSale, PRODUCT_KIND } from './product-kind.js';
+import { isMerchandise, isQuickSale, PRODUCT_KIND } from './product-kind.js';
 import { createSecurityUI } from './security-ui.js';
 import { createPrintHelperUI } from './print-helper-ui.js';
 import { createReportsUI } from './reports-ui.js';
@@ -25,6 +25,9 @@ import { returnableRetailItem } from "./goods-return-rules.js";
 import { openGoodsReturn, mountGoodsReturnHistory, closeGoodsReturns, goodsReturnReportHtml } from "./goods-returns-ui.js";
 import { checkoutDeadlineHtml, bindCheckoutDeadline } from "./checkout-deadline.js";
 import { mountPosSearch } from "./pos-search.js";
+import { barcodeFeedback, mountBarcodeScanner } from "./pos-barcode-scan.js";
+import { mountBarcodeRegistration, mountProductBarcodes, posBarcodeSettings } from "./pos-barcode-admin.js";
+import { openBarcodePrint } from "./pos-barcode-print.js";
 import { installDatePickers } from "./date-picker.js";
 import { createCustomersUI } from "./customers-ui.js";
 import { cashReceiptHtml, depositInvoiceLines } from "./customer-documents.js";
@@ -100,6 +103,7 @@ const atkGroups = ["Amplop", "Alat tulis", "Map & arsip", "Perekat", "Kertas & l
 const state = {
   products: [], allProducts: [], materials: [], finishings: [], machines: [], orders: [], pics: [], inventory: [], shirtStock: [], stockMovements: [], statusLabels: {}, catalogOptions: { categories: [], materialCategories: [], saleUnits: [], priceBases: [] }, categoryScroll: 0,
   currentUser: null, permissions: [], permissionCatalog: [], rolePresets: {}, users: [], auditLogs: [],
+  posBarcodeEnabled: false, posBarcodeCodes: [],
   cart: [], view: location.hash === "#stock" ? "stock" : "pos", selectedProduct: null, selectedCategory: "all", a3Kind: "paper", paperProductTab: PAPER_PRODUCT_TABS[0][0], atkGroup: "Semua", editingOrderId: null,
   masterTab: "products", categorySettingsKind: "products", projectView: "list", projectSearch: "", projectStatus: "all", projectDeadlineSort: "nearest",
   stockSearch: "", stockCategory: "", stockMovementDate: "",
@@ -181,11 +185,13 @@ async function api(path, options = {}) {
   } finally {finishMutation();}
 }
 
+let toastTimer;
 function toast(message, type = "") {
   const element = document.querySelector("#toast");
   element.textContent = message;
   element.className = `toast show ${type}`;
-  setTimeout(() => element.className = "toast", 2600);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => element.className = "toast", 2600);
 }
 
 function showLogin() {
@@ -200,6 +206,7 @@ function showLogin() {
   homeCampaignUI.reset(); orderHistory.reset(); customersUI.reset(); closeGoodsReturns();
   clearEmployeeSession(); reportsUI.reset();
   state.currentUser = null;
+  stopPosBarcodeScanner();
   assistance.resetSession(); closeProjectItems();
   state.permissions = [];
   root.innerHTML = "";
@@ -239,6 +246,7 @@ async function load() {
 let productSearchCleanup;
 function render() {
   if (state.view !== "pos") {
+    stopPosBarcodeScanner();
     homeCampaignUI.stopHome();
     productSearchCleanup?.();
     productSearchCleanup = null;
@@ -467,6 +475,19 @@ function a3ConfigurationOptionsHtml(selected) {
 const allowsQuickQuantity = product => isQuickSale(product) && !product.hasMaterialVariants
   && !product.fixedSizeVariants?.length && !product.choiceGroups?.length && !product.templateProduct;
 
+const flatCartLine = product => allowsQuickQuantity(product)
+  ? state.cart.find(line => line.productId === product.id && plainRetailLine(line)) : undefined;
+
+function flatQuantityHtml(item, line) {
+  const id = escapeHtml(item.id), name = escapeHtml(item.name);
+  if (!line) return `<button type="button" class="atk-pick" data-flat-product="${id}"><b aria-hidden="true">+</b> Pilih</button>`;
+  return `<div class="atk-stepper" role="group" aria-label="Jumlah ${name}">
+    <button type="button" data-flat-qty="-1" data-flat-product="${id}" aria-label="Kurangi ${name}" ${line.quantity <= minimumQuantity(item) ? "disabled" : ""}>−</button>
+    <input type="text" inputmode="numeric" pattern="[0-9]*" data-flat-quantity="${id}" value="${line.quantity}" aria-label="Jumlah ${name}">
+    <button type="button" data-flat-qty="1" data-flat-product="${id}" aria-label="Tambah ${name}">+</button>
+  </div>`;
+}
+
 function flatCatalogHtml(products, category) {
   const isAtK = categoryId(category) === "atk";
   const active = products.filter((item) => item.active !== false);
@@ -474,10 +495,8 @@ function flatCatalogHtml(products, category) {
     .sort((a, b) => a.name.localeCompare(b.name, "id", { numeric: true }));
   const tabs = isAtK ? ["Semua", ...atkGroups].map((group) => `<button type="button" class="atk-tab ${state.atkGroup === group ? "active" : ""}" data-atk-group="${escapeHtml(group)}" aria-pressed="${state.atkGroup === group}">${escapeHtml(group)}</button>`).join("") : "";
   const rows = visible.map((item) => {
-    const line = allowsQuickQuantity(item) ? state.cart.find((entry) => entry.productId === item.id && plainRetailLine(entry)) : null;
-    const control = line ? `<div class="atk-stepper" role="group" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="-1" data-flat-product="${escapeHtml(item.id)}" aria-label="Kurangi ${escapeHtml(item.name)}" ${line.quantity<=minimumQuantity(item)?"disabled":""}>−</button><input type="text" inputmode="numeric" pattern="[0-9]*" data-flat-quantity="${escapeHtml(item.id)}" value="${line.quantity}" aria-label="Jumlah ${escapeHtml(item.name)}"><button type="button" data-flat-qty="1" data-flat-product="${escapeHtml(item.id)}" aria-label="Tambah ${escapeHtml(item.name)}">+</button></div>`
-      : `<button type="button" class="atk-pick" data-flat-product="${escapeHtml(item.id)}"><b aria-hidden="true">+</b> Pilih</button>`;
-    return `<div class="atk-row ${line ? "selected" : ""}"><button type="button" class="atk-name" data-flat-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}${minimumQuantity(item)>1?`<small class="minimum-help">Minimum ${minimumQuantity(item)} ${escapeHtml(item.unitName || "pcs")}</small>`:""}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${control}</div>`;
+    const line = flatCartLine(item);
+    return `<div class="atk-row ${line ? "selected" : ""}" data-flat-row="${escapeHtml(item.id)}"><button type="button" class="atk-name" data-flat-product="${escapeHtml(item.id)}">${escapeHtml(item.name)}${minimumQuantity(item)>1?`<small class="minimum-help">Minimum ${minimumQuantity(item)} ${escapeHtml(item.unitName || "pcs")}</small>`:""}</button><span class="atk-price">${rupiah.format(promoPrice(item, item.price))}</span>${flatQuantityHtml(item, line)}</div>`;
   }).join("");
   return `${isAtK ? `<div class="atk-tabs" role="group" aria-label="Jenis produk ATK">${tabs}</div>` : ""}
     <div class="atk-count">${visible.length} produk</div>
@@ -592,6 +611,11 @@ function renderPos() {
   const visibleProducts = productsForCategory(state.selectedCategory);
   if (!visibleProducts.some((product) => product.id === state.selectedProduct)) state.selectedProduct = null;
   const product = selectedProduct();
+  const barcodeEnabled = posBarcodeActive();
+  const searchPlaceholder = barcodeEnabled ? "Cari produk atau scan barcode..." : "Cari nama produk...";
+  const barcodeIndicator = barcodeEnabled
+    ? `<span class="pos-barcode-status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 5v14M6 5v14M10 5v14M12.5 5v14M16 5v14M19 5v14M21 5v14"/></svg><span>Scan Aktif</span></span>`
+    : "";
   const categories = productCategories();
   const categoryLabel = categories.find(([id]) => id === state.selectedCategory)?.[1];
   const a3Kind = product && a3ProductKind(product);
@@ -608,10 +632,11 @@ function renderPos() {
     : `${intro}<div class="category-empty"><div>＋</div><strong>Belum ada produk</strong><p>Produk untuk kategori ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "ini")} akan ditambahkan kemudian.</p></div>`;
   root.innerHTML = `<div class="view-grid pos-layout">
     <aside class="pos-categories" aria-label="Kategori produk"><div class="pos-category-heading"><strong>Kategori</strong>${canManageSettings() ? '<button class="category-settings-button" type="button" id="configure-category-tabs" aria-label="Atur urutan kategori" title="Atur urutan kategori">✎</button>' : ""}</div><button type="button" class="pos-category-toggle" aria-expanded="false" aria-controls="pos-category-list">Kategori: ${escapeHtml(productCategories().find(([id]) => id === state.selectedCategory)?.[1] || "Semua")} <span class="ui-chevron" aria-hidden="true"></span></button><div id="pos-category-list" class="category-tabs" role="tablist" aria-label="Kategori produk" aria-orientation="vertical">${categoryTabs}</div></aside>
-    <section class="pos-workspace" aria-label="Pencarian dan katalog produk"><div class="pos-search-shell"><div class="pos-search-row"><span class="pos-search-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg></span><input id="product-search" type="search" placeholder="Cari nama produk..." aria-label="Cari nama produk di semua kategori" role="combobox" aria-autocomplete="list" aria-controls="pos-search-results" aria-expanded="false" autocomplete="off"><kbd>Ctrl K</kbd></div><div id="search-popover" class="search-popover" hidden><div id="pos-search-results" class="search-results" role="listbox" aria-label="Hasil pencarian produk"></div></div><span class="visually-hidden" data-search-status role="status" aria-live="polite"></span></div>${state.editingOrderId?'<p class="pos-editing-label">Edit Draft Pesanan</p>':''}<div class="panel pos-catalog-panel"><div class="panel-body"><div class="category-content">${productContent}</div></div></div></section>
-    <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
+    <section class="pos-workspace" aria-label="Pencarian dan katalog produk"><div class="pos-search-shell"><div class="pos-search-row"><span class="pos-search-icon" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8.5" cy="8.5" r="5"/><path d="m12.5 12.5 4 4"/></svg></span><input id="product-search" type="search" placeholder="${searchPlaceholder}" aria-label="${barcodeEnabled ? "Cari produk atau scan barcode di semua kategori" : "Cari nama produk di semua kategori"}" role="combobox" aria-autocomplete="list" aria-controls="pos-search-results" aria-expanded="false" autocomplete="off">${barcodeIndicator}<kbd>Ctrl K</kbd></div><div id="search-popover" class="search-popover" hidden><div id="pos-search-results" class="search-results" role="listbox" aria-label="Hasil pencarian produk"></div></div><span class="visually-hidden" data-search-status role="status" aria-live="polite"></span></div>${state.editingOrderId?'<p class="pos-editing-label">Edit Draft Pesanan</p>':''}<div class="panel pos-catalog-panel"><div class="panel-body"><div class="category-content">${productContent}</div></div></div></section>
+    <aside><section class="panel sticky-summary"><div class="panel-head"><h2>Ringkasan Pesanan</h2><span data-cart-count>${state.cart.length} item</span></div><div class="panel-body"><div id="cart-list">${cartHtml()}</div>${checkoutHtml()}</div></section></aside>
   </div>`;
   bindPos();
+  syncPosBarcodeScanner();
   assistance.mountCheckout(state.cartCheck?.cart === state.cart && Date.now()-state.cartCheck.at < 5000 ? state.cartCheck.data : null);
   syncCartBusy();
   customersUI.mountCheckout();
@@ -625,14 +650,72 @@ function imageSizeNote(item) {
   return [size,rollPlacementNote(item)].filter(Boolean).join(' · ');
 }
 
+function posBarcodeActive() {
+  return state.view === "pos" && state.posBarcodeEnabled && can("pos.view") && can("pos.create");
+}
+
+let stopBarcodeListener;
+function stopPosBarcodeScanner() {
+  stopBarcodeListener?.();
+  stopBarcodeListener = null;
+}
+
+function syncPosBarcodeScanner() {
+  if (!posBarcodeActive()) return stopPosBarcodeScanner();
+  stopBarcodeListener ||= mountBarcodeScanner({
+    root, active: posBarcodeActive,
+    known: code => state.posBarcodeCodes.includes(code),
+    onCode: scanPosProduct,
+    onInvalid: () => { toast("Format barcode tidak valid.", "error"); barcodeFeedback(false); }
+  });
+}
+
+async function scanPosProduct(code) {
+  const identity = state.currentUser?.id;
+  let cartId, product;
+  try {
+    const added = await mutateCart(async cart => {
+      const result = await api(`/api/pos-barcodes/lookup?code=${encodeURIComponent(code)}`, { signal: AbortSignal.timeout(10000) });
+      product = state.products.find(row => row.id === result.productId);
+      if (!product) throw new Error("Produk barcode belum ada di katalog. Muat ulang POS.");
+      const proposal = addCartLine(cart, { productId: product.id, ...result.selection, quantity: 1, finishing: [], fileServiceId: "READY" }, product);
+      cartId = proposal.find((line, index) => line !== cart[index]).cartId;
+      return proposal;
+    }, { guard: () => posBarcodeActive() && !document.querySelector("dialog[open]"), summaryOnly: true, validateRetailStock: true });
+    if (!added) return;
+    const line = state.cart.find(row => row.cartId === cartId);
+    toast(`${product.name} ditambahkan · Jumlah ${line.quantity} ${product.unitName || "unit"}`, "success");
+    barcodeFeedback(true);
+  } catch (error) {
+    if (state.currentUser?.id !== identity || state.view !== "pos") return;
+    if (error.code === "BARCODE_DISABLED") {
+      state.posBarcodeEnabled = false;
+      renderPos();
+    }
+    const connectionFailed = error.name === "TimeoutError" || error.name === "AbortError" || error instanceof TypeError;
+    toast(connectionFailed ? "Gagal memproses barcode karena koneksi. Scan ulang." : error.message, "error");
+    barcodeFeedback(false);
+  }
+}
+
+function counterQuantityAvailable(line, product) {
+  return posBarcodeActive() && isMerchandise(product) &&
+    plainRetailLine({ ...line, sizeVariantId: "", materialVariantId: "", subVariantId: "" });
+}
+
 function cartHtml() {
   if (!state.cart.length) return '<div class="cart-empty">Belum ada produk.<br><small>Data pelanggan dapat diisi terlebih dahulu.</small></div>';
   return state.cart.map((line, i) => {
     const product = state.products.find(item => item.id === line.productId);
     const retail = isQuickSale(product) && plainRetailLine(line);
+    const quantity = counterQuantityAvailable(line, product) ? `<div class="barcode-cart-quantity">
+      <button type="button" data-cart-step="-1" aria-label="Kurangi jumlah ${escapeHtml(line.productName)}" ${line.quantity <= 1 ? "disabled" : ""}>−</button>
+      <input type="number" inputmode="numeric" min="1" step="1" data-cart-quantity aria-label="Jumlah ${escapeHtml(line.productName)}" value="${line.quantity}">
+      <button type="button" data-cart-step="1" aria-label="Tambah jumlah ${escapeHtml(line.productName)}">+</button>
+    </div>` : "";
     const dimensions = line.imageWidthCm > 0 && line.imageLengthCm > 0 ? `Ukuran gambar: ${Number(line.imageWidthCm).toLocaleString("id-ID")} × ${Number(line.imageLengthCm).toLocaleString("id-ID")} cm${line.allowanceCm > 0 ? ` · Lebihan ${Number(line.allowanceCm).toLocaleString("id-ID")} cm/sisi` : ""}` : line.sheetCalculation ? sheetSpecification(line.sheetCalculation) : "";
     const design = line.fileServicePrice ? `${line.fileServiceName} × ${line.fileServiceQuantity || 1}${line.fileServiceNote ? ` · ${line.fileServiceNote}` : ""}` : line.templateDesign ? `Design Template ${line.templateDesign} × ${line.templateDesignQuantity || 1}` : "";
-    return `<article class="cart-item" data-cart-row="${line.cartId}"><span class="cart-item-number" aria-hidden="true">${i + 1}</span><div class="cart-item-content"><div class="cart-item-heading"><h4><button class="cart-edit-button" type="button" aria-label="Edit ${escapeHtml(line.productName)}">${escapeHtml(line.productName)}</button></h4><strong>${rupiah.format(line.previewTotal)}</strong></div><p>${escapeHtml(line.displaySize || `${line.quantity} ${product?.unitName || "unit"}`)}</p>${dimensions ? `<p class="image-size-note">${escapeHtml(dimensions)}</p>` : ""}${design ? `<p>${escapeHtml(design)}</p>` : ""}${line.productionNote ? `<p class="cart-production-note">Catatan: ${escapeHtml(line.productionNote)}</p>` : ""}<div class="cart-item-footer"><div class="cart-item-detail">${retail ? "" : `<p>${escapeHtml(line.finishingNames || "Tanpa finishing tambahan")}</p>`}</div><button type="button" data-remove="${line.cartId}" aria-label="Hapus ${escapeHtml(line.productName)}">Hapus</button></div></div></article>`;
+    return `<article class="cart-item" data-cart-row="${line.cartId}"><span class="cart-item-number" aria-hidden="true">${i + 1}</span><div class="cart-item-content"><div class="cart-item-heading"><h4><button class="cart-edit-button" type="button" aria-label="Edit ${escapeHtml(line.productName)}">${escapeHtml(line.productName)}</button></h4><strong>${rupiah.format(line.previewTotal)}</strong></div><p>${escapeHtml(line.displaySize || `${line.quantity} ${product?.unitName || "unit"}`)}</p>${dimensions ? `<p class="image-size-note">${escapeHtml(dimensions)}</p>` : ""}${design ? `<p>${escapeHtml(design)}</p>` : ""}${line.productionNote ? `<p class="cart-production-note">Catatan: ${escapeHtml(line.productionNote)}</p>` : ""}<div class="cart-item-footer"><div class="cart-item-detail">${quantity || (retail ? "" : `<p>${escapeHtml(line.finishingNames || "Tanpa finishing tambahan")}</p>`)}</div><button type="button" data-remove="${line.cartId}" aria-label="Hapus ${escapeHtml(line.productName)}">Hapus</button></div></div></article>`;
   }).join("");
 }
 
@@ -643,7 +726,7 @@ function checkoutHtml() {
     <div class="field full checkout-customer-name"><div class="customer-name-heading"><label for="checkout-customer-name">Nama pelanggan *</label>${can("customers.view")?'<button type="button" class="customer-search-trigger" data-choose-customer aria-haspopup="dialog">Cari Pelanggan</button>':""}</div><input id="checkout-customer-name" name="customerName" value="${escapeHtml(state.draft.customerName)}" required></div>
     <label class="field"><span>No. WhatsApp *</span><input name="phone" type="text" autocomplete="tel" required value="${escapeHtml(state.draft.phone)}"></label>
     ${checkoutDeadlineHtml(state.draft.deadline, escapeHtml)}
-  </div><div class="checkout-footer">${can("customers.view")?'<div class="checkout-deposit-balance deposit-balance" data-customer-deposit hidden></div>':""}<div class="summary-row total"><span>Total</span><span>${rupiah.format(total)}</span></div><button type="button" class="checkout-tax-action" data-tax-add aria-expanded="${taxEnabled}" aria-controls="checkout-tax-fields" ${taxEnabled?'hidden':''}>+ Gross-up Pajak</button><section class="checkout-tax" id="checkout-tax-fields" ${taxEnabled?'':'hidden'}><div class="checkout-tax-head"><strong>+ Gross-up Pajak</strong><button type="button" class="checkout-tax-action" data-tax-remove>Hapus</button></div><label class="field checkout-tax-rate"><span>Tarif Pajak</span><span class="input-with-unit"><input name="taxRate" inputmode="decimal" maxlength="6" placeholder="0" value="${escapeHtml(state.draft.taxRate ?? '')}"><b aria-hidden="true">%</b></span></label><div class="summary-row"><span>Penyesuaian Harga</span><strong data-tax-adjustment></strong></div></section><div class="summary-row total checkout-tax-total" data-tax-total-row ${taxEnabled?'':'hidden'}><span>Total Tagihan</span><strong data-tax-total></strong></div><div class="checkout-actions"><button class="secondary full${state.editingOrderId ? "" : " checkout-save-draft"}" type="submit" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft"}</button><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></div></form>`;
+  </div><div class="checkout-footer">${can("customers.view")?'<div class="checkout-deposit-balance deposit-balance" data-customer-deposit hidden></div>':""}<div class="summary-row total"><span>Total</span><span data-cart-total>${rupiah.format(total)}</span></div><button type="button" class="checkout-tax-action" data-tax-add aria-expanded="${taxEnabled}" aria-controls="checkout-tax-fields" ${taxEnabled?'hidden':''}>+ Gross-up Pajak</button><section class="checkout-tax" id="checkout-tax-fields" ${taxEnabled?'':'hidden'}><div class="checkout-tax-head"><strong>+ Gross-up Pajak</strong><button type="button" class="checkout-tax-action" data-tax-remove>Hapus</button></div><label class="field checkout-tax-rate"><span>Tarif Pajak</span><span class="input-with-unit"><input name="taxRate" inputmode="decimal" maxlength="6" placeholder="0" value="${escapeHtml(state.draft.taxRate ?? '')}"><b aria-hidden="true">%</b></span></label><div class="summary-row"><span>Penyesuaian Harga</span><strong data-tax-adjustment></strong></div></section><div class="summary-row total checkout-tax-total" data-tax-total-row ${taxEnabled?'':'hidden'}><span>Total Tagihan</span><strong data-tax-total></strong></div><div class="checkout-actions"><button class="secondary full${state.editingOrderId ? "" : " checkout-save-draft"}" data-save-pos-draft type="${posBarcodeActive() ? "button" : "submit"}" ${state.cart.length ? "" : "disabled"}>${state.editingOrderId ? "Simpan Perubahan Draft" : "Simpan Draft"}</button><button id="pay-order" class="primary full" type="button" ${state.cart.length ? "" : "disabled"}>Pembayaran</button>${state.editingOrderId ? '<button id="cancel-edit" class="secondary full" type="button">Batal Edit</button>' : ""}</div></div></form>`;
 }
 
 let cartQueue = Promise.resolve(), cartPending = 0, configurationEditingLine = null;
@@ -652,13 +735,41 @@ function syncCartBusy() {
   root.querySelector('.sticky-summary')?.setAttribute('aria-busy', String(cartPending > 0));
 }
 
-function mutateCart(plan, { guard = () => true, afterCommit, blink = true } = {}) {
+function renderCartSummary() {
+  root.querySelector("#cart-list").innerHTML = cartHtml();
+  root.querySelector("[data-cart-count]").textContent = `${state.cart.length} item`;
+  root.querySelector("[data-cart-total]").textContent = rupiah.format(state.cart.reduce((sum, line) => sum + line.previewTotal, 0));
+  root.querySelector("#checkout").dispatchEvent(new Event("cartchange"));
+  const flatRows = root.querySelectorAll("[data-flat-row]");
+  if (flatRows.length) {
+    const products = new Map(state.products.map(product => [product.id, product]));
+    for (const row of flatRows) {
+      const product = products.get(row.dataset.flatRow);
+      if (!product) continue;
+      const line = flatCartLine(product);
+      const input = row.querySelector("[data-flat-quantity]");
+      if (input && line) {
+        if (input !== document.activeElement || input.value === input.defaultValue) input.value = String(line.quantity);
+        input.defaultValue = String(line.quantity);
+        row.querySelector('[data-flat-qty="-1"]').disabled = line.quantity <= minimumQuantity(product);
+      } else if (Boolean(input) !== Boolean(line)) {
+        row.lastElementChild.outerHTML = flatQuantityHtml(product, line);
+        row.classList.toggle("selected", Boolean(line));
+      }
+    }
+  }
+  assistance.mountCheckout(state.cartCheck?.data);
+  syncCartBusy();
+}
+
+function mutateCart(plan, { guard = () => true, afterCommit, blink = true, summaryOnly = false, validateRetailStock = false } = {}) {
   const uid = state.currentUser?.id, orderId = state.editingOrderId;
   cartPending += 1; syncCartBusy();
   const task = cartQueue.then(async () => {
     if (state.currentUser?.id !== uid || state.editingOrderId !== orderId || !guard()) return false;
-    const before = state.cart, proposal = plan(before);
-    const quote = await api('/api/orders/check', { method:'POST', signal:AbortSignal.timeout(10000), body:JSON.stringify({ items:proposal, editingOrderId:orderId, includeItems:true }) });
+    const before = state.cart, proposal = await plan(before);
+    if (state.currentUser?.id !== uid || state.editingOrderId !== orderId || state.cart !== before || !guard()) return false;
+    const quote = await api('/api/orders/check', { method:'POST', signal:AbortSignal.timeout(10000), body:JSON.stringify({ items:proposal, editingOrderId:orderId, includeItems:true, validateRetailStock }) });
     if (state.currentUser?.id !== uid || state.editingOrderId !== orderId || state.cart !== before || !guard()) return false;
     const dtfIds = new Set(proposal.filter(line => state.products.find(p=>p.id===line.productId)?.dtfShirt).flatMap(line => line.shirtVariants || []).map(v=>v.materialId).filter(Boolean));
     const shirtRows = quote.items.filter(line => state.products.find(p=>p.id===line.productId)?.dtfShirt).flatMap(line=>line.materials || []);
@@ -670,7 +781,7 @@ function mutateCart(plan, { guard = () => true, afterCommit, blink = true } = {}
     state.cartCheck = { cart:state.cart, data:quote, at:Date.now() };
     afterCommit?.();
     if (state.view === 'pos') {
-      renderPos();
+      if (summaryOnly) renderCartSummary(); else renderPos();
       const body=root.querySelector('.sticky-summary>.panel-body');if(body)body.scrollTop=scroll;
       if (typeof blink === 'function' ? blink(before,state.cart) : blink) blinkCartTotal();
     }
@@ -678,6 +789,45 @@ function mutateCart(plan, { guard = () => true, afterCommit, blink = true } = {}
   }).finally(() => { cartPending -= 1; syncCartBusy(); });
   cartQueue = task.catch(() => {});
   return task;
+}
+
+function bindCartActions() {
+  const list = root.querySelector("#cart-list");
+  async function changeQuantity(cartId, update) {
+    try {
+      await mutateCart(cart => {
+        const line = cart.find(row => row.cartId === cartId);
+        if (!line) throw new Error("Item pesanan sudah tidak tersedia");
+        return editCartLine(cart, cartId, { ...line, quantity: update(line.quantity) });
+      }, { summaryOnly: true, validateRetailStock: true });
+    } catch (error) {
+      if (list.isConnected) renderCartSummary();
+      toast(error.message, "error");
+    }
+  }
+  list.onclick = async event => {
+    const row = event.target.closest("[data-cart-row]");
+    if (!row) return;
+    const id = row.dataset.cartRow;
+    const step = event.target.closest("[data-cart-step]");
+    if (step) return changeQuantity(id, quantity => Math.max(1, quantity + Number(step.dataset.cartStep)));
+    if (event.target.closest("[data-cart-quantity]")) return;
+    if (event.target.closest("[data-remove]")) {
+      syncDraft(root.querySelector("#checkout"));
+      try { await mutateCart(cart => cart.filter(line => line.cartId !== id), { blink: false, summaryOnly: posBarcodeActive() }); }
+      catch (error) { toast(error.message, "error"); }
+    } else await openCartEditor(id);
+  };
+  list.onchange = event => {
+    if (!event.target.matches("[data-cart-quantity]")) return;
+    const quantity = event.target.valueAsNumber;
+    changeQuantity(event.target.closest("[data-cart-row]").dataset.cartRow, () => quantity);
+  };
+  list.onkeydown = event => {
+    if (event.key !== "Enter" || !event.target.matches("[data-cart-quantity]")) return;
+    event.preventDefault();
+    event.target.blur();
+  };
 }
 
 async function openCartEditor(cartId) {
@@ -1229,29 +1379,42 @@ function bindPos() {
   document.querySelectorAll("[data-atk-group]").forEach((button) => button.addEventListener("click", () => {
     syncDraft(document.querySelector("#checkout")); state.atkGroup = button.dataset.atkGroup; renderPos();
   }));
-  document.querySelectorAll("[data-flat-qty]").forEach((button) => {
-    button.addEventListener("mousedown", (event) => event.preventDefault());
-    button.addEventListener("click", () => {
+  const catalog = root.querySelector(".category-content");
+  catalog.addEventListener("mousedown", event => {
+    if (event.target.closest("[data-flat-qty]")) event.preventDefault();
+  });
+  catalog.addEventListener("click", event => {
+    const button = event.target.closest("[data-flat-product]");
+    if (!button) return;
+    if (button.hasAttribute("data-flat-qty")) {
       const input = button.parentElement.querySelector("[data-flat-quantity]");
       if (!/^\d+$/.test(input.value.trim()) || !Number.isSafeInteger(Number(input.value))) return toast("Jumlah harus bilangan bulat nol atau lebih", "error");
       const dirty = input.value !== input.defaultValue;
       const next = Math.max(0, Number(input.value) + Number(button.dataset.flatQty));
       input.value = String(next); input.defaultValue = String(next);
       setFlatQuantity(button.dataset.flatProduct, dirty ? next : Number(button.dataset.flatQty), dirty);
-    });
+      return;
+    }
+    setFlatQuantity(button.dataset.flatProduct, state.cart.some(line => line.productId === button.dataset.flatProduct && plainRetailLine(line)) ? 0 : 1, true);
   });
-  document.querySelectorAll("[data-flat-quantity]").forEach((input) => {
-    input.addEventListener("focus", () => input.select());
-    input.addEventListener("change", () => {
-      if (!/^\d+$/.test(input.value.trim()) || !Number.isSafeInteger(Number(input.value))) {
-        input.value = state.cart.find((line) => line.productId === input.dataset.flatQuantity && plainRetailLine(line))?.quantity || 1;
-        return toast("Jumlah harus bilangan bulat nol atau lebih", "error");
-      }
-      setFlatQuantity(input.dataset.flatQuantity, Number(input.value), true);
-    });
-    input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); input.blur(); } });
+  catalog.addEventListener("focusin", event => {
+    if (event.target.matches("[data-flat-quantity]")) event.target.select();
   });
-  document.querySelectorAll(".atk-pick,.atk-name").forEach((button) => button.addEventListener("click", () => setFlatQuantity(button.dataset.flatProduct, state.cart.some((line) => line.productId === button.dataset.flatProduct && plainRetailLine(line)) ? 0 : 1, true)));
+  catalog.addEventListener("change", event => {
+    const input = event.target;
+    if (!input.matches("[data-flat-quantity]")) return;
+    if (!/^\d+$/.test(input.value.trim()) || !Number.isSafeInteger(Number(input.value))) {
+      input.value = state.cart.find(line => line.productId === input.dataset.flatQuantity && plainRetailLine(line))?.quantity || 1;
+      return toast("Jumlah harus bilangan bulat nol atau lebih", "error");
+    }
+    setFlatQuantity(input.dataset.flatQuantity, Number(input.value), true);
+  });
+  catalog.addEventListener("keydown", event => {
+    if (event.key === "Enter" && event.target.matches("[data-flat-quantity]")) {
+      event.preventDefault();
+      event.target.blur();
+    }
+  });
   const selectA3Family = (family) => {
     const candidates = state.products.filter((item) => item.active !== false && item.a3Kind === state.a3Kind && item.a3Family === family);
     state.selectedProduct = (candidates.find((item) => item.a3PrintMode === "BW" && item.a3Side === "1S")
@@ -1289,7 +1452,7 @@ function bindPos() {
     state.selectedProduct = null;
     renderPos();
   }));
-  root.querySelector(".category-content").addEventListener("click", event => {
+  catalog.addEventListener("click", event => {
     const button = event.target.closest("[data-config-product]");
     if (!button) return;
     syncDraft(document.querySelector("#checkout"));
@@ -1303,11 +1466,7 @@ function bindPos() {
     label.addEventListener("click", (event) => { event.preventDefault(); select(); });
     label.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); select(); } });
   });
-  document.querySelectorAll('[data-cart-row]').forEach(row=>row.addEventListener('click',event=>{if(!event.target.closest('[data-remove]'))openCartEditor(row.dataset.cartRow);}));
-  document.querySelectorAll('[data-remove]').forEach(button=>button.onclick=async event=>{
-    event.stopPropagation();syncDraft(document.querySelector('#checkout'));
-    try{await mutateCart(cart=>cart.filter(line=>line.cartId!==button.dataset.remove),{blink:false});}catch(error){toast(error.message,'error');}
-  });
+  bindCartActions();
 
   const checkout = document.querySelector("#checkout");
   bindCheckoutDeadline(checkout);
@@ -1339,6 +1498,7 @@ function bindPos() {
   checkout.querySelector('[data-tax-add]').onclick = () => { state.draft.taxEnabled = true; syncCheckoutTax(); taxInput.focus(); };
   checkout.querySelector('[data-tax-remove]').onclick = () => { state.draft.taxEnabled = false; state.draft.taxRate = ''; taxInput.value = ''; syncCheckoutTax(); checkout.querySelector('[data-tax-add]').focus(); };
   syncCheckoutTax();
+  checkout.addEventListener("cartchange", syncCheckoutTax);
   checkout.addEventListener("input", () => syncDraft(checkout));
   checkout.addEventListener("change", () => syncDraft(checkout));
   const createRequestId = crypto.randomUUID();
@@ -1367,6 +1527,9 @@ function bindPos() {
     event.preventDefault();
     await savePosOrder(false);
   });
+  if (posBarcodeActive()) checkout.querySelector("[data-save-pos-draft]").onclick = () => {
+    if (checkout.reportValidity()) savePosOrder(false);
+  };
   document.querySelector("#pay-order")?.addEventListener("click", async () => {
     if (!checkout.reportValidity()) return;
     await savePosOrder(true);
@@ -1695,6 +1858,7 @@ function bindPaymentForm(detail, order, initial) {
   const paymentOrder = discountController.order;
   const taxInput = form.elements.taxWithheld;
   const confirmButton = detail.querySelector('#confirm-payment');
+  const explicitConfirm = posBarcodeActive();
   form.querySelectorAll('input[name="type"]').forEach(input => input.addEventListener("change", () => {
     if (!input.checked) return;
     const po = input.value === "PO";
@@ -1720,8 +1884,8 @@ function bindPaymentForm(detail, order, initial) {
     previewUrl = URL.createObjectURL(file); preview.innerHTML = `<img src="${previewUrl}" alt="Preview PO"><span>${escapeHtml(file.name)}</span>`; preview.classList.remove("hidden");
   });
   let submitting = false;
-  form.addEventListener("submit", async event => {
-    event.preventDefault(); if (submitting) return;
+  async function submit() {
+    if (submitting) return;
     if (!form.reportValidity()) return;
     submitting = true;
     form.inert = true;
@@ -1747,7 +1911,15 @@ function bindPaymentForm(detail, order, initial) {
       form.inert = false;
       confirmButton.disabled = false;
     }
+  }
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    if (!explicitConfirm) submit();
   });
+  if (explicitConfirm) {
+    confirmButton.type = "button";
+    confirmButton.onclick = submit;
+  }
 }
 
 function readPoAttachment(file) {
@@ -1863,8 +2035,9 @@ const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n)
 function renderReports(){return reportsUI.mount();}
 
 function masterHeader() {
-  const labels = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin", assets: "Aset", categories: "Kategori", campaigns: "Campaign", customers: "Pelanggan", users: "User & Akses", pics: "PIC" };
-  const allowed = { campaigns:state.currentUser?.role==="OWNER"&&can("master.products"),customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings() };
+  const canManageProducts = can("master.products");
+  const labels = { products: "Produk", barcodes: "Registrasi Barcode", materials: "Bahan", finishings: "Finishing", machines: "Mesin", assets: "Aset", categories: "Kategori", campaigns: "Campaign", customers: "Pelanggan", users: "User & Akses", pics: "PIC", "pos-settings": "Pengaturan POS" };
+  const allowed = { campaigns:state.currentUser?.role==="OWNER"&&canManageProducts,customers:can("customers.view"),products: canManageProducts, barcodes: canManageProducts, materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings(), "pos-settings": canManageSettings() && can("master.view") };
   return `<div class="master-sticky-header"><header class="master-top page-toolbar"><h1>Master Data</h1></header>
     <nav class="master-tabs" aria-label="Tab Master Data">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button type="button" ${state.masterTab === id ? 'class="active" aria-current="page"' : ""} data-master-tab="${id}">${label}</button>`).join("")}</nav></div>`;
 }
@@ -1897,12 +2070,28 @@ function assetContext() {
   };
 }
 
+function posBarcodeContext() {
+  return {
+    root, state, header: masterHeader, bindHeader: bindMasterTabs, api, e: escapeHtml, toast,
+    showDialog: showMasterDialog, switchHtml,
+    showProducts: () => { state.masterTab = "products"; renderMaster(); },
+    printLabels: rows => openBarcodePrint(rows, {
+      e: escapeHtml, money: value => rupiah.format(value), toast, print: showPrintDocument,
+      identity: () => state.currentUser?.id, allowed: () => state.view === "master" && state.masterTab === "barcodes" && can("master.products")
+    })
+  };
+}
+
 function renderMaster() {
   const allowedTabs = [["customers","customers.view"],["products", "master.products"], ["materials", "master.materials"], ["finishings", "master.finishings"], ["machines", "master.machines"], ["users", "users.manage"]].filter(([, permission]) => can(permission)).map(([id]) => id);
   if (canManageSettings()) allowedTabs.push("categories", "pics", "assets");
+  if (canManageSettings() && can("master.view")) allowedTabs.push("pos-settings");
+  if (allowedTabs.includes("products")) allowedTabs.push("barcodes");
   if(state.currentUser?.role==="OWNER"&&can("master.products"))allowedTabs.push("campaigns");
   if (!allowedTabs.includes(state.masterTab)) state.masterTab = allowedTabs[0] || "users";
   if(state.masterTab==="campaigns")return homeCampaignUI.mountSettings();
+  if(state.masterTab==="barcodes")return mountBarcodeRegistration(posBarcodeContext());
+  if(state.masterTab==="pos-settings")return posBarcodeSettings(posBarcodeContext());
   if (state.masterTab === "customers")return customersUI.mountMaster();
   if (state.masterTab === "assets") return mountAssets(assetContext());
   if (["categories", "pics"].includes(state.masterTab)) return renderSettingsMaster();
@@ -1932,8 +2121,11 @@ function renderMaster() {
   const audit = state.masterTab === "users" && can("audit.view") ? `<section class="panel audit-panel"><div class="panel-head"><h2>Audit Log Terakhir</h2><span>${state.auditLogs.length} aktivitas</span></div><div class="audit-list">${state.auditLogs.slice(0, 30).map((item) => `<div><span>${escapeHtml(item.action)}</span><p><strong>${escapeHtml(item.userName)}</strong> · ${escapeHtml(item.description)}</p><small>${dateFormat.format(new Date(item.createdAt))}</small></div>`).join("") || '<p class="note">Belum ada aktivitas.</p>'}</div></section>` : "";
   const searchLabel = state.masterTab === "products" ? "Cari nama produk" : `Cari ${title.toLowerCase()}`;
   const filters = `<input id="master-search" class="search" type="search" aria-label="${searchLabel}" placeholder="${searchLabel}…">${productFilters}${state.masterTab === "finishings" ? `<select id="filter-finishing-type" class="filter-select" aria-label="Filter tipe finishing"><option value="">Semua tipe</option>${FINISHING_TYPES.map(type=>`<option value="${type.id}">${type.label}</option>`).join("")}</select>` : ""}${sortFilter}`;
-  root.innerHTML = `<div class="master-page master-data-page">${masterHeader()}<section class="panel">${masterPanelHeader(`Daftar ${title}`, { filters, actions: masterAddButton(title) })}<div class="table-wrap master-table master-readable-list">${tables[state.masterTab]}</div></section>${audit}</div>`;
+  const barcodeAction = state.masterTab === "products" ? '<button type="button" class="secondary" data-register-barcodes>Registrasi Barcode</button>' : "";
+  root.innerHTML = `<div class="master-page master-data-page">${masterHeader()}<section class="panel">${masterPanelHeader(`Daftar ${title}`, { filters, actions: barcodeAction + masterAddButton(title) })}<div class="table-wrap master-table master-readable-list">${tables[state.masterTab]}</div></section>${audit}</div>`;
   bindMasterTabs();
+  const barcodeRegistration = root.querySelector("[data-register-barcodes]");
+  if (barcodeRegistration) barcodeRegistration.onclick = () => { state.masterTab = "barcodes"; renderMaster(); };
   document.querySelector("#add-master").onclick = () => state.masterTab === "products" ? openProductForm() : state.masterTab === "materials" ? openMaterialForm() : state.masterTab === "finishings" ? openFinishingForm() : state.masterTab === "machines" ? openMachineForm() : openUserForm();
   document.querySelectorAll("[data-edit-product]").forEach((button) => button.onclick = () => openProductForm(state.allProducts.find((item) => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-material]").forEach((button) => button.onclick = () => openMaterialForm(state.materials.find((item) => item.id === button.dataset.editMaterial)));
@@ -2220,7 +2412,11 @@ function bindMinimumSettings(form) {
 
 function openProductForm(product = null) {
   if (product?.dtfShirt) return openDtfProductForm(product);
-  return openProductEditor({state,dialog,api,e:escapeHtml,toast,showDialog:showMasterDialog,finishingOptionsHtml,materialRowHtml,readMaterialRows,variantSourcesHtml,deleteButtonHtml,bindDeleteRecord,parseMoney,load,render,atkGroups,categoryId,categories:()=>productCategories().filter(([id])=>id!=="all").map(([,label])=>label)},product);
+  return openProductEditor({
+    state,dialog,api,e:escapeHtml,toast,showDialog:showMasterDialog,finishingOptionsHtml,materialRowHtml,readMaterialRows,variantSourcesHtml,deleteButtonHtml,bindDeleteRecord,parseMoney,load,render,atkGroups,categoryId,
+    categories:()=>productCategories().filter(([id])=>id!=="all").map(([,label])=>label),
+    mountBarcodes: (node, id) => mountProductBarcodes(node, id, posBarcodeContext())
+  },product);
 }
 
 function openDtfProductForm(product) {

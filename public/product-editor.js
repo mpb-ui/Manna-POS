@@ -6,7 +6,7 @@ import {categoryWidthChoices,normalizeProductWidths} from './product-widths.js';
 import { purchaseMultiple } from './product-pricing.js';
 import { usesPrintRollRules } from './outdoor-sizing.js';
 import { PAPER_PRODUCT_TABS, isPaperProductCategory } from './paper-product-tabs.js';
-import { PRODUCT_KIND, supportsProductKind } from './product-kind.js';
+import { isMerchandise, PRODUCT_KIND, supportsProductKind } from './product-kind.js';
 
 const productKinds = [
   { value: PRODUCT_KIND.PRODUCTION, label: 'Jasa produksi' },
@@ -72,7 +72,6 @@ export function openProductEditor(ctx, product = null) {
       ${field('Mesin yang Digunakan',select('machineId',machineOptions,product?.machineIds?.[0] || '','Pilih mesin'),'machineId','data-product-machine')}
       ${field('Jenis ATK',select('retailAtK',[{value:'false',label:'Jasa produksi'},{value:'true',label:'Barang dagangan'}],String(Boolean(product?.retailAtK))),'retailAtK','data-atk-field')}
       ${field('Tab ATK',select('atkGroup',ctx.atkGroups,product?.atkGroup || ctx.atkGroups[0]),'atkGroup','data-atk-field')}
-      ${field('Barcode (opsional)',input('barcode',product?.barcode,'maxlength="128"'),'barcode','data-atk-field')}
       <textarea name="note" aria-label="Informasi produk (opsional)" placeholder="Informasi produk (opsional)" rows="1" maxlength="2000">${e(product?.note || '')}</textarea>
       </div><div class="pe-info-settings">
       ${setting('Minimum Pembelian','minimumEnabled',product?.minimumEnabled,`<div data-minimum-fields ${product?.minimumEnabled?'':'hidden'}>${quantitySelector('minimumQuantity',product?.minimumQuantity || 1,1,'minimum pembelian')}</div>`)}
@@ -82,6 +81,9 @@ export function openProductEditor(ctx, product = null) {
       <div data-a3-quick-setting>${setting('Tampilkan di Sering Dipilih','a3Popular',product?.a3Popular,'<p class="pe-a3-help" data-a3-quick-help></p>')}</div>
       ${setting('Produk Aktif','active',product?.active !== false)}
       </div>
+      <section class="barcode-product-editor" data-product-barcodes hidden><strong>Barcode Produk <small>(opsional)</small></strong>
+        <div data-barcode-management><p class="muted">Simpan produk untuk mendaftarkan barcode.</p></div>
+      </section>
     </section><section id="pe-production-panel" role="tabpanel" aria-labelledby="pe-production-tab" hidden>
       <div class="pe-product-mode"><label class="pe-radio"><input type="radio" name="productMode" value="single" ${!product?.hasMaterialVariants?'checked':''}><span>Produk Satuan</span></label><label class="pe-radio"><input type="radio" name="productMode" value="variants" ${product?.hasMaterialVariants?'checked':''}><span>Produk dengan Varian</span></label></div>
       <section class="pe-variant-definition" data-variant-definition ${product?.hasMaterialVariants?'':'hidden'}>
@@ -166,6 +168,7 @@ export function openProductEditor(ctx, product = null) {
     form.classList.toggle('pe-merchandise', selectedKind() === PRODUCT_KIND.MERCHANDISE);
     form.querySelector('[data-width-field]').hidden=mode==='unit';syncWidths(mode);
     form.querySelectorAll('[data-atk-field]').forEach(f=>f.hidden=category!=='atk');
+    form.querySelector('[data-product-barcodes]').hidden = !(selectedKind() === PRODUCT_KIND.MERCHANDISE || (category === 'atk' && el('retailAtK').value === 'true'));
     const a3=category==='print-a3';form.querySelector('[data-a3-field]').hidden=!a3;form.querySelector('[data-a3-quick-setting]').hidden=!a3;
     el('a3Kind').disabled=!a3;
     const count=a3QuickCount((state.allProducts||state.products).filter(p=>ctx.categoryId(p.category)==='print-a3'),el('a3Kind').value,product?.id);
@@ -228,7 +231,7 @@ export function openProductEditor(ctx, product = null) {
     else if(name==='productMode'||name==='hasOptions') { syncBasics();renderCards(); }
     else if(name==='category'||name==='a3Kind') { const selected=[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value);form.querySelector('#finishing-options').innerHTML=finishingOptionsHtml(el('category').value,selected,product?.a3Kind===el('a3Kind').value?product:null);syncBasics(); }
     else if(name==='a3Popular')syncBasics();
-    else if(['minimumEnabled','purchaseMultipleEnabled','sheetCalculatorEnabled','discountEnabled','discountType','productKind'].includes(name)) syncBasics();
+    else if(['minimumEnabled','purchaseMultipleEnabled','sheetCalculatorEnabled','discountEnabled','discountType','productKind','retailAtK'].includes(name)) syncBasics();
   });
   form.addEventListener('click',async event=>{
     const b=event.target.closest('button');if(!b)return;
@@ -294,7 +297,7 @@ export function openProductEditor(ctx, product = null) {
       const normalizedCard=c=>({...c,baseCost:Number(c.baseCost || 0),price:c.price===''?null:Number(c.price),priceTiers:c.priceTiers.map(t=>({...t,price:Number(t.price)}))});
       const materialVariants=variantMode?variants.map(v=>{const c=normalizedCard(cardState(v.id));const combinations=hasOptions()?options.map(o=>({subVariantId:o.id,...normalizedCard(cardState(v.id+'|'+o.id))})):[];return {id:v.id,label:v.label.trim(),...c,price:c.price || combinations[0]?.price || Number(first.price),sheetProfileId:v.sheetProfileId || '',combinations};}):[];
       const payload={productEditorVersion:1,productKind:selectedKind(),sku:el('sku').value.trim(),name:el('name').value.trim(),category:el('category').value,paperProductTab:el('paperProductTab').disabled?null:el('paperProductTab').value,a3Kind:el('a3Kind').disabled?null:el('a3Kind').value,a3Popular:ctx.categoryId(el('category').value)==='print-a3'&&el('a3Popular').checked,saleUnit:normalizeSaleUnit(el('saleUnit').value),widths:el('widths').disabled?[]:readWidths(),machineIds:el('machineId').value?[el('machineId').value]:[],note:el('note').value,
-        active:el('active').checked,featured:el('featured').checked,minimumEnabled:el('minimumEnabled').checked,minimumQuantity:Number(el('minimumQuantity').value),purchaseMultiple:multipleActive?multipleValue:1,sheetCalculatorEnabled:el('sheetCalculatorEnabled').checked,sheetProfileId:el('sheetProfileId')?.value || '',retailAtK:el('retailAtK').value==='true',atkGroup:el('atkGroup').value,barcode:el('barcode').value,
+        active:el('active').checked,featured:el('featured').checked,minimumEnabled:el('minimumEnabled').checked,minimumQuantity:Number(el('minimumQuantity').value),purchaseMultiple:multipleActive?multipleValue:1,sheetCalculatorEnabled:el('sheetCalculatorEnabled').checked,sheetProfileId:el('sheetProfileId')?.value || '',retailAtK:el('retailAtK').value==='true',atkGroup:el('atkGroup').value,
         price:Number(first.price),baseCost:Number(first.baseCost || 0),materialSources:variantMode?[]:first.materialSources,wholesaleEnabled:!variantMode && first.priceTiers.length>0,wholesaleBasis:el('wholesaleBasis').value,priceTiers:variantMode?[]:normalizedCard(first).priceTiers,
         hasMaterialVariants:variantMode,variantType:el('variantType').value,optionType:hasOptions()?el('optionType').value:'',subVariantLabel:hasOptions()?el('optionType').value:'',materialVariants,subVariants:hasOptions()?options.map(o=>({id:o.id,label:o.label.trim()})):[],finishingIds:[...form.querySelectorAll('[name=finishingId]:checked')].map(i=>i.value),
         discount:{enabled:el('discountEnabled').checked,type:el('discountType').value,value:el('discountType').value==='nominal'?ctx.parseMoney(el('discountValue').value):Number(el('discountValue').value),startDate:el('startDate').value,endDate:el('endDate').value}};
@@ -303,15 +306,19 @@ export function openProductEditor(ctx, product = null) {
       if(product?.sizeVariants?.length)payload.sizeVariants=[...form.querySelectorAll('[data-variant-kind="template"]')].map(group=>({id:group.dataset.variantId,materialSources:readMaterialRows(group)}));
       if(product?.choiceGroups?.length)payload.choiceGroups=[...form.querySelectorAll('[data-choice-group]')].map(group=>({id:group.dataset.choiceGroup,options:[...group.querySelectorAll('[data-choice-option]')].map(o=>({id:o.dataset.choiceOption,materialId:o.querySelector('[data-choice-material]').value,quantity:o.querySelector('[data-choice-quantity]').value}))}));
       form.dataset.saving='true';form.querySelector('[type=submit]').disabled=true;form.querySelector('[data-cancel-editor]').disabled=true;detail.querySelector('.detail-close').disabled=true;
-      await api(product?'/api/products/'+product.id:'/api/products',{method:product?'PUT':'POST',body:JSON.stringify(payload)});
+      const saved = await api(product?'/api/products/'+product.id:'/api/products',{method:product?'PUT':'POST',body:JSON.stringify(payload)});
       state.view='master';state.masterTab='products';
       try {await ctx.load();}catch(error){dialog.close();toast('Produk tersimpan, tetapi daftar gagal diperbarui. Muat ulang halaman.','error');return;}
       dialog.close();toast('Produk berhasil disimpan');
+      if (isMerchandise(saved) && !isMerchandise(product)) {
+        openProductEditor(ctx, saved).querySelector('[data-product-barcodes]').scrollIntoView({ block: 'nearest' });
+      }
     }catch(error){if(error.code==='A3_QUICK_LIMIT'){showTab('info');el('a3Popular').focus();}form.querySelector('.pe-error').textContent=error.message;form.querySelector('.pe-error').hidden=false;toast(error.message,'error');}finally{delete form.dataset.saving;form.querySelector('[type=submit]').disabled=false;form.querySelector('[data-cancel-editor]').disabled=false;detail.querySelector('.detail-close')?.removeAttribute('disabled');}
   };
   bindDeleteRecord(detail,product,'products','Produk','products');
   fillPrintSides(el('variantType').value,variants,'v');
   fillPrintSides(el('optionType').value,options,'o');
   renderNames();syncBasics();renderCards();bindMoney(form);enhanceMaterialSelects(detail,state.materials);
+  if (isMerchandise(product)) ctx.mountBarcodes(form.querySelector('[data-barcode-management]'), product.id);
   return detail;
 }
