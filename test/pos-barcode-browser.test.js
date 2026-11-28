@@ -34,8 +34,11 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
     name: "Pulpen Standard Hitam", sku: "ATK-PULPEN-STD-HTM", category: "ATK", retailAtK: true, price: 5000,
     wholesaleEnabled: true, priceTiers: [{ min: 3, max: null, price: 4000 }]
   }, 5);
-  const acrylic = await create({
-    name: "Akrilik Display Meja", sku: "AKR-DISPLAY-MEJA", category: "Akrilik", productKind: "MERCHANDISE",
+  await owner.ok("/api/categories/products", "POST", { name: "Frame Foto" });
+  const { products } = await owner.ok("/api/bootstrap?view=pos");
+  const legacyAcrylic = products.find(product => product.id === "direct-akrilik-display-7x4");
+  const frame = await create({
+    name: "Frame Foto Meja", sku: "FRAME-FOTO-MEJA", category: "Frame Foto", productKind: "MERCHANDISE",
     price: 35000, hasMaterialVariants: true, variantType: "Varian Ukuran",
     materialVariants: [
       { id: "a5", label: "A5", price: 35000, materialSources: [] },
@@ -43,7 +46,7 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
     ]
   }, 8);
   const envelope = await create({ name: "Amplop Cokelat A6", sku: "ATK-AMP-CKL-A6", category: "ATK", retailAtK: true, price: 3000 }, 6);
-  await register(acrylic, upc);
+  await register(frame, upc);
   await register(envelope, ean8);
 
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
@@ -112,10 +115,22 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
   await barcodesTab.click();
   await page.getByRole("heading", { name: "Registrasi Barcode", exact: true }).waitFor();
   const status = page.getByLabel("Status registrasi");
+  const barcodeCategory = page.getByLabel("Kategori produk", { exact: true });
+  const barcodeSearch = page.getByRole("searchbox", { name: "Cari nama produk" });
+  await barcodeCategory.selectOption("Akrilik");
+  await barcodeSearch.fill(legacyAcrylic.name);
+  const acrylicRow = productRow(legacyAcrylic.name);
+  await acrylicRow.getByRole("button", { name: "Jadikan Barang Dagangan" }).click();
+  await acrylicRow.getByRole("button", { name: "Generate Barcode" }).click();
+  const acrylicBarcode = await acrylicRow.getByText(/^MPP\d{8}$/).innerText();
+  await owner.ok(`/api/inventory/${legacyAcrylic.sku}`, "PATCH", { change: 2, reason: "Saldo uji Akrilik" });
+
+  await barcodeSearch.fill("");
+  await barcodeCategory.selectOption("");
   await status.selectOption("registered");
   await productRow(pen.name).waitFor();
-  await page.getByLabel("Kategori produk", { exact: true }).selectOption("Akrilik");
-  const a5 = productRow(acrylic.name).filter({ hasText: "A5" });
+  await barcodeCategory.selectOption("Frame Foto");
+  const a5 = productRow(frame.name).filter({ hasText: "A5" });
   await a5.waitFor();
   assert.equal(await productRow(pen.name).count(), 0);
   const generateA5 = a5.getByRole("button", { name: "Generate Barcode", exact: true });
@@ -124,23 +139,23 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
   assert.equal(await a5.getByText(upc, { exact: true }).isVisible(), true);
   assert.equal(await generateA5.isDisabled(), true);
   await status.selectOption("unregistered");
-  await page.getByRole("searchbox", { name: "Cari nama produk" }).fill(acrylic.name);
-  const a6 = productRow(acrylic.name).filter({ hasText: "A6" });
+  await barcodeSearch.fill(frame.name);
+  const a6 = productRow(frame.name).filter({ hasText: "A6" });
   await a6.getByRole("button", { name: "Scan Barcode" }).click();
   await modal.locator("[data-factory-code]").waitFor();
-  await hid("AKR-A6-QA");
-  await modal.getByText("AKR-A6-QA", { exact: true }).waitFor();
+  await hid("FRAME-A6-QA");
+  await modal.getByText("FRAME-A6-QA", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
-  await page.getByRole("searchbox", { name: "Cari nama produk" }).fill("");
-  await page.getByLabel("Kategori produk", { exact: true }).selectOption("");
+  await barcodeSearch.fill("");
+  await barcodeCategory.selectOption("");
   await status.selectOption("registered");
-  await a6.getByText("AKR-A6-QA").waitFor();
+  await a6.getByText("FRAME-A6-QA").waitFor();
   await a6.getByRole("button", { name: "Edit Barcode" }).click();
   await modal.getByRole("button", { name: "Edit", exact: true }).click();
   const entry = modal.locator("[data-factory-code]");
-  await entry.fill("AKR-A6");
+  await entry.fill("FRAME-A6");
   await modal.getByRole("button", { name: "Simpan Barcode" }).click();
-  await modal.locator("code").getByText("AKR-A6", { exact: true }).waitFor();
+  await modal.locator("code").getByText("FRAME-A6", { exact: true }).waitFor();
   await page.keyboard.press("Escape");
   await shot("04-registrasi-barcode.png");
   for (const name of [pen.name, envelope.name]) await productRow(name).getByRole("checkbox").check();
@@ -183,6 +198,12 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
   await nav("pos");
   await indicator.waitFor();
 
+  await hid(acrylicBarcode);
+  const acrylicLine = cart.filter({ hasText: legacyAcrylic.name });
+  await acrylicLine.getByText("1 pcs", { exact: true }).waitFor();
+  await acrylicLine.getByRole("button", { name: `Hapus ${legacyAcrylic.name}` }).click();
+  await acrylicLine.waitFor({ state: "detached" });
+
   await hid(ean);
   const penCount = page.getByLabel(`Jumlah ${pen.name}`, { exact: true });
   await penCount.waitFor();
@@ -216,7 +237,7 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
   const outdoor = page.getByRole("tab", { name: /Outdoor/ });
   await outdoor.click();
   await hid(upc);
-  await cart.filter({ hasText: acrylic.name }).getByText(/A5/).waitFor();
+  await cart.filter({ hasText: frame.name }).getByText(/A5/).waitFor();
   assert.equal(await cart.count(), 2);
   await page.getByRole("tab", { name: "ATK", exact: true }).click();
   await page.keyboard.press("Control+k");

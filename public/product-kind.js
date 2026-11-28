@@ -3,7 +3,7 @@ export const PRODUCT_KIND = {
   MERCHANDISE: "MERCHANDISE"
 };
 
-const supportedCategories = new Set(["akrilik", "akrilik-frame", "frame-foto", "foto-frame"]);
+const supportedCategories = new Set(["akrilik", "akrilik-frame", "akrilik-frame-foto", "frame-foto", "foto-frame"]);
 
 export function supportsProductKind(categoryId, label) {
   const slug = String(label || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
