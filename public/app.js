@@ -2035,11 +2035,11 @@ const reportsUI = createReportsUI({root,api,escapeHtml,money:n=>rupiah.format(n)
 function renderReports(){return reportsUI.mount();}
 
 function masterHeader() {
-  const labels = { products: "Produk", materials: "Bahan", finishings: "Finishing", machines: "Mesin", assets: "Aset", categories: "Kategori", campaigns: "Campaign", customers: "Pelanggan", users: "User & Akses", pics: "PIC", "pos-settings": "Pengaturan POS" };
-  const allowed = { campaigns:state.currentUser?.role==="OWNER"&&can("master.products"),customers:can("customers.view"),products: can("master.products"), materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings(), "pos-settings": canManageSettings() && can("master.view") };
-  const activeTab = state.masterTab === "barcodes" ? "products" : state.masterTab;
+  const canManageProducts = can("master.products");
+  const labels = { products: "Produk", barcodes: "Registrasi Barcode", materials: "Bahan", finishings: "Finishing", machines: "Mesin", assets: "Aset", categories: "Kategori", campaigns: "Campaign", customers: "Pelanggan", users: "User & Akses", pics: "PIC", "pos-settings": "Pengaturan POS" };
+  const allowed = { campaigns:state.currentUser?.role==="OWNER"&&canManageProducts,customers:can("customers.view"),products: canManageProducts, barcodes: canManageProducts, materials: can("master.materials"), categories: canManageSettings(), finishings: can("master.finishings"), machines: can("master.machines"), assets: canManageSettings(), users: can("users.manage"), pics: canManageSettings(), "pos-settings": canManageSettings() && can("master.view") };
   return `<div class="master-sticky-header"><header class="master-top page-toolbar"><h1>Master Data</h1></header>
-    <nav class="master-tabs" aria-label="Tab Master Data">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button type="button" ${activeTab === id ? 'class="active" aria-current="page"' : ""} data-master-tab="${id}">${label}</button>`).join("")}</nav></div>`;
+    <nav class="master-tabs" aria-label="Tab Master Data">${Object.entries(labels).filter(([id]) => allowed[id]).map(([id, label]) => `<button type="button" ${state.masterTab === id ? 'class="active" aria-current="page"' : ""} data-master-tab="${id}">${label}</button>`).join("")}</nav></div>`;
 }
 
 function bindMasterTabs() {

@@ -2,8 +2,8 @@
 
 ## Persiapan
 
-1. Di **Master Data → Produk**, buka **Registrasi Barcode** atau bagian **Barcode Produk** pada form produk Barang Dagangan.
-2. Pilih produk atau kombinasi varian. Pindai barcode pabrik di kolom barcode atau gunakan **Generate Barcode** untuk kode internal Manna berkode Code 128. Satu kombinasi dapat menyimpan kode pabrik alternatif.
+1. Buka tab **Master Data → Registrasi Barcode**. Halaman **Daftar Produk** juga menyediakan pintasan ke tab ini dan bagian **Barcode Produk** di form Barang Dagangan.
+2. Pilih baris produk atau kombinasi varian. Gunakan **Scan Barcode** untuk mendaftarkan kode pabrik atau klik **Generate Barcode** untuk membuat dan langsung menyimpan satu kode internal Manna berformat Code 128. Jika kode internal sudah ada, pilih kode tersebut saat mencetak ulang label.
 3. Gunakan **Cetak Label** pada satu baris atau centang beberapa baris. Pilih kode, jumlah salinan, dan ukuran label. Ukuran awal 40 × 30 mm dengan opsi A4 atau A3+. Harga jual dapat ditampilkan melalui kotak centang.
 4. Setelah label dan scanner diuji, aktifkan **Master Data → Pengaturan POS → Barcode Scanner** dengan akun Owner atau Admin. Muat ulang halaman POS yang terbuka di komputer kasir.
 

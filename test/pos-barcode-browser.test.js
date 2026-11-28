@@ -99,8 +99,18 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
   await page.keyboard.press("Escape");
   await modal.waitFor({ state: "hidden" });
 
-  await page.getByRole("button", { name: "Registrasi Barcode", exact: true }).click();
-  await page.getByRole("heading", { name: "Registrasi Barcode" }).waitFor();
+  const masterTabs = page.getByRole("navigation", { name: "Tab Master Data" });
+  const productsTab = masterTabs.getByRole("button", { name: "Produk", exact: true });
+  const barcodesTab = masterTabs.getByRole("button", { name: "Registrasi Barcode", exact: true });
+  await page.locator("[data-register-barcodes]").click();
+  await page.getByRole("heading", { name: "Registrasi Barcode", exact: true }).waitFor();
+  assert.equal(await barcodesTab.getAttribute("aria-current"), "page");
+  assert.equal(await productsTab.getAttribute("aria-current"), null);
+  await productsTab.click();
+  await page.getByRole("heading", { name: "Daftar Produk", exact: true }).waitFor();
+  assert.equal(await productsTab.getAttribute("aria-current"), "page");
+  await barcodesTab.click();
+  await page.getByRole("heading", { name: "Registrasi Barcode", exact: true }).waitFor();
   const status = page.getByLabel("Status registrasi");
   await status.selectOption("registered");
   await productRow(pen.name).waitFor();
@@ -108,6 +118,11 @@ test("Chromium Barcode POS: registrasi saat OFF, HID global, repricing, dialog, 
   const a5 = productRow(acrylic.name).filter({ hasText: "A5" });
   await a5.waitFor();
   assert.equal(await productRow(pen.name).count(), 0);
+  const generateA5 = a5.getByRole("button", { name: "Generate Barcode", exact: true });
+  await generateA5.click();
+  await a5.getByText(/^MPP\d{8}$/).waitFor();
+  assert.equal(await a5.getByText(upc, { exact: true }).isVisible(), true);
+  assert.equal(await generateA5.isDisabled(), true);
   await status.selectOption("unregistered");
   await page.getByRole("searchbox", { name: "Cari nama produk" }).fill(acrylic.name);
   const a6 = productRow(acrylic.name).filter({ hasText: "A6" });
