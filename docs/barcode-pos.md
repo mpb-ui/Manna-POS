@@ -9,6 +9,8 @@
 
 Registrasi dan cetak label dapat dilakukan saat pengaturan OFF. Kode internal tetap sama setelah perubahan nama, harga, atau SKU. Jika barcode ATK lama tersedia, form menawarkannya sebagai isian untuk ditinjau sebelum didaftarkan. UPC-A dan padanan EAN-13 yang valid mengarah ke barang yang sama. Ejaan barcode yang didaftarkan tetap tersimpan, termasuk nol di depan.
 
+Untuk produk satuan lama di **Akrilik** atau **Frame Foto** yang belum memiliki jenis produk, pilih **Jadikan Barang Dagangan** pada barisnya bila dijual siap pakai. SKU terhubung ke **Stok Bahan**. Masukkan saldo fisik jika stoknya belum tercatat, lalu daftarkan barcode.
+
 ## Pemindaian dan stok
 
 - Gunakan mode **HID Keyboard** dengan akhiran **Enter**. Dari kategori mana pun, pindai ketika POS siap dan fokus berada di luar kolom input lain atau di pencarian produk. Jika perlu, masukkan nomor barcode di pencarian secara manual dan tekan Enter.

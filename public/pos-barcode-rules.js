@@ -1,5 +1,3 @@
-import { isMerchandise } from "./product-kind.js";
-
 export const POS_BARCODE_MAX_LENGTH = 128;
 export const internalBarcodePrefix = /^MPP\d{8}$/i;
 export const inventoryBarcode = /^(?:MAT|CMD|QTY)\s*:/i;
@@ -14,8 +12,7 @@ export function barcodeTargetKey({ materialVariantId = "", subVariantId = "", si
   return JSON.stringify([materialVariantId, subVariantId, sizeVariantId]);
 }
 
-export function merchandiseBarcodeTargets(product) {
-  if (!isMerchandise(product) || product.deletedAt) return [];
+export function barcodeVariantTargets(product) {
   const materials = product.hasMaterialVariants ? product.materialVariants || [] : [null];
   const sizes = product.fixedSizeVariants?.length ? product.fixedSizeVariants : [null];
   const targets = [];

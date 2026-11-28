@@ -36,6 +36,58 @@ test("Barcode POS mempertahankan leading zero dan frame HID yang dipindai berula
   assert.equal(buffer.take(time += 101, "global"), "");
 });
 
+async function prepareAcrylicAndFrame(owner, cashier, catalog) {
+  const { ok, request } = owner;
+  const acrylic = catalog.products.find(product => product.id === "direct-akrilik-display-7x4");
+  const prepare = barcodeApi + "/prepare-product";
+  const acrylicCatalog = `${barcodeApi}/catalog?productId=${acrylic.id}`;
+  assert.equal((await ok(acrylicCatalog)).rows[0].needsMerchandise, true);
+  const inventory = async () => (await ok("/api/bootstrap?view=stock")).inventory;
+  assert.equal((await inventory()).some(row => row.productId === acrylic.id), false);
+  assert.equal((await cashier.request(prepare, "POST", { productId: acrylic.id })).status, 403);
+  assert.equal((await request(barcodeApi + "/generate", "POST", target(acrylic))).body.code, "BARCODE_TYPE");
+  const prepared = await ok(prepare, "POST", { productId: acrylic.id });
+  assert.equal(prepared.productKind, "MERCHANDISE");
+  assert.equal(prepared.retailStockSku, acrylic.sku);
+  assert.equal((await ok(acrylicCatalog)).rows[0].needsMerchandise, false);
+
+  await ok("/api/categories/products", "POST", { name: "Frame Foto" });
+  const frame = await ok("/api/products", "POST", {
+    name: "Frame Foto Siap Jual Uji", sku: "QA-FOTO-FRAME", category: "Frame Foto",
+    productKind: "MERCHANDISE", saleUnit: "pcs", price: 45000
+  });
+  const frameRows = (await ok(`${barcodeApi}/catalog?productId=${frame.id}`)).rows;
+  assert.equal(frameRows[0].category, "Frame Foto");
+  assert.equal(frameRows[0].needsMerchandise, false);
+  const acrylicCode = (await ok(barcodeApi + "/generate", "POST", target(acrylic))).barcode.code;
+  const frameCode = "FRAME-READY-A4";
+  await ok(barcodeApi + "/register", "POST", { ...target(frame), code: frameCode });
+
+  for (const item of [acrylic, frame]) {
+    const stockRow = (await inventory()).find(row => row.productId === item.id);
+    assert.equal(stockRow.stockMethod, "UNIT");
+    assert.equal(stockRow.sku, item.sku);
+    await ok("/api/inventory/" + item.sku, "PATCH", { change: 2, reason: "Saldo uji barcode" });
+  }
+  assert.deepEqual(await ok(prepare, "POST", { productId: acrylic.id }), prepared);
+  const selections = await Promise.all([acrylicCode, frameCode].map(code =>
+    cashier.ok(`${barcodeApi}/lookup?code=${encodeURIComponent(code)}`)));
+  assert.deepEqual(selections.map(item => item.productId), [acrylic.id, frame.id]);
+  const items = selections.map(({ productId, selection }) => ({ productId, ...selection, quantity: 1 }));
+  const order = await cashier.ok("/api/orders", "POST", {
+    customerName: "Uji Barcode Akrilik dan Frame", phone: "081234000012", items
+  });
+  assert.deepEqual(order.items.map(item => item.stockTiming), ["SALE", "SALE"]);
+  assert.deepEqual(order.items.map(item => item.needsProduction), [false, false]);
+  await cashier.ok(`/api/orders/${order.id}/payments`, "POST", {
+    method: "TUNAI", amount: order.total, requestId: "barcode-acrylic-frame"
+  });
+  const afterPayment = await inventory();
+  for (const item of [acrylic, frame]) {
+    assert.equal(afterPayment.find(row => row.productId === item.id).quantity, 1);
+  }
+}
+
 async function registryChecks(t, base) {
   const owner = await stockTestLogin(base);
   const { ok, request } = owner;
@@ -102,6 +154,7 @@ async function registryChecks(t, base) {
   assert.equal((await catalog.request(barcodeApi + "/settings", "PUT", { enabled: true })).status, 403);
   assert.equal((await request(barcodeApi + "/settings", "PUT", { enabled: true }, { csrf: false })).status, 403);
   await admin.ok(barcodeApi + "/settings", "PUT", { enabled: true });
+  await prepareAcrylicAndFrame(owner, cashier, boot);
   assert.deepEqual(await cashier.ok(resolve(a4Code)), { productId: frame.id, selection: a4 });
   assert.equal((await cashier.ok(resolve(ean))).productId, pen.id);
   assert.equal((await cashier.ok(resolve(internal))).productId, pen.id);
@@ -125,6 +178,7 @@ async function registryChecks(t, base) {
     materialSources: [{ materialId: "mat-art260", quantity: 1 }]
   });
   assert.equal((await request(barcodeApi + "/generate", "POST", target(production))).body.code, "BARCODE_TYPE");
+  assert.equal((await request(barcodeApi + "/prepare-product", "POST", { productId: production.id })).body.code, "BARCODE_TYPE");
   const items = [{ productId: pen.id, quantity: 3 }, { productId: production.id, quantity: 1 }];
   const quote = (rows, client = cashier) => client.request("/api/orders/check", "POST", { items: rows, includeItems: true, validateRetailStock: true });
   assert.equal((await quote(items)).body.total, 71600);

@@ -4,6 +4,7 @@ const API = "/api/pos-barcodes";
 const pageSize = 25;
 const encoded = value => encodeURIComponent(value);
 const rowKey = row => JSON.stringify([row.productId, row.targetKey]);
+const hasBarcode = row => !row.needsMerchandise && row.barcodes.length > 0;
 const dataFor = row => ({ productId: row.productId, targetKey: row.targetKey });
 const write = (api, action, row, more = {}, method = "POST") =>
   api(API + action, { method, body: JSON.stringify({ ...dataFor(row), ...more }) });
@@ -137,7 +138,7 @@ export async function mountProductBarcodes(node, productId, ctx) {
 }
 
 export async function mountBarcodeRegistration(ctx) {
-  const { root, header, bindHeader, api, e, toast, showDialog, showProducts, printLabels } = ctx;
+  const { root, state, header, bindHeader, api, e, toast, showDialog, showProducts, printLabels } = ctx;
   const filters = `<input class="search" type="search" data-barcode-search placeholder="Cari nama produk…" aria-label="Cari nama produk">
     <select class="filter-select" data-barcode-category aria-label="Kategori produk"><option value="">Semua kategori</option></select>
     <select class="filter-select" data-barcode-state aria-label="Status registrasi"><option value="all">Semua status</option>
@@ -165,20 +166,21 @@ export async function mountBarcodeRegistration(ctx) {
   const draw = () => {
     const query = search.value.trim().toLocaleLowerCase("id");
     const matched = rows.filter(row => row.name.toLocaleLowerCase("id").includes(query) && (!category.value || row.category === category.value));
-    const registered = matched.filter(row => row.barcodes.length).length;
+    const registered = matched.filter(hasBarcode).length;
     page.querySelector("[data-barcode-counts]").textContent = `${registered} sudah terdaftar · ${matched.length - registered} belum terdaftar`;
-    const filtered = matched.filter(row => status.value === "all" || Boolean(row.barcodes.length) === (status.value === "registered"));
+    const filtered = matched.filter(row => status.value === "all" || hasBarcode(row) === (status.value === "registered"));
     const last = Math.max(0, Math.ceil(filtered.length / pageSize) - 1);
     index = Math.min(index, last);
     visible = filtered.slice(index * pageSize, (index + 1) * pageSize);
     table.innerHTML = visible.map((row, position) => `<tr data-barcode-row="${position}">
-      <td><input type="checkbox" data-barcode-select aria-label="Pilih label ${e(row.name)} ${e(row.variant)}" ${selected.has(rowKey(row)) ? "checked" : ""} ${row.barcodes.length ? "" : "disabled"}></td>
+      <td><input type="checkbox" data-barcode-select aria-label="Pilih label ${e(row.name)} ${e(row.variant)}" ${selected.has(rowKey(row)) ? "checked" : ""} ${hasBarcode(row) ? "" : "disabled"}></td>
       <td><strong>${e(row.name)}</strong>${row.variant ? `<small>${e(row.variant)}</small>` : ""}${row.active ? "" : '<small>Nonaktif</small>'}</td>
       <td>${e(row.sku)}</td><td><div class="barcode-cell">${row.barcodes.map(code => `<code>${e(code.code)}</code>`).join("") || '<span class="muted">Belum terdaftar</span>'}</div></td>
-      <td><div class="barcode-row-actions">
+      <td><div class="barcode-row-actions">${row.needsMerchandise ?
+        '<button type="button" class="secondary" data-barcode-action="prepare" title="Hubungkan SKU ke Stok Bahan dan aktifkan registrasi barcode">Jadikan Barang Dagangan</button>' : `
         <button type="button" class="secondary" data-barcode-action="scan">Scan Barcode</button>
         <button type="button" class="secondary" data-barcode-action="generate" ${row.barcodes.some(code => code.kind === "INTERNAL") ? "disabled" : ""}>Generate Barcode</button>
-        ${row.barcodes.length ? '<button type="button" class="secondary" data-barcode-action="edit">Edit Barcode</button><button type="button" class="secondary" data-barcode-action="print">Cetak Label</button>' : ""}
+        ${row.barcodes.length ? '<button type="button" class="secondary" data-barcode-action="edit">Edit Barcode</button><button type="button" class="secondary" data-barcode-action="print">Cetak Label</button>' : ""}`}
       </div></td></tr>`).join("") || '<tr><td colspan="5">Tidak ada produk yang sesuai.</td></tr>';
     selectedButton.textContent = selected.size ? `Cetak Label (${selected.size})` : "Cetak Label";
     selectedButton.disabled = selected.size === 0;
@@ -195,7 +197,7 @@ export async function mountBarcodeRegistration(ctx) {
     const move = event.target.closest("[data-page]");
     if (move) { index += Number(move.dataset.page); draw(); }
   };
-  selectedButton.onclick = () => printLabels(rows.filter(row => selected.has(rowKey(row)) && row.barcodes.length));
+  selectedButton.onclick = () => printLabels(rows.filter(row => selected.has(rowKey(row)) && hasBarcode(row)));
   table.onchange = event => {
     const checkbox = event.target.closest("[data-barcode-select]");
     if (!checkbox) return;
@@ -210,12 +212,26 @@ export async function mountBarcodeRegistration(ctx) {
     const row = visible[button.closest("tr").dataset.barcodeRow];
     const action = button.dataset.barcodeAction;
     if (action === "print") return printLabels([row]);
-    if (action === "generate") {
+    if (action === "prepare" || action === "generate") {
       button.disabled = true;
       try {
-        const { barcode } = await write(api, "/generate", row);
-        if (!row.barcodes.some(entry => entry.code === barcode.code)) row.barcodes.push(barcode);
-        if (page.isConnected) { draw(); toast("Barcode internal tersimpan", "success"); }
+        if (action === "prepare") {
+          const product = await write(api, "/prepare-product", row);
+          if (!page.isConnected) return;
+          for (const item of [...state.products, ...state.allProducts]) {
+            if (item.id === product.id) Object.assign(item, product);
+          }
+          for (const target of rows) {
+            if (target.productId === product.id) target.needsMerchandise = false;
+          }
+        } else {
+          const { barcode } = await write(api, "/generate", row);
+          if (!row.barcodes.some(entry => entry.code === barcode.code)) row.barcodes.push(barcode);
+        }
+        if (page.isConnected) {
+          draw();
+          toast(action === "prepare" ? "Barang Dagangan siap didaftarkan" : "Barcode internal tersimpan", "success");
+        }
       } catch (error) { if (page.isConnected) toast(error.message, "error"); }
       finally { if (button.isConnected) button.disabled = false; }
       return;
