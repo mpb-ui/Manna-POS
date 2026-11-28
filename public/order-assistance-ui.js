@@ -147,10 +147,11 @@ export function createOrderAssistance(c) {
     const form = document.querySelector("#checkout"); if(!form)return;
     const uid=identity(), version=epoch;
     let stockVersion=0;
+    form.querySelector(".assist-checkout")?.remove();
     const assistance=document.createElement("div");assistance.className="assist-checkout";
     assistance.innerHTML='<div data-stock-warning></div>';
     (form.querySelector(".checkout-footer") || form.querySelector(".checkout-actions")).before(assistance);
-    function valid(){return form.isConnected&&uid===identity()&&version===epoch;}
+    function valid(){return assistance.isConnected&&uid===identity()&&version===epoch;}
     if(c.state.cart.length&&can('pos.create')){
       const request=++stockVersion;
       (cachedCheck ? Promise.resolve(cachedCheck) : c.api('/api/orders/check',{method:'POST',body:JSON.stringify({items:c.state.cart,editingOrderId:c.state.editingOrderId})})).then(data=>{

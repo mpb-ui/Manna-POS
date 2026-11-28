@@ -44,6 +44,8 @@ import { addCategory, renameCategory, deleteCategory, reorderCategories, categor
 import { calculateOrder, allowedNextStatus, STATUS, STATUS_LABEL } from "./lib/domain.js";
 import { Store } from "./lib/store.js";
 import { registerStockScan } from "./lib/stock-scan-routes.js";
+import { canScanPosBarcode, registerPosBarcodeRoutes } from "./lib/pos-barcode-routes.js";
+import { barcodeCodes } from "./lib/pos-barcode-store.js";
 import { ATK_GROUPS } from "./lib/atk-catalog.js";
 import { normalizeDtfStockVariants, normalizeDtfSizeSurcharges, normalizeDtfWholesaleTiers, normalizeDtfShirtCosts } from "./lib/dtf-variants.js";
 import { ensureShirtStock, shirtAvailability, shirtReservations } from "./lib/dtf-stock.js";
@@ -79,6 +81,7 @@ security.registerAuthenticated();
 registerBackupRoutes(app,{store,security,backups});
 registerPrintHelperAuthenticated();
 registerStockScan(app, { store, audit });
+registerPosBarcodeRoutes(app, { store, audit });
 
 function requirePermission(permission) {
   return (req, res, next) => hasPermission(req.user, permission) ? next() : res.status(403).json({ error: "Anda tidak memiliki akses untuk tindakan ini" });
@@ -198,6 +201,8 @@ app.get("/api/bootstrap", async (req, res, next) => {
     if (!permissions.includes("stock.value") && !permissions.includes("master.materials")) materials.forEach((item) => { delete item.cost; delete item.supplier; });
     res.json({
       currentUser: publicUser(req.user), permissions,
+      posBarcodeEnabled: state.posBarcodeEnabled === true,
+      posBarcodeCodes: view === "pos" && state.posBarcodeEnabled === true && canScanPosBarcode(req.user) ? await barcodeCodes(store) : [],
       homeCampaign: permissions.includes("pos.view") ? campaignForPos(state) : null,
       assetLinks: includeMaster && ["OWNER", "ADMIN"].includes(req.user.role) ? assetReport(state).rows.filter(row => row.machineId && !row.cancelled).map(row => ({ id: row.id, machineId: row.machineId, name: row.name, archivedAt: row.archivedAt, disposedAt: row.disposal?.date || null, acquisitionCost: row.acquisitionCost, ...row.calculation })) : [],
       permissionCatalog: includeMaster && permissions.includes("users.manage") ? PERMISSIONS : [], rolePresets: includeMaster && permissions.includes("users.manage") ? ROLE_PRESETS : {},
@@ -660,7 +665,9 @@ function saveProduct(state, body, current = null) {
   });
   const finishing = finishingIds.map((id) => structuredClone(state.finishings.find((item) => item.id === id)));
   const rollSettings=priceBasis === "unit" ? {widths:[]} : productWidthSettings(categoryId,body.widths || [],current,current ? categoryKey(state.catalogOptions,current.category) : categoryId);
-  const product = { id: current?.id || identifier("prd", sku), sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, ...rollSettings, billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, purchaseMultiple, paperProductTab, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Popular, a3ReadyType: null, a3ReadyGroup: null, a3Family: preserveLegacy ? current?.a3Family : null, a3Variant: preserveLegacy ? current?.a3Variant : null, a3Size: preserveLegacy ? current?.a3Size : null, a3Side: preserveLegacy ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
+  const firstId = identifier("prd", sku);
+  const productId = current?.id || (state.products.some(row => row.id === firstId) ? `prd-${crypto.randomUUID()}` : firstId);
+  const product = { id: productId, sku, name, category, retailAtK, quickSale, atkGroup, barcode, baseCost, price, priceBasis, priceBasisLabel, saleUnit, unitName: saleUnit, unitLabel: unitLabels[saleUnit] || `/${saleUnit}`, ...rollSettings, billingIncrement: ["lf-poster", "lf-sticker"].includes(categoryId) ? 0.1 : Number(current?.billingIncrement || 0.5), areaPerUnit: Number(current?.areaPerUnit || 0), note: text(body.note), featured: Boolean(body.featured), recommendation: text(body.recommendation) || "Produk pilihan", active: body.active !== false, ...minimum, purchaseMultiple, paperProductTab, wholesaleBasis, wholesaleEnabled: Boolean(body.wholesaleEnabled), priceTiers: normalizeTiers({...body,wholesaleBasis}, price), discount: normalizeDiscount(body), materialSources, hasMaterialVariants, materialVariants, subVariants, subVariantLabel: subVariants.length ? text(body.subVariantLabel || current?.subVariantLabel || "Sub-varian").slice(0, 80) : "", machineIds, finishingIds, finishing, templateProduct: Boolean(current?.templateProduct), sizeVariants, designTemplates: current?.designTemplates || [], fixedSizeVariants, groupedProduct: Boolean(current?.groupedProduct), choiceGroups, cardPrice: Number(current?.cardPrice || 0), a3Kind, a3Popular, a3ReadyType: null, a3ReadyGroup: null, a3Family: preserveLegacy ? current?.a3Family : null, a3Variant: preserveLegacy ? current?.a3Variant : null, a3Size: preserveLegacy ? current?.a3Size : null, a3Side: preserveLegacy ? current?.a3Side : null, dtfShirt: Boolean(current?.dtfShirt), dtfPackages: current?.dtfPackages || [] };
   product.productKind = productKind;
   if (modern) {
     product.productEditorVersion = 1;
@@ -762,6 +769,7 @@ app.post("/api/orders", requirePermission("pos.create"), async (req, res, next) 
         updatedAt: now(),
         timeline: []
       };
+      if (state.posBarcodeEnabled === true && order.items.some(item => item.stockTiming === "SALE")) order.requireRetailStock = true;
       applyDraftTax(order, priced.total, req.body.taxRateBps);
       registerOrderCustomer(state,order,req.body,req.user);
       initializeOrderItems(order);
@@ -802,6 +810,7 @@ app.put("/api/orders/:id", requirePermission("pos.edit"), async (req, res, next)
         if (existing) { item.designPic = existing.designPic; item.designPicId = existing.designPicId; item.designPicColor = existing.designPicColor; }
         return item;
       });
+      if (state.posBarcodeEnabled === true && order.items.some(item => item.stockTiming === "SALE")) order.requireRetailStock = true;
       initializeOrderItems(order);
       order.productionChecks = {};
       applyDraftTax(order, priced.total, req.body.taxRateBps);
@@ -872,7 +881,9 @@ app.post("/api/orders/:id/payments", requirePermission("pos.payment"), async (re
         refreshOrderWorkflow(order, now());
       }
       const retailItems = order.items.filter(item=>item.stockTiming === "SALE" && !item.stockCommitted);
-      confirmRetailStock(state, order, req.user.name, now());
+      confirmRetailStock(state, order, req.user.name, now(), {
+        requireAvailable: state.posBarcodeEnabled === true || order.requireRetailStock === true
+      });
       for (const item of retailItems) activity(state, order, `Penjualan ${item.productName}: stok satuan dicatat; ${item.status === "DIAMBIL" ? "pesanan diambil" : "barang siap diserahkan"}`, req.user.name, { itemId: item.itemId, productName: item.productName });
       order.updatedAt = now();
       activity(state, order, order.total === 0 && invoiceDiscount(order) > 0 ? "Tagihan lunas melalui diskon penuh; tidak ada uang masuk" : `${type === "PO" ? `Pembayaran PO ${poNumber}` : `Pembayaran ${method}`} dicatat`, req.user.name);
@@ -1215,6 +1226,7 @@ app.get("/api/reports", requirePermission("reports.view"), async (req, res, next
 });
 
 app.get("/vendor/pdf-lib.min.js", (_req, res) => res.sendFile(new URL("./node_modules/pdf-lib/dist/pdf-lib.min.js", import.meta.url).pathname));
+app.get("/vendor/jsbarcode-retail.min.js", (_req, res) => res.sendFile(new URL("./node_modules/jsbarcode/dist/JsBarcode.all.min.js", import.meta.url).pathname));
 app.use(express.static("public",{setHeaders(res,path){if(/\.(?:html|js|css)$/.test(path))res.set('Cache-Control','no-cache');}}));
 app.get("/{*path}", (_req, res) => res.sendFile(new URL("./public/index.html", import.meta.url).pathname));
 app.use((error, _req, res, _next) => {
