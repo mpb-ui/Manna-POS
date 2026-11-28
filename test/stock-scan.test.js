@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import test from "node:test";
 import { startStockTestServer, stockTestLogin } from "./helpers/stock-scan-server.js";
 import { parseStockBarcode, stockScanAccess } from "../public/stock-scan-rules.js";
 import { acceptsScan, deliberateClick, resetScan, reviewScan, scanDraft, selectScanMode, setScanQuantity, stageScannedMaterial, updateScanReview } from "../public/stock-scan-machine.js";
-import { stockScanCatalog } from "../lib/stock-scan.js";
+import { commitStockScan, parseScanCommit, stockScanCatalog } from "../lib/stock-scan.js";
 import { commitPhysicalStock } from "../lib/physical-stock.js";
 import { witaDay } from "../public/order-rules.js";
 
@@ -14,7 +14,8 @@ test("barcode dan draft memilih mode, mengaktifkan bahan unik, dan mengunci scan
   assert.deepEqual(parseStockBarcode("CMD:REVIEW"), { type: "command", value: "REVIEW" });
   assert.deepEqual(parseStockBarcode("CMD:CANCEL"), { type: "command", value: "CANCEL" });
   assert.deepEqual(parseStockBarcode("MAT:mat-test-110"), { type: "material", value: "mat-test-110" });
-  for (const invalid of ["CMD:CONFIRM", "MAT:../id", "QTY:02", "QTY:4", "QTY:2.5", "MAT:"]) assert.equal(parseStockBarcode(invalid), null);
+  assert.deepEqual(parseStockBarcode("STF:Eemp-maria"), { type: "staff", value: "STF:Eemp-maria" });
+  for (const invalid of ["CMD:CONFIRM", "MAT:../id", "QTY:02", "QTY:4", "QTY:2.5", "MAT:", "STF:Utruncated"]) assert.equal(parseStockBarcode(invalid), null);
   for (const value of [1, 2, 3, 5, 10]) assert.deepEqual(parseStockBarcode(`QTY:${value}`), { type: "quantity", value });
   const draft = scanDraft();
   const first = { materialId: "mat-test-110", name: "FL 280", rollWidthCm: 110, balance: 10 };
@@ -34,6 +35,8 @@ test("barcode dan draft memilih mode, mengaktifkan bahan unik, dan mengunci scan
   assert.equal(draft.items.get(first.materialId).quantity, 5);
   assert.equal(draft.items.get(second.materialId).quantity, 1);
   assert.throws(() => setScanQuantity(draft, second.materialId, 2.5), /bilangan bulat/);
+  assert.throws(() => reviewScan(draft), /scan barcode staff/);
+  draft.staff = { name: "Maria", barcode: "STF:Eemp-maria" };
   reviewScan(draft);
   assert.equal(draft.phase, "REVIEW");
   assert.equal(acceptsScan(draft), false);
@@ -45,10 +48,30 @@ test("barcode dan draft memilih mode, mengaktifkan bahan unik, dan mengunci scan
   assert.equal(draft.items.get(first.materialId).balance, 4);
   resetScan(draft);
   assert.equal(draft.items.size, 0);
+  assert.equal(draft.staff, null);
   assert.equal(draft.phase, "IDLE");
   assert.equal(deliberateClick({ isTrusted: false, detail: 1 }), false);
   assert.equal(deliberateClick({ isTrusted: true, detail: 0 }), false);
   assert.equal(deliberateClick({ isTrusted: true, detail: 1 }), true);
+});
+
+test("retry lama boleh membaca bukti transaksi tanpa menetapkan Staff atau membuat mutasi baru", () => {
+  const actor = { id: "gudang", name: "Operator Gudang" };
+  const payload = parseScanCommit({
+    requestId: randomUUID(), direction: "IN", items: [{ materialId: "roll-110", quantity: 1, version: "a".repeat(64) }]
+  });
+  const requestFingerprint = createHash("sha256").update(JSON.stringify(["scan", payload.direction, payload.items, payload.note])).digest("hex");
+  const state = { stockMovements: [{
+    id: "mutasi-lama", source: "BARCODE", actorId: actor.id, requestId: payload.requestId, requestFingerprint,
+    groupId: "batch-lama", direction: "IN", materialId: "roll-110", balance: 3, change: 1
+  }] };
+  const audit = () => assert.fail("Retry tidak menjalankan audit atau mutasi");
+  const run = data => commitStockScan(state, data, actor, "2026-11-28T00:00:00.000Z", audit);
+  const receipt = run(payload);
+  assert.equal(receipt.replayed, true);
+  assert.equal(receipt.movements[0].staffName, undefined);
+  assert.throws(() => run({ ...payload, requestId: randomUUID() }), error => error.code === "SCAN_STAFF_REQUIRED");
+  assert.equal(state.stockMovements.length, 1);
 });
 
 test("katalog menolak ID ganda dan produksi mengurangi hanya bahan stok Per Satuan", () => {
@@ -86,14 +109,21 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   const first = await owner.ok("/api/materials", "POST", fixture("FL Scan 110", "SCAN-QA-110", 110, 10));
   const second = await owner.ok("/api/materials", "POST", fixture("FL Scan 220", "SCAN-QA-220", 220, 3));
   const unit = await owner.ok("/api/materials", "POST", { name: "Kertas Scan Uji", sku: "SCAN-QA-UNIT", unit: "lbr", stock: 10, stockMethod: "UNIT" });
+  const employeeData = { name: "Mariano Fadi Uji", startDate: "2026-01-01", employmentStatus: "ACTIVE", basicSalary: 1000000 };
+  const employee = await owner.ok("/api/employees", "POST", employeeData);
+  const namesake = await owner.ok("/api/employees", "POST", employeeData);
+  const inactive = await owner.ok("/api/employees", "POST", { ...employeeData, name: "Nonaktif Uji", active: false });
   const staffUser = await owner.ok("/api/users", "POST", { name: "Staf Gudang Uji", username: "stock-test", pin: "7654", role: "WAREHOUSE", permissions: ["stock.view", "stock.scan"] });
   await owner.ok("/api/users", "POST", { name: "Print Uji", username: "label-test", pin: "7654", role: "WAREHOUSE", permissions: ["stock.view", "stock.scan.print"] });
   await owner.ok("/api/users", "POST", { name: "Gudang Uji", username: "default-stock-test", pin: "7654", role: "WAREHOUSE" });
   const staff = await stockTestLogin(base, "stock-test", "7654");
   const print = await stockTestLogin(base, "label-test", "7654");
   const other = await stockTestLogin(base, "default-stock-test", "7654");
+  const { staff: badges } = await print.ok(scanApi + "/staff");
+  const badge = badges.find(row => row.code === employee.code);
+  const staffBarcode = badge.barcode;
   const material = async (id, account = staff) => (await account.ok(`${scanApi}/catalog/${id}`)).material;
-  const payload = (direction, items, note) => ({ requestId: randomUUID(), direction, items: items.map(([row, quantity]) => ({ materialId: row.materialId, version: row.version, quantity })), note });
+  const payload = (direction, items, note) => ({ requestId: randomUUID(), direction, staffBarcode, items: items.map(([row, quantity]) => ({ materialId: row.materialId, version: row.version, quantity })), note });
   const apply = (body, account = staff) => account.ok(`${scanApi}/commit`, "POST", body);
   const checked = async (status, path, method, body, account = staff) => {
     const result = await account.request(path, method, body);
@@ -102,6 +132,15 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   };
 
   assert.equal((await fetch(`${base}${scanApi}/catalog`)).status, 401);
+  assert.equal((await fetch(`${base}${scanApi}/staff`)).status, 401);
+  assert.deepEqual(Object.keys(badge).sort(), ["barcode", "code", "name"]);
+  assert.notEqual(badges.find(row => row.code === namesake.code).barcode, staffBarcode);
+  assert.ok(!badges.some(row => row.code === inactive.code));
+  const lookup = scanApi + "/staff/" + encodeURIComponent(staffBarcode);
+  assert.deepEqual((await staff.ok(lookup)).staff, { id: employee.id, name: employee.name });
+  await checked(403, scanApi + "/staff");
+  await checked(403, lookup, "GET", undefined, print);
+  await checked(403, lookup, "GET", undefined, other);
   const { materials } = await staff.ok(scanApi + "/catalog");
   assert.deepEqual(materials.filter(row => row.sku.startsWith("SCAN-QA-")).map(row => row.rollWidthCm), [110, 220]);
   assert.ok(materials.every(row => !("cost" in row) && !("supplier" in row)));
@@ -116,10 +155,15 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   const out = payload("OUT", [[await material(first.id), 1]], "Gudang uji");
   assert.equal((await staff.request(scanApi + "/commit", "POST", out, { csrf: false })).status, 403);
   await checked(403, scanApi + "/commit", "POST", out, print);
-  const { movements: [removed], groupId } = await apply({ ...out, actorId: "palsu", actor: "palsu", balance: 9999 });
+  assert.equal((await checked(400, scanApi + "/commit", "POST", { ...out, staffBarcode: undefined })).code, "SCAN_STAFF_REQUIRED");
+  assert.equal((await checked(409, scanApi + "/commit", "POST", { ...out, staffBarcode: "STF:Eemp-tidak-ada" })).code, "SCAN_STAFF_INVALID");
+  assert.equal((await material(first.id)).balance, 10);
+  const { movements: [removed], groupId } = await apply({ ...out, actorId: "palsu", actor: "palsu", staffName: "palsu", balance: 9999 });
   assert.equal(removed.previousBalance, 10);
   assert.equal(removed.balance, 9);
   assert.equal(removed.actor, staffUser.name);
+  assert.equal(removed.staffId, employee.id);
+  assert.equal(removed.staffName, employee.name);
   assert.equal(removed.reason, "Buka Roll Baru");
   assert.equal(removed.note, "Gudang uji");
   assert.equal(removed.source, "BARCODE");
@@ -131,6 +175,7 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   assert.equal((await apply(out)).replayed, true);
   assert.equal((await material(first.id)).balance, 14);
   await checked(409, scanApi + "/commit", "POST", { ...out, note: "ubah" });
+  await checked(409, scanApi + "/commit", "POST", { ...out, staffBarcode: badges.find(row => row.code === namesake.code).barcode });
   await checked(409, scanApi + "/commit", "POST", out, owner);
   await checked(400, scanApi + "/commit", "POST", payload("OUT", [[await material(first.id), 1.5]]));
   await checked(413, scanApi + "/commit", "POST", { ...out, note: "a".repeat(30_000) });
@@ -196,11 +241,20 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   assert.deepEqual(history.movements.map(row => row.id), [committed.movements[0].id, received.id]);
   assert.deepEqual((await staff.ok(scanApi + "/history?offset=2&limit=2")).movements.map(row => row.id), [removed.id]);
   const recent = (await owner.ok("/api/stock-movements?date=" + witaDay() + "&limit=25")).movements;
-  assert.ok(recent.some(row => row.id === removed.id && row.actorId === staffUser.id));
+  assert.ok(recent.some(row => row.id === removed.id && row.actorId === staffUser.id && row.staffName === employee.name));
   assert.ok(recent.some(row => row.id === restored.id && row.actorId === owner.user.id));
   assert.ok(recent.every(row => !("requestFingerprint" in row)));
   const audit = (await owner.ok("/api/bootstrap?view=master")).auditLogs;
-  assert.ok(audit.some(row => row.metadata.groupId === groupId && row.userId === staffUser.id));
+  assert.ok(audit.some(row => row.metadata.groupId === groupId && row.userId === staffUser.id && row.metadata.staffId === employee.id));
+  const updated = await owner.ok("/api/employees/" + employee.id, "PUT", { ...employee, name: "Mariano Nama Baru", code: "K999" });
+  assert.equal((await staff.ok(lookup)).staff.name, updated.name);
+  assert.equal((await print.ok(scanApi + "/staff")).staff.find(row => row.code === updated.code).barcode, staffBarcode);
+  const beforeDeactivate = await material(first.id);
+  await owner.ok("/api/employees/" + employee.id, "DELETE", { revision: updated.revision });
+  await checked(409, lookup);
+  assert.equal((await checked(409, scanApi + "/commit", "POST", payload("IN", [[beforeDeactivate, 1]]))).code, "SCAN_STAFF_INVALID");
+  assert.equal((await material(first.id)).balance, beforeDeactivate.balance);
+  assert.equal((await apply(out)).movements[0].staffName, employee.name);
   await staff.ok("/api/logout", "POST", {});
   await checked(401, scanApi + "/history");
 });

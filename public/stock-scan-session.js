@@ -3,7 +3,6 @@ import { stockScanAccess } from "./stock-scan-rules.js";
 const authChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("manna-pos-security") : null;
 export const scanPendingKey = userId => `manna-stock-scan-pending:${userId}`;
 export const escapeScanText = value => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
-export const dateOfScan = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Makassar" });
 export const rollNumber = number => Number(number).toLocaleString("id-ID");
 
 export function createStockScanSession(capability, { onReady, onReset, onError }) {

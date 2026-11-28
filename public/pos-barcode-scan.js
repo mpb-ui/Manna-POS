@@ -1,4 +1,5 @@
 import { barcodeText, internalBarcodePrefix, inventoryBarcode, POS_BARCODE_MAX_LENGTH } from "./pos-barcode-rules.js";
+import { STAFF_SCAN_CODE } from "./stock-scan-rules.js";
 
 const GAP_MS = 100;
 const EDITOR = "input, textarea, select, [contenteditable], [role=textbox]";
@@ -57,7 +58,7 @@ export function mountBarcodeScanner({ root, active, known, onCode, onInvalid }) 
     }
     const frame = buffer.take(event.timeStamp, source);
     const query = searchFocused ? search.value.trim() : "";
-    const recognizable = code => known(code) || inventoryBarcode.test(code) ||
+    const recognizable = code => known(code) || inventoryBarcode.test(code) || STAFF_SCAN_CODE.test(code) ||
       internalBarcodePrefix.test(code) || /^\d{6,}$/.test(code);
     const emptyResults = !root.querySelector("#pos-search-results [data-search-product]");
     const usable = searchFocused

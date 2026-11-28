@@ -218,7 +218,8 @@ export function createStockUi(c) {
       : count ? "Stok Opname"
       : ["AUTO_USE", "DEFECT_EXCHANGE"].includes(move.type) ? "Otomatis POS"
       : move.type ? "Input Manual" : "";
-    const attribution = [source, move.actor].filter(Boolean).map(h).join(" · ");
+    const actor = move.staffName && move.actor ? `Dicatat oleh ${move.actor}` : move.actor;
+    const attribution = [source, move.staffName && `Staff ${move.staffName}`, actor].filter(Boolean).map(h).join(" · ");
     const correction = move.source === "BARCODE" && stockScanAccess(c.state.currentUser).correct
       ? `<button type="button" class="movement-order-link" data-stock-correct="${h(move.id)}" aria-haspopup="dialog">Koreksi</button>` : "";
     return `<article class="stock-movement">
