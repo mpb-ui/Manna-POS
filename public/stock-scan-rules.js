@@ -7,7 +7,7 @@ export const SCAN_COMMANDS = [
 export const SCAN_QUANTITIES = [1, 2, 3, 5, 10];
 export const MAX_SCAN_ITEMS = 50;
 export const MATERIAL_SCAN_ID = /^[a-zA-Z0-9_-]{1,160}$/;
-export const STAFF_SCAN_CODE = /^STF:(?:U[a-zA-Z0-9_-]{22}|E[a-zA-Z0-9_-]{1,160})$/;
+export const STAFF_SCAN_CODE = /^(?:STF|OWN):(?:U[a-zA-Z0-9_-]{22}|E[a-zA-Z0-9_-]{1,160})$/;
 export const stockUpdatedKey = "manna-pos-stock-updated";
 export const scanModeLabel = direction => direction === "IN" ? "Stok Masuk" : "Stok Keluar";
 

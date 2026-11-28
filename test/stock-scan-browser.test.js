@@ -53,8 +53,30 @@ test("Chromium Stock Scan: HID, pointer review, timeout retry, cross-tab stock, 
     await view.locator("#scan-staff.assigned").getByText(employee.name, { exact: true }).waitFor();
   };
   const dialog = page.getByRole("dialog");
+  const finish = page.getByRole("button", { name: "Selesai Scan", exact: true });
   assert.equal(await page.getByText("Bahan terakhir", { exact: true }).count(), 0);
   assert.equal(await page.getByText("Riwayat Saya", { exact: true }).count(), 0);
+  assert.deepEqual(await page.locator(".scan-staff-label img").evaluate(async icon => {
+    await icon.decode();
+    return [icon.naturalWidth, icon.naturalHeight, icon.clientWidth, icon.clientHeight];
+  }), [20, 20, 20, 20]);
+  assert.equal(await style(page.locator(".scan-work"), "width"), "540px");
+  const reader = page.locator("#barcode-input");
+  const scannerIcon = page.locator(".scanner-icon");
+  const activeScannerIcon = page.locator(".scanner-icon-active");
+  assert.equal(await style(reader, "height"), "52px");
+  assert.equal(await activeScannerIcon.isVisible(), true);
+  await page.locator("#scan-note").focus();
+  assert.equal(await style(reader, "height"), "50px");
+  assert.equal(await scannerIcon.isVisible(), true);
+  assert.equal(await activeScannerIcon.isVisible(), false);
+  for (const icon of [scannerIcon, activeScannerIcon]) {
+    assert.deepEqual(await icon.evaluate(async img => {
+      await img.decode();
+      return [img.naturalWidth, img.naturalHeight];
+    }), [24, 24]);
+  }
+  await reader.focus();
   await read(`MAT:${first.id}`);
   await page.locator("#scan-message").getByText(/terlebih dahulu/).waitFor();
   await read(mode);
@@ -71,7 +93,8 @@ test("Chromium Stock Scan: HID, pointer review, timeout retry, cross-tab stock, 
   await page.locator("#scan-message").getByText(/masih berisi bahan/).waitFor();
   await read("CMD:REVIEW");
   await page.locator("#scan-message").getByText(/scan barcode staff/).waitFor();
-  assert.equal(await page.getByRole("button", { name: "Selesai Scan" }).isDisabled(), true);
+  assert.equal(await finish.isDisabled(), true);
+  assert.equal(await style(finish, "opacity"), "0.4");
   assert.equal(await dialog.count(), 0);
   await read("STF:Eemp-tidak-ada");
   await page.locator("#scan-message").getByText(/Barcode staff tidak dikenal/).waitFor();
@@ -227,5 +250,39 @@ test("Chromium Stock Scan: HID, pointer review, timeout retry, cross-tab stock, 
   assert.equal(await labels.locator("svg").count(), 12);
   await shot(labels, "07-cetak-barcode-a3plus.png");
   if (output) await labels.pdf({ path: join(output, "test-a3plus.pdf"), preferCSSPageSize: true, printBackground: true });
+
+  await labels.getByRole("button", { name: "Kosongkan" }).click();
+  await labels.locator("#print-commands").uncheck();
+  await labels.locator("#print-quantities").uncheck();
+  await labels.getByLabel(/Mariano Fadi/).uncheck();
+  await labels.locator("#paper-size").selectOption("a4");
+  await labels.getByLabel(/Owner Manna/).check();
+  await labels.getByText("1 label · A4").waitFor();
+  const ownerLabel = labels.locator(".barcode-label").filter({ hasText: owner.user.name });
+  assert.equal(await ownerLabel.locator("p").textContent(), "Owner");
+  assert.equal(await ownerLabel.locator("svg").count(), 1);
+  const printedOwnerBarcode = await ownerLabel.locator("code").textContent();
+  assert.match(printedOwnerBarcode, /^OWN:U[a-zA-Z0-9_-]{22}$/);
+  await shot(labels, "09-cetak-barcode-owner.png");
+  if (output) await labels.pdf({ path: join(output, "test-owner-a4.pdf"), preferCSSPageSize: true });
+
+  await page.reload();
+  await page.locator("#scan-ready").getByText("Siap scan").waitFor();
+  await read("CMD:OUT");
+  await read(`MAT:${first.id}`);
+  assert.equal(await finish.isDisabled(), true);
+  await read(printedOwnerBarcode);
+  const ownerChip = page.locator("#scan-staff.assigned").getByText(owner.user.name, { exact: true });
+  await ownerChip.waitFor();
+  assert.equal(await style(ownerChip, "height"), "28px");
+  assert.equal(await style(ownerChip, "backgroundColor"), "rgb(82, 98, 122)");
+  assert.equal(await finish.isEnabled(), true);
+  await shot(page, "10-scan-staff-owner.png");
+  await finish.click();
+  await dialog.getByText(/Staff Owner Manna/).waitFor();
+  await dialog.getByRole("button", { name: "Konfirmasi", exact: true }).click();
+  await page.locator("#scan-message").getByText(/Stok Keluar tersimpan/).waitFor();
+  await stock.getByText("Barcode · Staff Owner Manna", { exact: true }).waitFor();
+  assert.equal(await count(first), 14);
   assert.deepEqual(errors, []);
 });

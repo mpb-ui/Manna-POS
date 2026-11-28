@@ -15,7 +15,8 @@ test("barcode dan draft memilih mode, mengaktifkan bahan unik, dan mengunci scan
   assert.deepEqual(parseStockBarcode("CMD:CANCEL"), { type: "command", value: "CANCEL" });
   assert.deepEqual(parseStockBarcode("MAT:mat-test-110"), { type: "material", value: "mat-test-110" });
   assert.deepEqual(parseStockBarcode("STF:Eemp-maria"), { type: "staff", value: "STF:Eemp-maria" });
-  for (const invalid of ["CMD:CONFIRM", "MAT:../id", "QTY:02", "QTY:4", "QTY:2.5", "MAT:", "STF:Utruncated"]) assert.equal(parseStockBarcode(invalid), null);
+  assert.deepEqual(parseStockBarcode("OWN:Eowner-lama"), { type: "staff", value: "OWN:Eowner-lama" });
+  for (const invalid of ["CMD:CONFIRM", "MAT:../id", "QTY:02", "QTY:4", "QTY:2.5", "MAT:", "STF:Utruncated", "OWN:Utruncated"]) assert.equal(parseStockBarcode(invalid), null);
   for (const value of [1, 2, 3, 5, 10]) assert.deepEqual(parseStockBarcode(`QTY:${value}`), { type: "quantity", value });
   const draft = scanDraft();
   const first = { materialId: "mat-test-110", name: "FL 280", rollWidthCm: 110, balance: 10 };
@@ -120,6 +121,7 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   const print = await stockTestLogin(base, "label-test", "7654");
   const other = await stockTestLogin(base, "default-stock-test", "7654");
   const { staff: badges } = await print.ok(scanApi + "/staff");
+  const ownerBadge = badges[0];
   const badge = badges.find(row => row.code === employee.code);
   const staffBarcode = badge.barcode;
   const material = async (id, account = staff) => (await account.ok(`${scanApi}/catalog/${id}`)).material;
@@ -134,6 +136,11 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   assert.equal((await fetch(`${base}${scanApi}/catalog`)).status, 401);
   assert.equal((await fetch(`${base}${scanApi}/staff`)).status, 401);
   assert.deepEqual(Object.keys(badge).sort(), ["barcode", "code", "name"]);
+  assert.deepEqual(Object.keys(ownerBadge).sort(), ["barcode", "name", "role"]);
+  assert.equal(ownerBadge.name, owner.user.name);
+  assert.equal(ownerBadge.role, "OWNER");
+  assert.match(ownerBadge.barcode, /^OWN:U[a-zA-Z0-9_-]{22}$/);
+  assert.ok(!badges.some(row => row.name === staffUser.name));
   assert.notEqual(badges.find(row => row.code === namesake.code).barcode, staffBarcode);
   assert.ok(!badges.some(row => row.code === inactive.code));
   const lookup = scanApi + "/staff/" + encodeURIComponent(staffBarcode);
@@ -141,6 +148,9 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   await checked(403, scanApi + "/staff");
   await checked(403, lookup, "GET", undefined, print);
   await checked(403, lookup, "GET", undefined, other);
+  const ownerLookup = scanApi + "/staff/" + encodeURIComponent(ownerBadge.barcode);
+  assert.deepEqual((await staff.ok(ownerLookup)).staff, { id: owner.user.id, name: owner.user.name, role: "OWNER" });
+  await checked(403, ownerLookup, "GET", undefined, print);
   const { materials } = await staff.ok(scanApi + "/catalog");
   assert.deepEqual(materials.filter(row => row.sku.startsWith("SCAN-QA-")).map(row => row.rollWidthCm), [110, 220]);
   assert.ok(materials.every(row => !("cost" in row) && !("supplier" in row)));
@@ -255,6 +265,24 @@ test("API scan terautentikasi, validasi batch atomik, retry, konflik antar sesi,
   assert.equal((await checked(409, scanApi + "/commit", "POST", payload("IN", [[beforeDeactivate, 1]]))).code, "SCAN_STAFF_INVALID");
   assert.equal((await material(first.id)).balance, beforeDeactivate.balance);
   assert.equal((await apply(out)).movements[0].staffName, employee.name);
+
+  const ownerIn = { ...payload("IN", [[beforeDeactivate, 1]]), staffBarcode: ownerBadge.barcode };
+  const ownerReceipt = await apply(ownerIn, owner);
+  const [ownerMove] = ownerReceipt.movements;
+  assert.equal(ownerMove.balance, beforeDeactivate.balance + 1);
+  assert.equal(ownerMove.staffId, owner.user.id);
+  assert.equal(ownerMove.staffName, owner.user.name);
+  assert.equal(ownerMove.staffRole, "OWNER");
+  const ownerOut = { ...payload("OUT", [[await material(first.id), 1]]), staffBarcode: ownerBadge.barcode };
+  const { movements: [sharedScannerMove] } = await apply(ownerOut);
+  assert.equal(sharedScannerMove.balance, beforeDeactivate.balance);
+  assert.equal(sharedScannerMove.staffId, owner.user.id);
+  assert.equal(sharedScannerMove.actor, staffUser.name);
+  const ownerAudit = (await owner.ok("/api/bootstrap?view=master")).auditLogs
+    .find(row => row.metadata.groupId === ownerReceipt.groupId);
+  assert.equal(ownerAudit.metadata.staffRole, "OWNER");
+  assert.equal(ownerAudit.userId, owner.user.id);
+
   await staff.ok("/api/logout", "POST", {});
   await checked(401, scanApi + "/history");
 });

@@ -129,7 +129,7 @@ async function registryChecks(t, base) {
   await register(frame, a4Code, barcodeTargetKey(a4));
   assert.equal((await request(barcodeApi + "/register", "POST", { ...target(frame, barcodeTargetKey(a4Back)), code: ean })).body.code, "BARCODE_DUPLICATE");
   assert.equal((await request(barcodeApi + "/register", "POST", { ...target(frame, barcodeTargetKey(a4Back)), code: ean.slice(1) })).body.code, "BARCODE_DUPLICATE");
-  for (const code of ["MAT:qa-roll", "CMD:IN", "QTY:3", "STF:Eemp-maria", internal]) {
+  for (const code of ["MAT:qa-roll", "CMD:IN", "QTY:3", "STF:Eemp-maria", "OWN:Eowner-lama", internal]) {
     assert.equal((await request(barcodeApi + "/register", "POST", { ...target(pen), code })).body.code, "BARCODE_RESERVED");
   }
   await register(pen, "OLD-ALIAS");
@@ -160,6 +160,7 @@ async function registryChecks(t, base) {
   assert.equal((await cashier.ok(resolve(internal))).productId, pen.id);
   assert.equal((await cashier.request(resolve("QTY:3"))).body.code, "BARCODE_INVENTORY");
   assert.equal((await cashier.request(resolve("STF:Eemp-maria"))).body.code, "BARCODE_INVENTORY");
+  assert.equal((await cashier.request(resolve("OWN:Eowner-lama"))).body.code, "BARCODE_INVENTORY");
   assert.equal((await cashier.ok(resolve(ean.slice(1)))).productId, pen.id);
   for (const code of [ean.slice(2), "OLD-ALIAS", "PEN-BLACK", "UNKNOWN"]) {
     assert.equal((await cashier.request(resolve(code))).body.code, "BARCODE_UNKNOWN");

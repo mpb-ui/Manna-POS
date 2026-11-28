@@ -10,7 +10,7 @@ const paper = get("barcode-paper");
 const pageStyle = document.createElement("style");
 document.head.append(pageStyle);
 let materials = [];
-let employees = [];
+let staffMembers = [];
 
 const session = createStockScanSession("print", {
   onReady: load, onReset: reset, onError: error => { get("barcode-message").textContent = error; }
@@ -18,7 +18,7 @@ const session = createStockScanSession("print", {
 
 function reset() {
   materials = [];
-  employees = [];
+  staffMembers = [];
   selected.clear();
   selectedStaff.clear();
   category.replaceChildren();
@@ -35,14 +35,14 @@ async function load(user) {
   ]);
   if (session.user()?.id !== user.id) return;
   materials = catalog.value?.materials || [];
-  employees = staff.value?.staff || [];
+  staffMembers = staff.value?.staff || [];
   category.innerHTML = '<option value="">Semua kategori</option>' + [...new Set(materials.map(row => row.category))]
     .map(name => `<option value="${h(name)}">${h(name)}</option>`).join("");
   renderChoices();
-  get("barcode-staff").innerHTML = employees.map(row => `<label class="barcode-checkbox">
+  get("barcode-staff").innerHTML = staffMembers.map(row => `<label class="barcode-checkbox">
     <input type="checkbox" value="${h(row.barcode)}" ${selectedStaff.has(row.barcode) ? "checked" : ""}>
-    <span>${h(row.name)} <span class="muted">${h(row.code || "")}</span></span></label>`).join("")
-    || `<p class="muted">${h(staff.reason?.message || "Belum ada karyawan aktif.")}</p>`;
+    <span>${h(row.name)} <span class="muted">${h(row.role === "OWNER" ? "Owner" : row.code || "")}</span></span></label>`).join("")
+    || `<p class="muted">${h(staff.reason?.message || "Belum ada Owner atau karyawan aktif.")}</p>`;
   if (catalog.status === "rejected") get("barcode-materials").textContent = catalog.reason.message;
   renderPreview();
 }
@@ -92,8 +92,8 @@ function renderPreview() {
   const groups = new Map();
   if (get("print-commands").checked) groups.set("Perintah", SCAN_COMMANDS.map(([code, name]) => ({ code, name })));
   if (get("print-quantities").checked) groups.set("Jumlah Roll", SCAN_QUANTITIES.map(quantity => ({ code: `QTY:${quantity}`, name: `×${quantity} roll` })));
-  const staffLabels = employees.filter(row => selectedStaff.has(row.barcode)).map(row => ({
-    code: row.barcode, name: row.name, info: row.code ? `Staff · ${row.code}` : "Staff"
+  const staffLabels = staffMembers.filter(row => selectedStaff.has(row.barcode)).map(({ barcode, name, role, code }) => ({
+    code: barcode, name, info: role === "OWNER" ? "Owner" : ["Staff", code].filter(Boolean).join(" · ")
   }));
   if (staffLabels.length) groups.set("Staff", staffLabels);
   for (const material of materials.filter(row => selected.has(row.materialId))) {
